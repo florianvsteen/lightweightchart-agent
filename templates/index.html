@@ -44,7 +44,7 @@
                     .then(data => {
                         if(data.candles && data.candles.length > 0) {
                             candleSeries.setData(data.candles);
-                            candleSeries.setMarkers(data.markers);
+                            candleSeries.createMarkers(data.markers);
                             lastHistoryClose = data.candles[data.candles.length - 1].close;
                             
                             // If scraper has data, update the "now" candle
