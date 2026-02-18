@@ -28,15 +28,18 @@
         });
 
         function loadData() {
-            fetch('/api/data')
+            // Make sure this matches the working curl path exactly
+            fetch('/api/data/DOW') 
                 .then(res => res.json())
                 .then(data => {
+                    console.log("Data received:", data); // Add this to debug
                     if(data.candles && data.candles.length > 0) {
                         candleSeries.setData(data.candles);
                         candleSeries.setMarkers(data.markers);
+                        // Force the chart to show the data
+                        chart.timeScale().fitContent(); 
                     }
                 })
-                .catch(err => console.error("Data Fetch Error:", err));
         }
 
         loadData();
