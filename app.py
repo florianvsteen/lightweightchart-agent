@@ -1,5 +1,6 @@
 from flask import Flask, render_template, jsonify
 import yfinance as yf
+import pandas as pd  # Change this line
 import pandas_ta_classic as ta  # Change this line
 
 app = Flask(__name__)
