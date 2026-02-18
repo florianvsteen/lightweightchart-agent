@@ -31,34 +31,39 @@ def start_tv_scraper():
     global live_tick
     while True:
         try:
-            # Note: This expects TRADINGVIEW_COOKIE in your environment vars
-            real_time_data = RealTimeData()
-            data_generator = real_time_data.get_ohlcv(exchange_symbol="CAPITALCOM:US30")
+            # Get the raw ID from Portainer env
+            raw_session_id = os.environ.get('TRADINGVIEW_COOKIE', '')
             
-            print(">>> TV Scraper: Connected to Stream")
+            # Format it correctly for the TV Header
+            if raw_session_id and not raw_session_id.startswith("sessionid="):
+                formatted_cookie = f"sessionid={raw_session_id};"
+                os.environ['TRADINGVIEW_COOKIE'] = formatted_cookie
+            
+            print(f">>> TV Scraper: Using Session ID: {os.environ['TRADINGVIEW_COOKIE'][:15]}...")
+
+            real_time_data = RealTimeData()
+            # Try TVC:US30 as it's the most common "Free" Real-Time Index on TV
+            data_generator = real_time_data.get_ohlcv(exchange_symbol="TVC:US30")
+            
+            print(">>> TV Scraper: Handshake Sent...")
 
             for packet in data_generator:
+                # If packets start flowing, you'll see them here
                 if packet.get('close') is not None:
-                    try:
-                        # LOGIC: We align the live tick with the CURRENT minute.
-                        # This ensures it shows up on the chart even if history is delayed.
-                        current_minute = int(time.time() // 60) * 60
-                        
-                        live_tick = {
-                            "time": current_minute,
-                            "open": float(packet['open']),
-                            "high": float(packet['high']),
-                            "low": float(packet['low']),
-                            "close": float(packet['close'])
-                        }
-                        # Print once in a while to Portainer so you know it's alive
-                        print(f"LIVE TICK RECEIVED: {live_tick['close']}")
-                    except (ValueError, TypeError, KeyError):
-                        continue 
+                    current_minute = int(time.time() // 60) * 60
+                    live_tick = {
+                        "time": current_minute,
+                        "open": float(packet['open']),
+                        "high": float(packet['high']),
+                        "low": float(packet['low']),
+                        "close": float(packet['close'])
+                    }
+                    print(f"LIVE TICK RECEIVED: {live_tick['close']}")
                         
         except Exception as e:
-            print(f"Scraper Error: {e}. Reconnecting in 5s...")
+            print(f"Scraper Error: {e}. Retrying in 5s...")
             time.sleep(5)
+            
 
 # Start scraper in background
 threading.Thread(target=start_tv_scraper, daemon=True).start()
