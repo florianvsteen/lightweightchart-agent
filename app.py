@@ -13,14 +13,20 @@ live_tick = {"price": None, "time": None}
 
 def start_tv_scraper():
     global live_tick
+    
+    # PASTE YOUR SESSION ID HERE
+    # Found in Chrome -> F12 -> Application -> Cookies -> sessionid
+    TV_SESSION_ID = "ayzvl8ectj41gsxjpvfhdl2ahfnbmojn"
+
     while True:
         try:
-            # Re-initialize the client inside the loop for fresh sessions
-            real_time_data = RealTimeData()
+            # Pass the session_id to authenticate the WebSocket
+            real_time_data = RealTimeData(session_id=TV_SESSION_ID)
+            
             data_generator = real_time_data.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
             for packet in data_generator:
-                # TradingView packets often nest the price under 'lp' (Last Price)
+                # 'lp' stands for Last Price in TradingView's protocol
                 price = packet.get('price') or packet.get('lp')
                 
                 if price is not None:
@@ -29,11 +35,13 @@ def start_tv_scraper():
                             "price": float(price),
                             "time": int(time.time())
                         }
-                        # Debug print to verify data is actually arriving
+                        # The print below will now show real-time data instead of delayed data
                         print(f"DEBUG: Live Tick Received -> {live_tick['price']}")
                     except ValueError:
                         continue 
+                        
         except Exception as e:
+            # If your session ID expires or the internet blips, it restarts here
             print(f"Scraper Error: {e}. Reconnecting in 5s...")
             time.sleep(5)
 
