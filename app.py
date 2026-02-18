@@ -8,7 +8,7 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
-@app.route('/api/data')
+@app.route('/api/data/<symbol>')
 def get_data():
     symbol = "YM=F"  # Dow Jones Futures
     
