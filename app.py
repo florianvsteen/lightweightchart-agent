@@ -15,13 +15,18 @@ def start_tv_scraper():
     global live_tick
     while True:
         try:
-            # Re-initialize the client inside the loop for fresh sessions
+            # RealTimeData now reads the cookie from the Portainer env automatically
             real_time_data = RealTimeData()
-            data_generator = real_time_data.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
+            # Using your required method
+            # Note: get_ohlcv yields the current candle data including the 'close' price
+            data_generator = real_time_data.get_ohlcv(exchange_symbol="CAPITALCOM:US30")
+            
+            print("Successfully connected to TradingView Stream...")
+
             for packet in data_generator:
-                # TradingView packets often nest the price under 'lp' (Last Price)
-                price = packet.get('price') or packet.get('lp')
+                # 'close' in the ohlcv packet represents the current live price
+                price = packet.get('close')
                 
                 if price is not None:
                     try:
@@ -29,10 +34,11 @@ def start_tv_scraper():
                             "price": float(price),
                             "time": int(time.time())
                         }
-                        # Debug print to verify data is actually arriving
-                        print(f"DEBUG: Live Tick Received -> {live_tick['price']}")
-                    except ValueError:
+                        # Verify in Portainer logs if this price is real-time
+                        print(f"LIVE TICK: {live_tick['price']}")
+                    except (ValueError, TypeError):
                         continue 
+                        
         except Exception as e:
             print(f"Scraper Error: {e}. Reconnecting in 5s...")
             time.sleep(5)
