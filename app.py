@@ -46,10 +46,10 @@ def start_tv_streamer():
                 exchange="TVC", 
                 symbol="DJI",
                 timeframe="1m",
-                numb_price_candles=1
+                numb_price_candles=100
             )
             
-            print(">>> Streamer: Connected to CAPITALCOM:US30 (1m)")
+            print(">>> Streamer: Connected to US30 (1m)")
 
             for packet in data_generator:
                 # The streamer yields lists of candle updates
