@@ -1,4 +1,4 @@
 flask
 yfinance
 pandas
-pandas_ta
+pandas_ta_classic
