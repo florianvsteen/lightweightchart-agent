@@ -2,7 +2,8 @@
 <html>
 <head>
     <title>US30 - 1 Minute Chart</title>
-     <style>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
         body { background: #131722; margin: 0; padding: 20px; color: #d1d4dc; font-family: sans-serif; }
         #chart-container { position: relative; width: 100%; height: 85vh; }
         #chart { width: 100%; height: 100%; border: 1px solid #2B2B43; }
@@ -22,56 +23,68 @@
     </div>
 
     <script>
-        const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-            layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#2B2B43' }, horzLines: { color: '#2B2B43' } },
-            timeScale: { timeVisible: true, secondsVisible: false },
-        });
+        // Use DOMContentLoaded to ensure the library is defined before we use it
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+                layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
+                grid: { vertLines: { color: '#2B2B43' }, horzLines: { color: '#2B2B43' } },
+                timeScale: { timeVisible: true, secondsVisible: false },
+            });
 
-        const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-            upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickVisible: true 
-        });
+            const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+                upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickVisible: true 
+            });
 
-        let lastHistoryClose = null;
+            let lastHistoryClose = null;
 
-        function loadData() {
-            fetch('/api/data/DOW')
-                .then(res => res.json())
-                .then(data => {
-                    if(data.candles && data.candles.length > 0) {
-                        candleSeries.setData(data.candles);
-                        candleSeries.setMarkers(data.markers);
-                        lastHistoryClose = data.candles[data.candles.length - 1].close;
-                        
-                        // If scraper has data, update the "now" candle
-                        if (data.live && data.live.price) {
-                            const now = new Date();
-                            const minuteStart = Math.floor(now.getTime() / 60000) * 60;
-                            candleSeries.update({
-                                time: minuteStart,
-                                open: lastHistoryClose,
-                                high: Math.max(data.live.price, lastHistoryClose),
-                                low: Math.min(data.live.price, lastHistoryClose),
-                                close: data.live.price
-                            });
+            function loadData() {
+                fetch('/api/data/DOW')
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.candles && data.candles.length > 0) {
+                            candleSeries.setData(data.candles);
+                            candleSeries.setMarkers(data.markers);
+                            lastHistoryClose = data.candles[data.candles.length - 1].close;
+                            
+                            // If scraper has data, update the "now" candle
+                            if (data.live && data.live.price && lastHistoryClose !== null) {
+                                const now = new Date();
+                                const minuteStart = Math.floor(now.getTime() / 60000) * 60;
+                                candleSeries.update({
+                                    time: minuteStart,
+                                    open: lastHistoryClose,
+                                    high: Math.max(data.live.price, lastHistoryClose),
+                                    low: Math.min(data.live.price, lastHistoryClose),
+                                    close: data.live.price
+                                });
+                            }
+                            if(!window.isInitial) { chart.timeScale().fitContent(); window.isInitial = true; }
                         }
-                        if(!window.isInitial) { chart.timeScale().fitContent(); window.isInitial = true; }
-                    }
+                    })
+                    .catch(err => console.error("Data fetch error:", err));
+            }
+
+            function updateCountdown() {
+                const secondsLeft = 60 - (new Date().getSeconds());
+                document.getElementById('countdown').innerText = `Next Candle: ${secondsLeft}s`;
+            }
+
+            // Setup Intervals
+            setInterval(loadData, 30000);
+            setInterval(updateCountdown, 1000);
+            
+            // Initial Execution
+            loadData();
+            updateCountdown();
+
+            window.onresize = () => {
+                chart.applyOptions({ 
+                    width: document.getElementById('chart').clientWidth,
+                    height: document.getElementById('chart').clientHeight 
                 });
-        }
-
-        function updateCountdown() {
-            const secondsLeft = 60 - (new Date().getSeconds());
-            document.getElementById('countdown').innerText = `Next Candle: ${secondsLeft}s`;
-        }
-
-        // Fast update: Fetch data every 30 seconds, update clock every second
-        setInterval(loadData, 30000);
-        setInterval(updateCountdown, 1000);
-        
-        loadData();
-        updateCountdown();
-        window.onresize = () => chart.applyOptions({ width: document.getElementById('chart').clientWidth });
+            };
+        });
     </script>
 </body>
 </html>
