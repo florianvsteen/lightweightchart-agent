@@ -31,43 +31,40 @@ def start_tv_scraper():
     global live_tick
     while True:
         try:
-            # 1. Clean and Verify the ID
-            raw_id = os.environ.get('TRADINGVIEW_COOKIE', '').replace('sessionid=', '').replace(';', '').strip()
-            
-            if not raw_id:
-                print("!!! CRITICAL: No TRADINGVIEW_COOKIE found in Portainer env")
-                time.sleep(10)
-                continue
-
-            # 2. Force the exact format the library expects in the OS environment
+            # Re-read fresh from env every loop
+            raw_id = os.environ.get('TRADINGVIEW_COOKIE', '').strip()
             os.environ['TRADINGVIEW_COOKIE'] = f"sessionid={raw_id}"
             
-            print(f">>> TV Scraper: Attempting Auth with ID: {raw_id[:8]}...")
-
-            # 3. Initialize AFTER setting the env
             real_time_data = RealTimeData()
-            
-            # Use CAPITALCOM as they are more permissive with WebSockets than TVC
             data_generator = real_time_data.get_ohlcv(exchange_symbol="CAPITALCOM:US30")
             
-            print(">>> TV Scraper: WebSocket Handshake Sent...")
+            print(">>> TV Scraper: Stream Started")
 
             for packet in data_generator:
-                # If we get any packet at all, print it to debug
-                if packet:
-                    # Logic to update live_tick...
+                # Use .get() to avoid KeyError 'open'
+                o = packet.get('open')
+                h = packet.get('high')
+                l = packet.get('low')
+                c = packet.get('close')
+
+                # If we have at least the close price, we can make a 'flat' candle
+                if c is not None:
                     current_minute = int(time.time() // 60) * 60
                     live_tick = {
                         "time": current_minute,
-                        "open": float(packet['open']),
-                        "high": float(packet['high']),
-                        "low": float(packet['low']),
-                        "close": float(packet['close'])
+                        "open": float(o) if o is not None else float(c),
+                        "high": float(h) if h is not None else float(c),
+                        "low": float(l) if l is not None else float(c),
+                        "close": float(c)
                     }
-                    print(f"SUCCESS: Price Moved -> {live_tick['close']}")
-                        
+                    print(f"LIVE PRICE: {live_tick['close']}")
+                else:
+                    # This captures the 'empty' packets that were causing your crash
+                    pass 
+
         except Exception as e:
-            print(f"Scraper Error: {e}")
+            # This will now catch actual connection errors, not just missing data
+            print(f"Scraper Loop Error: {e}")
             time.sleep(5)
 
 
