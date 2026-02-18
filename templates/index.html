@@ -1,29 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>US30 - 1 Minute Chart</title>
+    <title>US30 - 1 Minute Real-Time Chart</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { background: #131722; margin: 0; padding: 20px; color: #d1d4dc; font-family: sans-serif; overflow: hidden; }
         #chart-container { position: relative; width: 100%; height: 90vh; }
         #chart { width: 100%; height: 100%; }
         h2 { margin-top: 0; color: #d1d4dc; font-weight: 400; }
+        .status-bar { font-size: 12px; color: #848e9c; margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <h2>Dow Jones Industrial Average</h2>
+    <h2>Dow Jones Industrial Average (US30)</h2>
+    <div class="status-bar" id="status">Connecting to real-time stream...</div>
     <div id="chart-container">
         <div id="chart"></div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            
             const chart = LightweightCharts.createChart(document.getElementById('chart'), {
                 layout: { 
                     background: { type: 'solid', color: '#131722' }, 
                     textColor: '#d1d4dc',
-                    fontSize: 12,
                 },
                 grid: { 
                     vertLines: { color: '#2B2B43' }, 
@@ -32,16 +32,6 @@
                 timeScale: { 
                     timeVisible: true, 
                     secondsVisible: false,
-                    borderColor: '#2B2B43',
-                },
-                rightPriceScale: {
-                    borderColor: '#2B2B43',
-                    autoScale: true,
-                    alignLabels: true,
-                },
-                // Add extra space for the custom Y-axis label
-                localization: {
-                    priceFormatter: price => price.toFixed(2).padEnd(12, ' '),
                 },
             });
 
@@ -52,81 +42,61 @@
                 wickVisible: true 
             });
 
-            // This is the line that appears on the Y-Axis with your countdown
             const livePriceLine = candleSeries.createPriceLine({
                 price: 0,
                 color: '#26a69a',
                 lineWidth: 1,
                 lineStyle: LightweightCharts.LineStyle.Dotted,
                 axisLabelVisible: true,
-                title: '', // We will update this with the countdown
+                title: 'LIVE',
             });
 
-            let lastHistoryClose = null;
-            let currentLivePrice = null;
+            let isInitial = false;
 
             function loadData() {
                 fetch('/api/data/DOW')
                     .then(res => res.json())
                     .then(data => {
                         if(data.candles && data.candles.length > 0) {
+                            // Set historical data
                             candleSeries.setData(data.candles);
                             
-                            // v4 Method Name
                             if (data.markers) {
-                                candleSeries.createMarkers(data.markers);
+                                candleSeries.setMarkers(data.markers);
                             }
 
-                            lastHistoryClose = data.candles[data.candles.length - 1].close;
-                            
-                            if (data.live && data.live.price) {
-                                currentLivePrice = data.live.price;
-                                refreshVisuals();
+                            // UPDATE: Apply the live OHLC packet from the scraper
+                            if (data.live && data.live.time) {
+                                candleSeries.update({
+                                    time: data.live.time,
+                                    open: data.live.open,
+                                    high: data.live.high,
+                                    low: data.live.low,
+                                    close: data.live.close
+                                });
+
+                                // Update the Price Line on the right axis
+                                livePriceLine.applyOptions({
+                                    price: data.live.close,
+                                    color: data.live.close >= data.live.open ? '#26a69a' : '#ef5350',
+                                    title: `US30: ${data.live.close.toFixed(2)}`
+                                });
+                                
+                                document.getElementById('status').innerText = `Live Feed Active - Last Tick: ${data.live.close}`;
                             }
-                            
-                            if(!window.isInitial) { 
+
+                            if(!isInitial) { 
                                 chart.timeScale().fitContent(); 
-                                window.isInitial = true; 
+                                isInitial = true; 
                             }
                         }
                     })
                     .catch(err => console.error("Data fetch error:", err));
             }
 
-            function refreshVisuals() {
-                if (currentLivePrice === null || lastHistoryClose === null) return;
-
-                const now = new Date();
-                const secondsLeft = 60 - now.getSeconds();
-                const minuteStart = Math.floor(now.getTime() / 60000) * 60;
-                
-                // Format countdown: 00:XX
-                const countdownStr = `00:${secondsLeft.toString().padStart(2, '0')}`;
-
-                // Update Candle
-                candleSeries.update({
-                    time: minuteStart,
-                    open: lastHistoryClose,
-                    high: Math.max(currentLivePrice, lastHistoryClose),
-                    low: Math.min(currentLivePrice, lastHistoryClose),
-                    close: currentLivePrice
-                });
-
-                // Update Y-Axis Label (Price + Countdown)
-                livePriceLine.applyOptions({
-                    price: currentLivePrice,
-                    title: `NAS100  ${currentLivePrice.toFixed(2)}\n${countdownStr}`,
-                    color: currentLivePrice >= lastHistoryClose ? '#26a69a' : '#ef5350',
-                });
-            }
-
-            // Sync with backend every 30s
-            setInterval(loadData, 30000);
-            
-            // Smoothly update countdown/live candle every 1s
-            setInterval(refreshVisuals, 1000);
-
-            loadData();
+            // Polling every 1 second ensures the "Live" object in Flask 
+            // (which is updated by the scraper) is pushed to the chart immediately.
+            setInterval(loadData, 1000);
 
             window.onresize = () => {
                 chart.applyOptions({ 
