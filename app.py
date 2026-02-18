@@ -9,7 +9,6 @@ from tradingview_scraper.symbols.stream import Streamer
 
 # --- SILENCE LOGGING ---
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
@@ -43,10 +42,9 @@ def start_tv_streamer():
 
             # Request 1m candles for US30 from CAPITALCOM
             data_generator = streamer.stream(
-                exchange="DJ", 
-                symbol="DJI",
-                timeframe="1m",
-                numb_price_candles=100
+                exchange="FXCM", 
+                symbol="US30",
+                timeframe="1m"
             )
             
             print(">>> Streamer: Connected to US30 (1m)")
