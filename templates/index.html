@@ -62,7 +62,7 @@
                             candleSeries.setData(data.candles);
                             
                             if (data.markers) {
-                                candleSeries.setMarkers(data.markers);
+                                candleSeries.createMarkers(data.markers);
                             }
 
                             // UPDATE: Apply the live OHLC packet from the scraper
