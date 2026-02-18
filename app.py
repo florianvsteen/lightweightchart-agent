@@ -12,32 +12,31 @@ app = Flask(__name__)
 live_tick = {"price": None, "time": None}
 
 def start_tv_scraper():
-    """Background thread to fetch real-time Dow prices from Capital.com"""
     global live_tick
     while True:
         try:
-            scraper = RealTimeData()
-            # CAPITALCOM:US30 provides real-time Dow Jones CFD data
-            data_generator = scraper.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
+            # Re-initialize the client inside the loop for fresh sessions
+            real_time_data = RealTimeData()
+            data_generator = real_time_data.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
             for packet in data_generator:
-                # FIX: Check if 'price' exists and is not None before converting
-                raw_price = packet.get('price')
+                # TradingView packets often nest the price under 'lp' (Last Price)
+                price = packet.get('price') or packet.get('lp')
                 
-                if raw_price is not None:
-                    live_tick = {
-                        "price": float(raw_price),
-                        "time": int(time.time()) 
-                    }
-                else:
-                    # Ignore packets that don't have price data (metadata packets)
-                    continue
-                    
+                if price is not None:
+                    try:
+                        live_tick = {
+                            "price": float(price),
+                            "time": int(time.time())
+                        }
+                        # Debug print to verify data is actually arriving
+                        print(f"DEBUG: Live Tick Received -> {live_tick['price']}")
+                    except ValueError:
+                        continue 
         except Exception as e:
-            # This catches connection drops or TradingView session resets
-            print(f"Scraper Syncing: {e}. Reconnecting...")
+            print(f"Scraper Error: {e}. Reconnecting in 5s...")
             time.sleep(5)
-            
+
 # Launch the scraper thread
 threading.Thread(target=start_tv_scraper, daemon=True).start()
 
