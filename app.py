@@ -4,7 +4,6 @@ import pandas as pd
 import pandas_ta_classic as ta
 import threading
 import time
-import os
 from tradingview_scraper.symbols.stream import RealTimeData
 
 app = Flask(__name__)
@@ -14,19 +13,14 @@ live_tick = {"price": None, "time": None}
 
 def start_tv_scraper():
     global live_tick
-    
-    # 1. Set the environment variable BEFORE initializing the class
-    # Paste your FULL sessionid string here (or the entire cookie string)
-    os.environ['TRADINGVIEW_COOKIE'] = "your_sessionid_here"
-
     while True:
         try:
-            # 2. Initialize WITHOUT the session_id argument
+            # Re-initialize the client inside the loop for fresh sessions
             real_time_data = RealTimeData()
-            
             data_generator = real_time_data.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
             for packet in data_generator:
+                # TradingView packets often nest the price under 'lp' (Last Price)
                 price = packet.get('price') or packet.get('lp')
                 
                 if price is not None:
@@ -35,14 +29,13 @@ def start_tv_scraper():
                             "price": float(price),
                             "time": int(time.time())
                         }
+                        # Debug print to verify data is actually arriving
                         print(f"DEBUG: Live Tick Received -> {live_tick['price']}")
                     except ValueError:
                         continue 
-                        
         except Exception as e:
             print(f"Scraper Error: {e}. Reconnecting in 5s...")
             time.sleep(5)
-
 
 # Launch the scraper thread
 threading.Thread(target=start_tv_scraper, daemon=True).start()
