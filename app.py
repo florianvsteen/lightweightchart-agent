@@ -7,6 +7,11 @@ import time
 import os
 from tradingview_scraper.symbols.stream import RealTimeData
 
+import logging
+
+# 1. Disable all logging for yfinance
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
 app = Flask(__name__)
 
 # Updated global variable to hold full OHLC data
