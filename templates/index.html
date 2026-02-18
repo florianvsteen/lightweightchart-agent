@@ -8,7 +8,7 @@
         #chart-container { position: relative; width: 100%; height: 90vh; }
         #chart { width: 100%; height: 100%; }
         h2 { margin-top: 0; color: #d1d4dc; font-weight: 400; }
-        .status-bar { font-size: 12px; color: #848e9c; margin-bottom: 10px; }
+        .status-bar { font-size: 12px; color: #848e9c; margin-bottom: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -32,6 +32,15 @@
                 timeScale: { 
                     timeVisible: true, 
                     secondsVisible: false,
+                    borderColor: '#2B2B43',
+                },
+                rightPriceScale: {
+                    borderColor: '#2B2B43',
+                    autoScale: true,
+                },
+                localization: {
+                    // Added padding to price for Y-axis label clarity
+                    priceFormatter: price => price.toFixed(2).padEnd(10, ' '),
                 },
             });
 
@@ -61,12 +70,13 @@
                             // Set historical data
                             candleSeries.setData(data.candles);
                             
+                            // v4.2.3 uses setMarkers
                             if (data.markers) {
-                                candleSeries.createMarkers(data.markers);
+                                candleSeries.setMarkers(data.markers);
                             }
 
-                            // UPDATE: Apply the live OHLC packet from the scraper
                             if (data.live && data.live.time) {
+                                // Update the actual candle
                                 candleSeries.update({
                                     time: data.live.time,
                                     open: data.live.open,
@@ -75,14 +85,19 @@
                                     close: data.live.close
                                 });
 
-                                // Update the Price Line on the right axis
+                                // Countdown Logic
+                                const now = new Date();
+                                const secondsLeft = 60 - now.getSeconds();
+                                const countdownStr = `00:${secondsLeft.toString().padStart(2, '0')}`;
+
+                                // Update the Price Line and Y-axis label with countdown
                                 livePriceLine.applyOptions({
                                     price: data.live.close,
                                     color: data.live.close >= data.live.open ? '#26a69a' : '#ef5350',
-                                    title: `US30: ${data.live.close.toFixed(2)}`
+                                    title: `US30 ${data.live.close.toFixed(2)} | ${countdownStr}`
                                 });
                                 
-                                document.getElementById('status').innerText = `Live Feed Active - Last Tick: ${data.live.close}`;
+                                document.getElementById('status').innerText = `Live Feed Active - Price: ${data.live.close} | Next Candle: ${secondsLeft}s`;
                             }
 
                             if(!isInitial) { 
@@ -91,11 +106,13 @@
                             }
                         }
                     })
-                    .catch(err => console.error("Data fetch error:", err));
+                    .catch(err => {
+                        console.error("Data fetch error:", err);
+                        document.getElementById('status').innerText = "Connection Error. Retrying...";
+                    });
             }
 
-            // Polling every 1 second ensures the "Live" object in Flask 
-            // (which is updated by the scraper) is pushed to the chart immediately.
+            // Polling every 1 second for live updates
             setInterval(loadData, 1000);
 
             window.onresize = () => {
