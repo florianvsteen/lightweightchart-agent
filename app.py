@@ -1,60 +1,79 @@
 from flask import Flask, render_template, jsonify
 import yfinance as yf
-import pandas as pd  # Change this line
-import pandas_ta_classic as ta  # Change this line
+import pandas as pd
+import pandas_ta_classic as ta
+import threading
+import time
+from tradingview_scraper.symbols.stream import RealTimeData
 
 app = Flask(__name__)
+
+# Global variable to hold the real-time scraper data
+live_tick = {"price": None, "time": None}
+
+def start_tv_scraper():
+    """Background thread to fetch real-time Dow prices from Capital.com"""
+    global live_tick
+    while True:
+        try:
+            scraper = RealTimeData()
+            # CAPITALCOM:US30 provides real-time Dow Jones CFD data
+            data_generator = scraper.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
+            
+            for packet in data_generator:
+                live_tick = {
+                    "price": float(packet.get('price')),
+                    "time": int(time.time()) 
+                }
+        except Exception as e:
+            print(f"Scraper Error: {e}. Restarting...")
+            time.sleep(5)
+
+# Launch the scraper thread
+threading.Thread(target=start_tv_scraper, daemon=True).start()
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# The <symbol> in the route must match the variable name in the function
 @app.route('/api/data/<symbol>')
 def get_data(symbol):
     try:
-        # Map 'DOW' or other names to the actual Yahoo ticker
         ticker = "YM=F" if symbol.upper() == "DOW" else symbol
-        
-        # Fetch 1-minute data for 1 day
         df = yf.download(ticker, period="1d", interval="1m")
         
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
         df = df.dropna()
-
         if df.empty:
             return jsonify({"error": "No data found"}), 404
 
-        # Logic: Accumulation/Distribution
         df['ad'] = ta.ad(df['High'], df['Low'], df['Close'], df['Volume'])
         df['is_accumulating'] = (df['ad'] > df['ad'].shift(20)) & \
                                  (df['Close'].rolling(20).std() / df['Close'] < 0.001)
 
         chart_data = []
         markers = []
-        
         for index, row in df.iterrows():
             time_val = int(index.timestamp())
             chart_data.append({
-                "time": time_val,
-                "open": float(row['Open']), 
-                "high": float(row['High']), 
-                "low": float(row['Low']), 
+                "time": time_val, "open": float(row['Open']), 
+                "high": float(row['High']), "low": float(row['Low']), 
                 "close": float(row['Close'])
             })
-            
             if row['is_accumulating']:
                 markers.append({
-                    "time": time_val,
-                    "position": "belowBar",
-                    "color": "#2196F3",
-                    "shape": "arrowUp",
-                    "text": "ACC"
+                    "time": time_val, "position": "belowBar", 
+                    "color": "#2196F3", "shape": "arrowUp", "text": "ACC"
                 })
 
-        return jsonify({"candles": chart_data, "markers": markers})
+        # We return the live tick alongside the historical candles
+        return jsonify({
+            "candles": chart_data, 
+            "markers": markers,
+            "live": live_tick
+        })
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
