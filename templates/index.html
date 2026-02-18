@@ -1,32 +1,49 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>OpenClaw Charts Skill</title>
+    <title>OpenClaw Dow 1m Chart</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background: #131722; margin: 0; padding: 20px; color: #d1d4dc; font-family: sans-serif; }
+        #chart { width: 100%; height: 85vh; border: 1px solid #2B2B43; }
+    </style>
 </head>
-<body style="background: #131722; color: white; font-family: sans-serif;">
-    <div id="chart" style="width: 100%; height: 80vh;"></div>
+<body>
+    <h2>YM=F 1-Minute Accumulation Skill</h2>
+    <div id="chart"></div>
+
     <script>
         const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-            width: window.innerWidth,
-            height: window.innerHeight * 0.8,
             layout: { backgroundColor: '#131722', textColor: '#d1d4dc' },
             grid: { vertLines: { color: '#2B2B43' }, horzLines: { color: '#2B2B43' } },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+            },
         });
 
-        const candleSeries = chart.addCandlestickSeries();
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a', downColor: '#ef5350', 
+            borderVisible: false, wickVisible: true 
+        });
 
-        // Fetch data from our Python API
-        fetch('/api/data/DJ-DJI')
-            .then(res => res.json())
-            .then(data => {
-                candleSeries.setData(data.candles);
-                candleSeries.setMarkers(data.markers);
-            });
+        function loadData() {
+            fetch('/api/data')
+                .then(res => res.json())
+                .then(data => {
+                    if(data.candles && data.candles.length > 0) {
+                        candleSeries.setData(data.candles);
+                        candleSeries.setMarkers(data.markers);
+                    }
+                })
+                .catch(err => console.error("Data Fetch Error:", err));
+        }
 
-        window.onresize = () => {
-            chart.applyOptions({ width: window.innerWidth });
-        };
+        loadData();
+        // Optional: Refresh data every 60 seconds
+        setInterval(loadData, 60000);
+
+        window.onresize = () => chart.resize(window.innerWidth - 40, window.innerHeight * 0.85);
     </script>
 </body>
 </html>
