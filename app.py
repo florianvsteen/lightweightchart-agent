@@ -31,25 +31,31 @@ def start_tv_scraper():
     global live_tick
     while True:
         try:
-            # Get the raw ID from Portainer env
-            raw_session_id = os.environ.get('TRADINGVIEW_COOKIE', '')
+            # 1. Clean and Verify the ID
+            raw_id = os.environ.get('TRADINGVIEW_COOKIE', '').replace('sessionid=', '').replace(';', '').strip()
             
-            # Format it correctly for the TV Header
-            if raw_session_id and not raw_session_id.startswith("sessionid="):
-                formatted_cookie = f"sessionid={raw_session_id};"
-                os.environ['TRADINGVIEW_COOKIE'] = formatted_cookie
-            
-            print(f">>> TV Scraper: Using Session ID: {os.environ['TRADINGVIEW_COOKIE'][:15]}...")
+            if not raw_id:
+                print("!!! CRITICAL: No TRADINGVIEW_COOKIE found in Portainer env")
+                time.sleep(10)
+                continue
 
-            real_time_data = RealTimeData()
-            # Try TVC:US30 as it's the most common "Free" Real-Time Index on TV
-            data_generator = real_time_data.get_ohlcv(exchange_symbol="TVC:US30")
+            # 2. Force the exact format the library expects in the OS environment
+            os.environ['TRADINGVIEW_COOKIE'] = f"sessionid={raw_id}"
             
-            print(">>> TV Scraper: Handshake Sent...")
+            print(f">>> TV Scraper: Attempting Auth with ID: {raw_id[:8]}...")
+
+            # 3. Initialize AFTER setting the env
+            real_time_data = RealTimeData()
+            
+            # Use CAPITALCOM as they are more permissive with WebSockets than TVC
+            data_generator = real_time_data.get_ohlcv(exchange_symbol="CAPITALCOM:US30")
+            
+            print(">>> TV Scraper: WebSocket Handshake Sent...")
 
             for packet in data_generator:
-                # If packets start flowing, you'll see them here
-                if packet.get('close') is not None:
+                # If we get any packet at all, print it to debug
+                if packet:
+                    # Logic to update live_tick...
                     current_minute = int(time.time() // 60) * 60
                     live_tick = {
                         "time": current_minute,
@@ -58,12 +64,12 @@ def start_tv_scraper():
                         "low": float(packet['low']),
                         "close": float(packet['close'])
                     }
-                    print(f"LIVE TICK RECEIVED: {live_tick['close']}")
+                    print(f"SUCCESS: Price Moved -> {live_tick['close']}")
                         
         except Exception as e:
-            print(f"Scraper Error: {e}. Retrying in 5s...")
+            print(f"Scraper Error: {e}")
             time.sleep(5)
-            
+
 
 # Start scraper in background
 threading.Thread(target=start_tv_scraper, daemon=True).start()
