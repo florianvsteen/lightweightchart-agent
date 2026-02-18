@@ -42,8 +42,8 @@ def start_tv_streamer():
 
             # Request 1m candles for US30 from CAPITALCOM
             data_generator = streamer.stream(
-                exchange="FXCM", 
-                symbol="US30",
+                exchange="OANDA", 
+                symbol="US30USD",
                 timeframe="1m"
             )
             
