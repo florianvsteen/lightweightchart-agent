@@ -21,14 +21,23 @@ def start_tv_scraper():
             data_generator = scraper.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
             for packet in data_generator:
-                live_tick = {
-                    "price": float(packet.get('price')),
-                    "time": int(time.time()) 
-                }
+                # FIX: Check if 'price' exists and is not None before converting
+                raw_price = packet.get('price')
+                
+                if raw_price is not None:
+                    live_tick = {
+                        "price": float(raw_price),
+                        "time": int(time.time()) 
+                    }
+                else:
+                    # Ignore packets that don't have price data (metadata packets)
+                    continue
+                    
         except Exception as e:
-            print(f"Scraper Error: {e}. Restarting...")
+            # This catches connection drops or TradingView session resets
+            print(f"Scraper Syncing: {e}. Reconnecting...")
             time.sleep(5)
-
+            
 # Launch the scraper thread
 threading.Thread(target=start_tv_scraper, daemon=True).start()
 
