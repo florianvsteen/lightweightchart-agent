@@ -5,17 +5,20 @@ import pandas_ta_classic as ta
 import threading
 import time
 import os
+import logging
 from tradingview_scraper.symbols.stream import RealTimeData
 
-import logging
-
-# 1. Disable all logging for yfinance
+# --- SILENCE ALL LOGGING NOISE ---
+# This stops the yfinance download bar and debug messages
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+# This stops the 'SELECT "t1"."key"...' SQL messages from the peewee database
+logging.getLogger('peewee').setLevel(logging.CRITICAL)
+# This stops the Flask "GET /api/data" messages
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
-# Updated global variable to hold full OHLC data
-# This allows the frontend to "morph" the candle as price moves
+# Global variable to hold full OHLC data
 live_tick = {
     "time": None,
     "open": None,
@@ -28,28 +31,28 @@ def start_tv_scraper():
     global live_tick
     while True:
         try:
-            # Portainer env TRADINGVIEW_COOKIE is used automatically
+            # Note: This expects TRADINGVIEW_COOKIE in your environment vars
             real_time_data = RealTimeData()
-            
-            # Using get_ohlcv to get the full candle components
             data_generator = real_time_data.get_ohlcv(exchange_symbol="CAPITALCOM:US30")
             
-            print("Successfully connected to TradingView Stream...")
+            print(">>> TV Scraper: Connected to Stream")
 
             for packet in data_generator:
-                # packet structure: {'time': ..., 'open': ..., 'high': ..., 'low': ..., 'close': ..., 'volume': ...}
                 if packet.get('close') is not None:
                     try:
-                        # Update the global object with full OHLC values
+                        # LOGIC: We align the live tick with the CURRENT minute.
+                        # This ensures it shows up on the chart even if history is delayed.
+                        current_minute = int(time.time() // 60) * 60
+                        
                         live_tick = {
-                            "time": int(packet.get('time', time.time())),
+                            "time": current_minute,
                             "open": float(packet['open']),
                             "high": float(packet['high']),
                             "low": float(packet['low']),
                             "close": float(packet['close'])
                         }
-                        # Portainer log for verification
-                        print(f"LIVE OHLC: O:{live_tick['open']} C:{live_tick['close']}")
+                        # Print once in a while to Portainer so you know it's alive
+                        print(f"LIVE TICK RECEIVED: {live_tick['close']}")
                     except (ValueError, TypeError, KeyError):
                         continue 
                         
@@ -68,8 +71,9 @@ def index():
 def get_data(symbol):
     try:
         ticker = "YM=F" if symbol.upper() == "DOW" else symbol
-        # Fetching 1d history to fill the chart
-        df = yf.download(ticker, period="1d", interval="1m")
+        
+        # Download history (progress=False hides the progress bar)
+        df = yf.download(ticker, period="1d", interval="1m", progress=False)
         
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -78,7 +82,7 @@ def get_data(symbol):
         if df.empty:
             return jsonify({"error": "No data found"}), 404
 
-        # Technical Indicators
+        # Technical Indicators (Accumulation/Distribution)
         df['ad'] = ta.ad(df['High'], df['Low'], df['Close'], df['Volume'])
         df['is_accumulating'] = (df['ad'] > df['ad'].shift(20)) & \
                                  (df['Close'].rolling(20).std() / df['Close'] < 0.001)
@@ -103,12 +107,12 @@ def get_data(symbol):
         return jsonify({
             "candles": chart_data, 
             "markers": markers,
-            "live": live_tick  # Now contains full OHLC
+            "live": live_tick
         })
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # host='0.0.0.0' is required for Portainer/Docker access
+    # debug=False is CRITICAL. If True, it resets logging and kills your filters.
     app.run(debug=False, host='0.0.0.0', port=5000)
