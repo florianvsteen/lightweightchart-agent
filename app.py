@@ -4,6 +4,7 @@ import pandas as pd
 import pandas_ta_classic as ta
 import threading
 import time
+import os
 from tradingview_scraper.symbols.stream import RealTimeData
 
 app = Flask(__name__)
@@ -14,19 +15,18 @@ live_tick = {"price": None, "time": None}
 def start_tv_scraper():
     global live_tick
     
-    # PASTE YOUR SESSION ID HERE
-    # Found in Chrome -> F12 -> Application -> Cookies -> sessionid
-    TV_SESSION_ID = "ayzvl8ectj41gsxjpvfhdl2ahfnbmojn"
+    # 1. Set the environment variable BEFORE initializing the class
+    # Paste your FULL sessionid string here (or the entire cookie string)
+    os.environ['TRADINGVIEW_COOKIE'] = "your_sessionid_here"
 
     while True:
         try:
-            # Pass the session_id to authenticate the WebSocket
-            real_time_data = RealTimeData(session_id=TV_SESSION_ID)
+            # 2. Initialize WITHOUT the session_id argument
+            real_time_data = RealTimeData()
             
             data_generator = real_time_data.get_latest_trade_info(exchange_symbol=["CAPITALCOM:US30"])
             
             for packet in data_generator:
-                # 'lp' stands for Last Price in TradingView's protocol
                 price = packet.get('price') or packet.get('lp')
                 
                 if price is not None:
@@ -35,15 +35,14 @@ def start_tv_scraper():
                             "price": float(price),
                             "time": int(time.time())
                         }
-                        # The print below will now show real-time data instead of delayed data
                         print(f"DEBUG: Live Tick Received -> {live_tick['price']}")
                     except ValueError:
                         continue 
                         
         except Exception as e:
-            # If your session ID expires or the internet blips, it restarts here
             print(f"Scraper Error: {e}. Reconnecting in 5s...")
             time.sleep(5)
+
 
 # Launch the scraper thread
 threading.Thread(target=start_tv_scraper, daemon=True).start()
