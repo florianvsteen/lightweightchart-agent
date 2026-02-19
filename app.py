@@ -11,35 +11,42 @@ app = Flask(__name__)
 live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
 
 def detect_accumulation(df, lookback=30, threshold_pct=0.0018):
-    if len(df) < lookback:
+    if len(df) < lookback + 10:
         return None
-    
-    recent = df.tail(lookback)
-    
-    # 1. Range Calculation (Tightness)
-    high_max = recent['High'].max()
-    low_min = recent['Low'].min()
-    current_price = recent['Close'].iloc[-1]
-    actual_range_pct = (high_max - low_min) / current_price
 
-    # 2. Trend Filter (The "Anti-Yellow" Logic)
-    # Check the difference between the start and end of the box
-    start_price = recent['Close'].iloc[0]
-    end_price = recent['Close'].iloc[-1]
-    price_change_pct = abs(start_price - end_price) / start_price
+    # 1. Find a potential base (starting from some point in the past)
+    # We look back slightly to find where the "sideways" action started
+    for i in range(len(df) - lookback, 0, -1):
+        window = df.iloc[i : i + lookback]
+        high_max = window['High'].max()
+        low_min = window['Low'].min()
+        avg_price = window['Close'].mean()
+        
+        # Check if this window was tight and not trending
+        start_p = window['Close'].iloc[0]
+        end_p = window['Close'].iloc[-1]
+        if ((high_max - low_min) / avg_price) <= threshold_pct and (abs(start_p - end_p)/start_p < threshold_pct * 0.5):
+            
+            # 2. We found a base! Now, look at everything AFTER this window
+            # to see if/where it broke out.
+            breakout_index = i + lookback
+            for j in range(i + lookback, len(df)):
+                current_close = df['Close'].iloc[j]
+                if current_close > high_max or current_close < low_min:
+                    breakout_index = j
+                    break # The accumulation ended here
+                else:
+                    breakout_index = j # Still inside
 
-    # DEBUG logs to your terminal
-    print(f"Range: {actual_range_pct:.5f} | Change: {price_change_pct:.5f}")
-
-    # To be red (accumulation), it must be TIGHT and NOT TRENDING
-    # If price_change_pct is high, it's a vertical move (Yellow)
-    if actual_range_pct <= threshold_pct and price_change_pct < (threshold_pct * 0.5):
-        return {
-            "start": int(recent.index[0].timestamp()),
-            "end": int(recent.index[-1].timestamp()),
-            "top": float(high_max),
-            "bottom": float(low_min)
-        }
+            # Only return the box if the breakout happened recently 
+            # or if we are still inside it.
+            return {
+                "start": int(df.index[i].timestamp()),
+                "end": int(df.index[breakout_index].timestamp()),
+                "top": float(high_max),
+                "bottom": float(low_min),
+                "is_active": breakout_index == len(df) - 1
+            }
     return None
 
 @app.route('/')
