@@ -6,10 +6,10 @@ Detects SIDEWAYS accumulation based purely on DIRECTIONLESSNESS.
 Rules:
   - Only scans the most recent 60 candles (hard cap)
   - Window size is also capped at 60
-  - Range size does NOT matter — only direction behaviour
+  - Range size does NOT matter for choppiness/slope checks
+  - max_range_pct rejects boxes that are too wide (per instrument setting)
   - SLOPE must be near flat (linear regression)
   - CHOPPINESS must be high (price reverses up/down frequently)
-  - No range, drift, or std dev checks
 """
 
 import numpy as np
@@ -35,15 +35,21 @@ def _choppiness(closes: np.ndarray) -> float:
     return sign_changes / (len(diffs) - 1)
 
 
-def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
+def detect(
+    df,
+    lookback: int = 40,
+    threshold_pct: float = 0.003,
+    max_range_pct: float = None,
+) -> dict | None:
     """
     Args:
         lookback:      Window size in candles. Hard capped at 60.
         threshold_pct: Used only to scale slope_limit per instrument.
-                       Does NOT filter on price range size.
+        max_range_pct: Maximum allowed box height as fraction of avg price.
+                       e.g. 0.002 = 0.2%.  None = no cap.
+                       Box is rejected if (high - low) / avg_price > max_range_pct.
     """
     try:
-        # Hard cap — never use more than 60 candles
         lookback = min(lookback, 60)
 
         if len(df) < lookback + 5:
@@ -58,19 +64,12 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        # Slope limit scales with instrument speed
-        slope_limit = (threshold_pct * 0.15) / lookback
-
+        slope_limit    = (threshold_pct * 0.15) / lookback
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        last_close = float(df['Close'].iloc[-1])
-
-        # HARD CAP: only scan windows that START within the last 60 candles
-        # scan_start ensures the window start index is at most 60 candles ago
-        # Window START must be within the last 60 candles from end of data
-        scan_start = max(1, len(df) - 60)
-
+        last_close  = float(df['Close'].iloc[-1])
+        scan_start  = max(1, len(df) - 60)
         best_potential = None
 
         for i in range(len(df) - lookback - 1, scan_start, -1):
@@ -87,6 +86,14 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             if avg_p == 0:
                 continue
 
+            h_max = float(highs.max())
+            l_min = float(lows.min())
+
+            # Reject box if it's wider than the allowed max range
+            if max_range_pct is not None:
+                if (h_max - l_min) / avg_p > max_range_pct:
+                    continue
+
             # Check 1: flat slope — rejects any directional trend
             slope = _slope_pct(closes, avg_p)
             if slope >= slope_limit:
@@ -95,8 +102,6 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             # Check 2: high choppiness — price must reverse direction often
             chop = _choppiness(closes)
 
-            h_max     = float(highs.max())
-            l_min     = float(lows.min())
             end_i     = i + lookback - 1
             is_active = (last_close >= l_min) and (last_close <= h_max)
 
