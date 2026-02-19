@@ -12,12 +12,14 @@ live_tick = {"time": None, "open": None, "high": None, "low": None, "close": Non
 
 import numpy as np
 
-def detect_accumulation(df, lookback=25, threshold_pct=0.0015):
+import numpy as np
+
+def detect_accumulation(df, lookback=25, threshold_pct=0.001): # Tighter 0.1% threshold
     try:
         if len(df) < lookback + 5:
             return None
 
-        # Scan backwards from the end of the data
+        # Scan backwards
         for i in range(len(df) - lookback - 1, 0, -1):
             window = df.iloc[i : i + lookback]
             
@@ -25,29 +27,28 @@ def detect_accumulation(df, lookback=25, threshold_pct=0.0015):
             l_min = float(window['Low'].min())
             avg_p = float(window['Close'].mean())
             
-            # 1. TIGHTNESS: Is the vertical range small?
+            # 1. RANGE: Is the vertical channel tight?
             range_pct = (h_max - l_min) / avg_p
             
-            # 2. SIDEWAYS ENFORCEMENT: 
-            # Check the standard deviation. Low SD means price is hugging the mean.
+            # 2. STABILITY: Price must stay close to the middle (low variance)
             std_dev = window['Close'].std()
             stability_score = std_dev / avg_p
 
-            # 3. DIRECTIONAL FILTER:
-            # Start and end prices must be very close to each other.
+            # 3. DRIFT: Start and end prices must be nearly identical (sideways)
             start_p = window['Close'].iloc[0]
             end_p = window['Close'].iloc[-1]
             drift = abs(start_p - end_p) / start_p
 
-            if range_pct <= threshold_pct and stability_score < (threshold_pct * 0.3) and drift < (threshold_pct * 0.4):
+            # TIGHTENED LOGIC: Lower multipliers for stricter sideways requirements
+            if range_pct <= threshold_pct and stability_score < (threshold_pct * 0.25) and drift < (threshold_pct * 0.3):
                 
-                # BASE FOUND. Now find where it breaks out.
+                # BASE FOUND. Extend the box until the first breakout candle.
                 breakout_idx = i + lookback
                 for j in range(i + lookback, len(df)):
                     breakout_idx = j
                     current_c = df['Close'].iloc[j]
                     
-                    # Break the box if price closes outside the original H/L range
+                    # Breakout occurs if current candle closes outside the H/L of the base
                     if current_c > h_max or current_c < l_min:
                         break 
                 
