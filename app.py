@@ -152,5 +152,19 @@ def get_dow_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/test-screenshot')
+def test_screenshot():
+    # Create a fake accumulation zone for testing
+    test_zone = {
+        "start": int(time.time()) - 3600,
+        "end": int(time.time()),
+        "top": 39000.00,
+        "bottom": 38950.00,
+        "is_active": True
+    }
+    # Force the background task to run
+    threading.Thread(target=capture_and_send_discord, args=(test_zone,), daemon=True).start()
+    return "Test triggered! Check your terminal and Discord."
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
