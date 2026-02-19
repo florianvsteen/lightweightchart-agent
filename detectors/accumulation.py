@@ -27,17 +27,35 @@ def _scalar(val) -> float:
     return float(val)
 
 
+def _build_zone(df, i: int, h_max: float, l_min: float, status: str) -> dict:
+    """Build a zone dict for a given window start index."""
+    breakout_idx = i
+    for j in range(i, len(df)):
+        breakout_idx = j
+        current_c = _scalar(df['Close'].iloc[j])
+        if current_c > h_max or current_c < l_min:
+            break
+    return {
+        "detector": "accumulation",
+        "status": status,           # "found" | "potential"
+        "start": int(df.index[i].timestamp()),
+        "end": int(df.index[breakout_idx].timestamp()),
+        "top": h_max,
+        "bottom": l_min,
+        "is_active": breakout_idx == (len(df) - 1),
+    }
+
+
 def detect(df, lookback: int = 40, threshold_pct: float = 0.001) -> dict | None:
     """
-    Scan historical candles backwards and find the most recent accumulation zone.
+    Scan historical candles backwards for sideways accumulation zones.
 
-    Args:
-        df:            OHLCV DataFrame (indexed by datetime, columns: Open High Low Close Volume)
-        lookback:      Number of candles to evaluate per window
-        threshold_pct: Maximum allowed price range as a fraction of avg price
+    Returns a dict with a `status` field:
+      "found"     — strict sideways consolidation (low range, low std, low drift)
+      "potential" — range and stability pass but drift is slightly elevated
+      None        — nothing found → caller should treat as "looking"
 
-    Returns:
-        Zone dict or None if no zone found.
+    Only truly sideways zones qualify. Trending windows are skipped entirely.
     """
     try:
         if len(df) < lookback + 5:
@@ -48,43 +66,47 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.001) -> dict | None:
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
 
+        best_potential = None
+
         for i in range(len(df) - lookback - 1, 0, -1):
             window = df.iloc[i: i + lookback]
 
-            h_max      = _scalar(window['High'].max())
-            l_min      = _scalar(window['Low'].min())
-            avg_p      = _scalar(window['Close'].mean())
-            std_dev    = _scalar(window['Close'].std())
-            start_p    = _scalar(window['Close'].iloc[0])
-            end_p      = _scalar(window['Close'].iloc[-1])
+            h_max   = _scalar(window['High'].max())
+            l_min   = _scalar(window['Low'].min())
+            avg_p   = _scalar(window['Close'].mean())
+            std_dev = _scalar(window['Close'].std())
+            start_p = _scalar(window['Close'].iloc[0])
+            end_p   = _scalar(window['Close'].iloc[-1])
 
             range_pct       = (h_max - l_min) / avg_p
             stability_score = std_dev / avg_p
             drift           = abs(start_p - end_p) / start_p
 
+            sideways_range   = range_pct       <= threshold_pct
+            sideways_stable  = stability_score  < (threshold_pct * 0.25)
+            sideways_nodrift = drift            < (threshold_pct * 0.3)
+
+            # Strict accumulation — all three sideways conditions met
+            if sideways_range and sideways_stable and sideways_nodrift:
+                zone = _build_zone(df, i + lookback, h_max, l_min, "found")
+                # Override start to the actual window start
+                zone["start"] = int(df.index[i].timestamp())
+                return zone
+
+            # Potential — range and stability are sideways but drift is slightly elevated
+            # (price is still coiling but hasn't fully settled)
             if (
-                range_pct <= threshold_pct
-                and stability_score < (threshold_pct * 0.25)
-                and drift < (threshold_pct * 0.3)
+                best_potential is None
+                and sideways_range
+                and sideways_stable
+                and drift < (threshold_pct * 0.6)   # relaxed drift threshold
             ):
-                # Find where price eventually breaks out of the zone
-                breakout_idx = i + lookback
-                for j in range(i + lookback, len(df)):
-                    breakout_idx = j
-                    current_c = _scalar(df['Close'].iloc[j])
-                    if current_c > h_max or current_c < l_min:
-                        break
+                zone = _build_zone(df, i + lookback, h_max, l_min, "potential")
+                zone["start"] = int(df.index[i].timestamp())
+                best_potential = zone
 
-                return {
-                    "detector": "accumulation",
-                    "start": int(df.index[i].timestamp()),
-                    "end": int(df.index[breakout_idx].timestamp()),
-                    "top": h_max,
-                    "bottom": l_min,
-                    "is_active": breakout_idx == (len(df) - 1),
-                }
-
-        return None
+        # Return best potential if no confirmed zone found
+        return best_potential
 
     except Exception as e:
         print(f"[accumulation] Detection error: {e}")
