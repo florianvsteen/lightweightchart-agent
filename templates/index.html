@@ -1,18 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>US30 - 1 Minute Real-Time Chart</title>
+    <title>US30 Accumulation Agent</title>
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { background: #131722; margin: 0; padding: 20px; color: #d1d4dc; font-family: sans-serif; overflow: hidden; }
-        #chart-container { position: relative; width: 100%; height: 90vh; }
+        #chart-container { position: relative; width: 100%; height: 85vh; border: 1px solid #2B2B43; border-radius: 8px; }
         #chart { width: 100%; height: 100%; }
-        h2 { margin-top: 0; color: #d1d4dc; font-weight: 400; }
-        .status-bar { font-size: 12px; color: #848e9c; margin-bottom: 10px; font-family: monospace; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        h2 { margin: 0; color: #d1d4dc; font-weight: 500; }
+        .status-bar { font-size: 13px; color: #848e9c; font-family: monospace; }
     </style>
 </head>
 <body>
-    <h2>Dow Jones Industrial Average (US30)</h2>
+    <div class="header">
+        <h2>US30 Minute Analysis</h2>
+        <div id="status" class="status-bar">Connecting to backend...</div>
+    </div>
     <div id="chart-container">
         <div id="chart"></div>
     </div>
@@ -20,43 +24,28 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-                layout: { 
-                    background: { type: 'solid', color: '#131722' }, 
-                    textColor: '#d1d4dc',
-                },
-                grid: { 
-                    vertLines: { color: '#2B2B43' }, 
-                    horzLines: { color: '#2B2B43' } 
-                },
-                timeScale: { 
-                    timeVisible: true, 
-                    secondsVisible: false,
-                    borderColor: '#2B2B43',
-                },
-                rightPriceScale: {
-                    borderColor: '#2B2B43',
-                    autoScale: true,
-                },
-                localization: {
-                    // Added padding to price for Y-axis label clarity
-                    priceFormatter: price => price.toFixed(2).padEnd(10, ' '),
-                },
+                layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
+                grid: { vertLines: { color: '#1f222d' }, horzLines: { color: '#1f222d' } },
+                timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#2B2B43' },
+                rightPriceScale: { borderColor: '#2B2B43' },
             });
 
-             const candleSeries = chart.addCandlestickSeries({
-                upColor: '#26a69a', 
-                downColor: '#ef5350', 
-                borderVisible: false, 
-                wickVisible: true 
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a', downColor: '#ef5350', 
+                borderVisible: false, wickVisible: true 
+            });
+
+            // This series creates the accumulation "box" background
+            const boxSeries = chart.addHistogramSeries({
+                color: 'rgba(33, 150, 243, 0.15)',
+                priceFormat: { type: 'price' },
+                priceScaleId: 'right',
             });
 
             const livePriceLine = candleSeries.createPriceLine({
-                price: 0,
-                color: '#26a69a',
-                lineWidth: 1,
+                price: 0, color: '#26a69a', lineWidth: 1,
                 lineStyle: LightweightCharts.LineStyle.Dotted,
-                axisLabelVisible: true,
-                title: 'LIVE',
+                axisLabelVisible: true, title: 'LIVE',
             });
 
             let isInitial = false;
@@ -66,37 +55,33 @@
                     .then(res => res.json())
                     .then(data => {
                         if(data.candles && data.candles.length > 0) {
-                            // Set historical data
                             candleSeries.setData(data.candles);
-                            
-                            // v4.2.3 uses setMarkers
-                            if (data.markers) {
-                                candleSeries.setMarkers(data.markers);
+
+                            // Handle Accumulation Box Drawing
+                            if (data.accumulation) {
+                                const zone = data.accumulation;
+                                const boxData = [];
+                                // Fill the box with histogram bars for every candle in range
+                                data.candles.forEach(c => {
+                                    if (c.time >= zone.start && c.time <= zone.end) {
+                                        boxData.push({ 
+                                            time: c.time, 
+                                            value: zone.top, // Box height
+                                        });
+                                    }
+                                });
+                                boxSeries.setData(boxData);
+                                document.getElementById('status').innerText = `ACCUMULATION DETECTED: Range $${(zone.top - zone.bottom).toFixed(2)}`;
+                            } else {
+                                boxSeries.setData([]); // Clear if no accumulation
                             }
 
                             if (data.live && data.live.time) {
-                                // Update the actual candle
-                                candleSeries.update({
-                                    time: data.live.time,
-                                    open: data.live.open,
-                                    high: data.live.high,
-                                    low: data.live.low,
-                                    close: data.live.close
-                                });
-
-                                // Countdown Logic
-                                const now = new Date();
-                                const secondsLeft = 60 - now.getSeconds();
-                                const countdownStr = `00:${secondsLeft.toString().padStart(2, '0')}`;
-
-                                // Update the Price Line and Y-axis label with countdown
+                                candleSeries.update(data.live);
                                 livePriceLine.applyOptions({
                                     price: data.live.close,
-                                    color: data.live.close >= data.live.open ? '#26a69a' : '#ef5350',
-                                    title: `US30 ${data.live.close.toFixed(2)} | ${countdownStr}`
+                                    title: `US30: ${data.live.close.toFixed(2)}`
                                 });
-                                
-                                document.getElementById('status').innerText = `Live Feed Active - Price: ${data.live.close} | Next Candle: ${secondsLeft}s`;
                             }
 
                             if(!isInitial) { 
@@ -105,13 +90,9 @@
                             }
                         }
                     })
-                    .catch(err => {
-                        console.error("Data fetch error:", err);
-                        document.getElementById('status').innerText = "Connection Error. Retrying...";
-                    });
+                    .catch(err => console.error("Fetch error:", err));
             }
 
-            // Polling every 1 second for live updates
             setInterval(loadData, 1000);
 
             window.onresize = () => {
