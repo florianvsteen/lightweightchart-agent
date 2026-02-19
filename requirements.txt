@@ -4,3 +4,4 @@ pandas
 pandas_ta_classic
 databento
 discord-webhook
+playwright
