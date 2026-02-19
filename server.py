@@ -50,9 +50,9 @@ class PairServer:
         # key = detector name, value = zone dict when it was last seen active
         self.last_active_zone: dict[str, dict] = {}
 
-        # Use absolute path so Flask resolves templates relative to the
-        # project root (cwd), not relative to server.py's location.
-        root = os.path.abspath(os.getcwd())
+        # Resolve paths relative to server.py's own location, not cwd.
+        # This ensures templates are found regardless of where PM2 launches from.
+        root = os.path.dirname(os.path.abspath(__file__))
         self.app = Flask(
             __name__,
             template_folder=os.path.join(root, "templates"),
