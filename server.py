@@ -10,7 +10,7 @@ import time
 import threading
 import pandas as pd
 import yfinance as yf
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 
 from detectors import run_detectors
 
@@ -27,6 +27,16 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
+
+# Maps interval string to a yfinance period wide enough to get useful data
+PERIOD_MAP = {
+    "1m":  "1d",
+    "2m":  "1d",
+    "5m":  "5d",
+    "15m": "5d",
+    "30m": "5d",
+    "1h":  "30d",
+}
 
 
 class PairServer:
@@ -46,9 +56,12 @@ class PairServer:
 
         # Per-pair alert dedup tracking (keyed by detector name)
         self.last_alerted: dict[str, int] = {}
-        # Tracks zones we've seen while active, so we can fire on breakout
-        # key = detector name, value = zone dict when it was last seen active
+        # Tracks zones seen while active so we can fire alert on breakout
         self.last_active_zone: dict[str, dict] = {}
+
+        # Cache fetched DataFrames per interval so detectors sharing a timeframe
+        # don't trigger duplicate downloads in the same request cycle
+        self._df_cache: dict[str, pd.DataFrame] = {}
 
         # Resolve paths relative to server.py's own location, not cwd.
         # This ensures templates are found regardless of where PM2 launches from.
@@ -96,21 +109,51 @@ class PairServer:
     # Data + Detection
     # ------------------------------------------------------------------ #
 
-    def _fetch_df(self):
+    def _fetch_df(self, interval: str) -> pd.DataFrame:
+        period = PERIOD_MAP.get(interval, self.period)
         df = yf.download(
             self.ticker,
-            period=self.period,
-            interval=self.interval,
+            period=period,
+            interval=interval,
             progress=False,
         )
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df.dropna()
 
+    def _get_df(self, interval: str) -> pd.DataFrame:
+        """Return cached DataFrame for this interval (one download per request cycle)."""
+        if interval not in self._df_cache:
+            self._df_cache[interval] = self._fetch_df(interval)
+        return self._df_cache[interval]
+
     def _api_data(self):
+        # Clear cache at the start of each request cycle
+        self._df_cache = {}
+
         try:
-            df = self._fetch_df()
-            detector_results = run_detectors(self.detector_names, df, self.detector_params)
+            # Chart interval can be switched by the user via ?interval= param
+            chart_interval = request.args.get("interval", self.interval)
+
+            # Run each detector on its own configured timeframe.
+            # The timeframe is stored in detector_params under "timeframe"
+            # and must be stripped before passing kwargs to detect().
+            detector_results = {}
+            for name in self.detector_names:
+                params = dict(self.detector_params.get(name, {}))
+                detector_interval = params.pop("timeframe", "1m")  # default 1m
+                df_for_detector = self._get_df(detector_interval)
+                from detectors import REGISTRY
+                fn = REGISTRY.get(name)
+                if fn is None:
+                    print(f"[WARN] Detector '{name}' not found in registry.")
+                    detector_results[name] = None
+                else:
+                    try:
+                        detector_results[name] = fn(df_for_detector, **params)
+                    except Exception as e:
+                        print(f"[ERROR] Detector '{name}' failed: {e}")
+                        detector_results[name] = None
 
             # Alert on BREAKOUT: fire once when a previously-active zone is broken
             for name, zone in detector_results.items():
@@ -121,7 +164,7 @@ class PairServer:
                     self.last_active_zone[name] = zone
 
                 elif prev is not None and (zone is None or not zone.get("is_active")):
-                    # We had an active zone last tick, now price has broken out
+                    # Had an active zone last tick, now price has broken out — alert
                     already_alerted = self.last_alerted.get(name, 0)
                     if prev["start"] > already_alerted:
                         self.last_alerted[name] = prev["start"]
@@ -132,6 +175,8 @@ class PairServer:
                             daemon=True,
                         ).start()
 
+            # Fetch chart candles at the chart interval (cached if same as a detector)
+            df_chart = self._get_df(chart_interval)
             candles = [
                 {
                     "time": int(idx.timestamp()),
@@ -140,7 +185,7 @@ class PairServer:
                     "low": float(r["Low"]),
                     "close": float(r["Close"]),
                 }
-                for idx, r in df.iterrows()
+                for idx, r in df_chart.iterrows()
             ]
 
             return jsonify(
@@ -187,7 +232,6 @@ class PairServer:
         print(f"[{self.pair_id}] Sending Discord alert for {detector_name} zone...")
 
         try:
-            # Screenshot via Playwright
             if PLAYWRIGHT_AVAILABLE:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
