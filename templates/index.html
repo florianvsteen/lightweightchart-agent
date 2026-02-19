@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ label }} — Chart Agent</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #131722;
+            color: #d1d4dc;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 16px;
+            gap: 12px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        header h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        #status-bar {
+            display: flex;
+            gap: 12px;
+            font-size: 0.78rem;
+            color: #888;
+        }
+        .detector-badge {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #1e2130;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            padding: 3px 8px;
+        }
+        .detector-badge .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #444;
+            transition: background 0.3s;
+        }
+        .detector-badge .dot.active { background: #26a69a; }
+        .detector-badge .dot.inactive { background: #888; }
+        #chart-container {
+            flex: 1;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #chart { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>{{ label }}</h1>
+        <div id="status-bar">
+            <!-- Detector badges injected here by JS -->
+        </div>
+    </header>
+
+    <div id="chart-container">
+        <div id="chart"></div>
+    </div>
+
+    <script>
+        const PAIR_ID = "{{ pair_id }}";
+
+        // ── Chart Setup ──────────────────────────────────────────────
+        const container = document.getElementById('chart');
+        const chart = LightweightCharts.createChart(container, {
+            layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { color: '#1f222d' }, horzLines: { color: '#1f222d' } },
+            timeScale: { timeVisible: true, borderColor: '#2B2B43' },
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickVisible: true,
+        });
+
+        // ── Detector Overlay Registry ─────────────────────────────────
+        // Each detector can register a renderer here.
+        // renderer(chart, detectorResult) → series (or null to skip)
+        const detectorRenderers = {
+            accumulation: renderAccumulation,
+        };
+
+        // Track series so we can clear/update them
+        const activeSeries = {};
+
+        function renderAccumulation(chart, zone) {
+            if (!zone) return null;
+
+            const series = chart.addBaselineSeries({
+                baseValue: { type: 'price', price: zone.bottom },
+                topFillColor1: 'rgba(38, 166, 154, 0.12)',
+                topFillColor2: 'rgba(38, 166, 154, 0.05)',
+                topLineColor: 'rgba(38, 166, 154, 0.7)',
+                bottomFillColor1: 'rgba(0,0,0,0)',
+                bottomFillColor2: 'rgba(0,0,0,0)',
+                bottomLineColor: 'rgba(38, 166, 154, 0.7)',
+                lineWidth: 1,
+            });
+
+            series.setData([
+                { time: zone.start, value: zone.top },
+                { time: zone.end,   value: zone.top },
+            ]);
+
+            return series;
+        }
+
+        // ── Status Bar ────────────────────────────────────────────────
+        const statusBar = document.getElementById('status-bar');
+        const badgeEls = {};
+
+        function ensureBadge(name) {
+            if (badgeEls[name]) return;
+            const badge = document.createElement('div');
+            badge.className = 'detector-badge';
+            badge.innerHTML = `<span class="dot" id="dot-${name}"></span><span>${name}</span>`;
+            statusBar.appendChild(badge);
+            badgeEls[name] = badge;
+        }
+
+        function setBadgeState(name, active) {
+            ensureBadge(name);
+            const dot = document.getElementById(`dot-${name}`);
+            if (dot) {
+                dot.className = 'dot ' + (active ? 'active' : 'inactive');
+            }
+        }
+
+        // ── Data Loop ─────────────────────────────────────────────────
+        function loadData() {
+            fetch('/api/data')
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.candles) return;
+
+                    candleSeries.setData(data.candles);
+
+                    // Remove all old detector series
+                    for (const [name, series] of Object.entries(activeSeries)) {
+                        if (series) chart.removeSeries(series);
+                        delete activeSeries[name];
+                    }
+
+                    // Render each detector result
+                    const detectors = data.detectors || {};
+                    for (const [name, result] of Object.entries(detectors)) {
+                        const renderer = detectorRenderers[name];
+                        if (renderer && result) {
+                            activeSeries[name] = renderer(chart, result);
+                            setBadgeState(name, result.is_active === true);
+                        } else {
+                            setBadgeState(name, false);
+                        }
+                    }
+                })
+                .catch(err => console.error('Fetch error:', err));
+        }
+
+        setInterval(loadData, 2000);
+        loadData();
+
+        // Resize chart with window
+        window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
+    </script>
+</body>
+</html>
