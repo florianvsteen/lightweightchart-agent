@@ -46,6 +46,9 @@ class PairServer:
 
         # Per-pair alert dedup tracking (keyed by detector name)
         self.last_alerted: dict[str, int] = {}
+        # Tracks zones we've seen while active, so we can fire on breakout
+        # key = detector name, value = zone dict when it was last seen active
+        self.last_active_zone: dict[str, dict] = {}
 
         # Use absolute path so Flask resolves templates relative to the
         # project root (cwd), not relative to server.py's location.
@@ -109,15 +112,23 @@ class PairServer:
             df = self._fetch_df()
             detector_results = run_detectors(self.detector_names, df, self.detector_params)
 
-            # Trigger Discord alerts for any newly active zones
+            # Alert on BREAKOUT: fire once when a previously-active zone is broken
             for name, zone in detector_results.items():
-                if zone and zone.get("is_active"):
-                    last = self.last_alerted.get(name, 0)
-                    if zone["start"] > last:
-                        self.last_alerted[name] = zone["start"]
+                prev = self.last_active_zone.get(name)
+
+                if zone and zone.get("is_active") and zone.get("status") == "found":
+                    # Zone is active and confirmed — remember it, don't alert yet
+                    self.last_active_zone[name] = zone
+
+                elif prev is not None and (zone is None or not zone.get("is_active")):
+                    # We had an active zone last tick, now price has broken out
+                    already_alerted = self.last_alerted.get(name, 0)
+                    if prev["start"] > already_alerted:
+                        self.last_alerted[name] = prev["start"]
+                        self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
-                            args=(zone,),
+                            args=(prev,),
                             daemon=True,
                         ).start()
 
