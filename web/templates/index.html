@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Accumulation Agent | {{ asset_name }}</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background: #131722; margin: 0; padding: 20px; color: #d1d4dc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        #chart-container { width: 100%; height: 85vh; border: 1px solid #2B2B43; border-radius: 8px; overflow: hidden; }
+        #chart { width: 100%; height: 100%; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .symbol-badge { background: #2962ff; color: white; padding: 4px 12px; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2 style="margin:0;">Market Analysis</h2>
+        <div id="asset-badge" class="symbol-badge">LOADING...</div>
+    </div>
+    
+    <div id="chart-container"><div id="chart"></div></div>
+
+    <script>
+        // Extract Asset Name from URL path (e.g., /chart/US30)
+        const pathParts = window.location.pathname.split('/');
+        const assetName = pathParts[pathParts.length - 1] || 'US30';
+        document.getElementById('asset-badge').innerText = assetName;
+
+        const container = document.getElementById('chart');
+        const chart = LightweightCharts.createChart(container, {
+            layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { color: '#1f222d' }, horzLines: { color: '#1f222d' } },
+            timeScale: { timeVisible: true, borderColor: '#2B2B43', secondsVisible: false },
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickVisible: true 
+        });
+
+        // The Accumulation Box (Baseline)
+        const boxSeries = chart.addBaselineSeries({
+            baseValue: { type: 'price', price: 0 },
+            topFillColor1: 'rgba(41, 98, 255, 0.2)',
+            topFillColor2: 'rgba(41, 98, 255, 0.05)',
+            topLineColor: '#2962ff',
+            bottomFillColor1: 'rgba(0,0,0,0)',
+            bottomFillColor2: 'rgba(0,0,0,0)',
+            bottomLineColor: '#2962ff',
+            lineWidth: 2,
+        });
+
+        function loadData() {
+            // Fetch from the dynamic modular API route
+            fetch(`/api/data/${assetName}`)
+                .then(res => res.json())
+                .then(data => {
+                    if(!data.candles) return;
+                    
+                    candleSeries.setData(data.candles);
+
+                    if (data.accumulation) {
+                        const zone = data.accumulation;
+                        
+                        boxSeries.applyOptions({
+                            baseValue: { type: 'price', price: zone.bottom }
+                        });
+
+                        const boxData = [
+                            { time: zone.start, value: zone.top },
+                            { time: zone.end, value: zone.top }
+                        ];
+                        boxSeries.setData(boxData);
+                        
+                        // Fit content to show the accumulation box clearly
+                        chart.timeScale().fitContent();
+                    } else {
+                        boxSeries.setData([]);
+                    }
+                })
+                .catch(err => console.error("Fetch error:", err));
+        }
+
+        loadData();
+        setInterval(loadData, 5000); // 5s interval is plenty for 1m candles
+    </script>
+</body>
+</html>
