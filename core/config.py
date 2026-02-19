@@ -5,7 +5,7 @@ ASSET_CONFIGS = {
         "lookback": 40,
         "threshold": 0.001,
         "color": "03b2f8",
-        "port": 500
+        "port": 5000
     },
     "US100": {
         "ticker": "NQ=F",
