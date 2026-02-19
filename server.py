@@ -42,14 +42,18 @@ class PairServer:
         self.interval = config.get("interval", "1m")
         self.period = config.get("period", "1d")
         self.detector_names = config.get("detectors", [])
+        self.detector_params = config.get("detector_params", {})
 
         # Per-pair alert dedup tracking (keyed by detector name)
         self.last_alerted: dict[str, int] = {}
 
+        # Use absolute path so Flask resolves templates relative to the
+        # project root (cwd), not relative to server.py's location.
+        root = os.path.abspath(os.getcwd())
         self.app = Flask(
             __name__,
-            template_folder="templates",
-            static_folder="static" if os.path.exists("static") else None,
+            template_folder=os.path.join(root, "templates"),
+            static_folder=os.path.join(root, "static") if os.path.exists(os.path.join(root, "static")) else None,
         )
         self._register_routes()
 
@@ -96,7 +100,7 @@ class PairServer:
     def _api_data(self):
         try:
             df = self._fetch_df()
-            detector_results = run_detectors(self.detector_names, df)
+            detector_results = run_detectors(self.detector_names, df, self.detector_params)
 
             # Trigger Discord alerts for any newly active zones
             for name, zone in detector_results.items():
