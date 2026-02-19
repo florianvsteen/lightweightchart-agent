@@ -18,22 +18,30 @@ def run_asset_server(port):
 def run_asset_loop(name, config):
     """Independent logic loop for each asset."""
     detector = AccumulationDetector(name, config)
-    asset_port = config['port']  # Fetch port from config
+    asset_port = config['port']
     
     print(f"[*] Monitoring {name} on port {asset_port}")
     
     while True:
         try:
             df = fetch_market_data(config['ticker'])
-            if not df.empty:
+            
+            if df is not None and not df.empty:
+                # Ensure we are passing the latest price as a float if the detector needs it
+                # Many detectors fail if they try: float(df['close'])
+                # We use .iloc[-1] to get the most recent single value
+                last_price = float(df['close'].iloc[-1]) 
+                
+                # Check for zones
                 zone = detector.check(df)
                 
                 if zone:
-                    # Pointing Playwright to the unique port for this specific asset
                     chart_url = f"http://127.0.0.1:{asset_port}/chart/{name}"
+                    # If send_alert uses float() internally, ensure you pass last_price
                     notifier.send_alert(name, zone, chart_url)
                     
         except Exception as e:
+            # This is where your error "float() argument must be a string..." is caught
             print(f"!!! Error in {name} loop (Port {asset_port}): {e}")
         
         time.sleep(60)
