@@ -64,9 +64,8 @@ def capture_and_send_discord(zone_info):
         webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=f"🚀 **US30 Accumulation Confirmed ({duration_min}m)**")
         
         embed = DiscordEmbed(title="Market Consolidation", color="03b2f8")
-        embed.add_embed_field(name="Range Top", value=f"{zone_info['top']:.2f}")
-        embed.add_embed_field(name="Range Bottom", value=f"{zone_info['bottom']:.2f}")
-        embed.add_embed_field(name="Duration", value=f"{duration_min} Minutes")
+        embed.add_embed_field(name="Draw a fixed range volume profile from the high to the low.")
+        embed.add_embed_field(name="If a low volume pocket is found. Wait for a CVDD!")
         embed.set_timestamp()
 
         with open(screenshot_path, "rb") as f:
