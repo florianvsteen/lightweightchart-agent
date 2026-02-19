@@ -14,7 +14,7 @@ import numpy as np
 
 import numpy as np
 
-def detect_accumulation(df, lookback=25, threshold_pct=0.001): # Tighter 0.1% threshold
+def detect_accumulation(df, lookback=40, threshold_pct=0.001): # Tighter 0.1% threshold
     try:
         if len(df) < lookback + 5:
             return None
