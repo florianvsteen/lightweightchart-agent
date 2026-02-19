@@ -4,19 +4,11 @@ detectors/accumulation.py
 Detects SIDEWAYS accumulation phases only — price consolidating in a flat range
 with no meaningful directional trend (up or down).
 
-Trending windows (downtrend, uptrend) are explicitly rejected via linear
-regression slope. Only flat, choppy, directionless consolidation qualifies.
-
-Interface: detect(df, lookback, threshold_pct) -> dict | None
-
-Returned dict keys:
-  start      (int)   Unix timestamp of zone start
-  end        (int)   Unix timestamp of zone end (or last candle if active)
-  top        (float) Upper boundary of the zone
-  bottom     (float) Lower boundary of the zone
-  is_active  (bool)  True if price hasn't broken out yet
-  status     (str)   "found" | "potential"
-  detector   (str)   Always "accumulation"
+Key design:
+  - Linear regression slope rejects any window with directional trend
+  - Box end is capped at the end of the qualifying window, NOT extended
+    forward into post-breakout trending price action
+  - is_active = True only if current price is still inside the zone
 """
 
 import numpy as np
@@ -24,7 +16,6 @@ import pandas as pd
 
 
 def _scalar(val) -> float:
-    """Safely extract a Python float from a pandas scalar, Series, or numpy type."""
     if hasattr(val, 'item'):
         return val.item()
     if hasattr(val, 'iloc'):
@@ -33,69 +24,41 @@ def _scalar(val) -> float:
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
-    """
-    Fit a linear regression to the close prices and return the slope
-    normalised as a fraction of avg_p per candle.
-
-    A flat sideways window will have a slope near 0.
-    A trending window will have a clearly positive or negative slope.
-    """
+    """Normalised absolute slope of a linear regression fit, per candle."""
     x = np.arange(len(closes), dtype=float)
     slope = np.polyfit(x, closes, 1)[0]
-    return abs(slope) / avg_p   # normalised absolute slope per candle
-
-
-def _build_zone(df, start_i: int, end_i: int, h_max: float, l_min: float, status: str) -> dict:
-    """Build a zone dict spanning start_i to end_i (both inclusive)."""
-    breakout_idx = end_i
-    for j in range(end_i, len(df)):
-        breakout_idx = j
-        current_c = _scalar(df['Close'].iloc[j])
-        if current_c > h_max or current_c < l_min:
-            break
-    return {
-        "detector": "accumulation",
-        "status": status,
-        "start": int(df.index[start_i].timestamp()),
-        "end": int(df.index[breakout_idx].timestamp()),
-        "top": h_max,
-        "bottom": l_min,
-        "is_active": breakout_idx == (len(df) - 1),
-    }
+    return abs(slope) / avg_p
 
 
 def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
     """
-    Scan historical candles backwards for purely sideways accumulation zones.
+    Scan backwards for purely sideways accumulation zones.
 
-    A window qualifies only when ALL of the following are true:
-      1. range_pct   — total High-Low range is tight relative to price
-      2. stability   — std dev of closes is low (no wild swings)
-      3. drift       — start-to-end price movement is small (no net trend)
-      4. slope       — linear regression slope is near zero (explicitly flat)
+    Conditions (all must pass for "found"):
+      1. range_pct       — High-Low range tight vs avg price
+      2. stability       — std dev of closes is low
+      3. drift           — start-to-end close movement is minimal
+      4. slope           — linear regression slope is near flat
 
-    Checks 1-3 allow a "potential" zone at a relaxed threshold.
-    All 4 together (including slope) qualify as a confirmed "found" zone.
+    "potential" = conditions 1+2+4 pass but drift is slightly relaxed.
 
-    Args:
-        df:            OHLCV DataFrame
-        lookback:      Candles per evaluation window (default 40)
-        threshold_pct: Core tightness parameter — tune per instrument:
-                         US30/US100 -> 0.003,  XAUUSD -> 0.002,  FX -> 0.0005
+    Box boundaries:
+      start = first candle of the qualifying window
+      end   = last candle of the qualifying window (NOT extended forward)
+      is_active = True if current (last) close is still inside top/bottom
     """
     try:
         if len(df) < lookback + 5:
             return None
 
-        # Flatten any residual MultiIndex columns yfinance may leave behind
         if isinstance(df.columns, pd.MultiIndex):
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
 
-        # Max normalised slope per candle to still be considered "flat"
-        # Kept proportional to threshold so it scales with instrument volatility
-        slope_limit = (threshold_pct * 0.3) / lookback
+        # slope_limit scales with threshold and lookback so it works across instruments
+        slope_limit = (threshold_pct * 0.35) / lookback
 
+        last_close = _scalar(df['Close'].iloc[-1])
         best_potential = None
 
         for i in range(len(df) - lookback - 1, 0, -1):
@@ -109,31 +72,42 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             start_p = float(closes[0])
             end_p   = float(closes[-1])
 
-            range_pct       = (h_max - l_min) / avg_p
-            stability_score = std_dev / avg_p
-            drift           = abs(start_p - end_p) / start_p
+            range_pct   = (h_max - l_min) / avg_p
+            stability   = std_dev / avg_p
+            drift       = abs(start_p - end_p) / start_p
 
-            sideways_range  = range_pct       <= threshold_pct
-            sideways_stable = stability_score  < (threshold_pct * 0.25)
-            sideways_drift  = drift            < (threshold_pct * 0.3)
-
-            # Fast reject: skip slope calculation if range/stability already fail
-            if not (sideways_range and sideways_stable):
+            # Fast reject before expensive slope calc
+            if range_pct > threshold_pct or stability >= threshold_pct * 0.25:
                 continue
 
-            # Slope check — the primary guard against trending windows.
-            # A downtrend like Image 1 will have a clearly negative slope
-            # that exceeds slope_limit and gets rejected here.
             slope = _slope_pct(closes, avg_p)
-            sideways_flat = slope < slope_limit
 
-            # Confirmed accumulation: range + stable + no drift + flat slope
-            if sideways_drift and sideways_flat:
-                return _build_zone(df, i, i + lookback, h_max, l_min, "found")
+            if slope >= slope_limit:
+                continue  # Trending — reject regardless of range/drift
 
-            # Potential: range + stable + flat but drift slightly elevated
-            if best_potential is None and sideways_flat and drift < (threshold_pct * 0.6):
-                best_potential = _build_zone(df, i, i + lookback, h_max, l_min, "potential")
+            # Box spans exactly the qualifying window
+            # end is the last candle of the window, not extended further
+            end_i      = i + lookback - 1
+            is_active  = (last_close >= l_min) and (last_close <= h_max)
+
+            zone = {
+                "detector":  "accumulation",
+                "start":     int(df.index[i].timestamp()),
+                "end":       int(df.index[end_i].timestamp()),
+                "top":       h_max,
+                "bottom":    l_min,
+                "is_active": is_active,
+            }
+
+            # Confirmed: drift also passes
+            if drift < threshold_pct * 0.3:
+                zone["status"] = "found"
+                return zone
+
+            # Potential: drift slightly relaxed
+            if best_potential is None and drift < threshold_pct * 0.6:
+                zone["status"] = "potential"
+                best_potential = zone
 
         return best_potential
 
