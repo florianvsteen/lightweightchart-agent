@@ -10,44 +10,48 @@ app = Flask(__name__)
 # Mock or Live Tick storage
 live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
 
-def detect_accumulation(df, lookback=30, threshold_pct=0.0018):
-    if len(df) < lookback + 10:
-        return None
+def detect_accumulation(df, lookback=20, threshold_pct=0.0018):
+    try:
+        if len(df) < lookback + 5:
+            return None
 
-    # 1. Find a potential base (starting from some point in the past)
-    # We look back slightly to find where the "sideways" action started
-    for i in range(len(df) - lookback, 0, -1):
-        window = df.iloc[i : i + lookback]
-        high_max = window['High'].max()
-        low_min = window['Low'].min()
-        avg_price = window['Close'].mean()
-        
-        # Check if this window was tight and not trending
-        start_p = window['Close'].iloc[0]
-        end_p = window['Close'].iloc[-1]
-        if ((high_max - low_min) / avg_price) <= threshold_pct and (abs(start_p - end_p)/start_p < threshold_pct * 0.5):
+        # 1. Scan for the 'Base' - we look at a window slightly in the past
+        # to find where the tightness started
+        for i in range(len(df) - lookback - 1, 0, -1):
+            window = df.iloc[i : i + lookback]
             
-            # 2. We found a base! Now, look at everything AFTER this window
-            # to see if/where it broke out.
-            breakout_index = i + lookback
-            for j in range(i + lookback, len(df)):
-                current_close = df['Close'].iloc[j]
-                if current_close > high_max or current_close < low_min:
-                    breakout_index = j
-                    break # The accumulation ended here
-                else:
-                    breakout_index = j # Still inside
+            h_max = float(window['High'].max())
+            l_min = float(window['Low'].min())
+            avg_p = float(window['Close'].mean())
+            
+            # Check for sideways tightness
+            range_pct = (h_max - l_min) / avg_p
+            start_p = window['Close'].iloc[0]
+            end_p = window['Close'].iloc[-1]
+            change_pct = abs(start_p - end_p) / start_p
 
-            # Only return the box if the breakout happened recently 
-            # or if we are still inside it.
-            return {
-                "start": int(df.index[i].timestamp()),
-                "end": int(df.index[breakout_index].timestamp()),
-                "top": float(high_max),
-                "bottom": float(low_min),
-                "is_active": breakout_index == len(df) - 1
-            }
-    return None
+            if range_pct <= threshold_pct and change_pct < (threshold_pct * 0.5):
+                # 2. Base found! Now find where the breakout happened
+                breakout_idx = i + lookback
+                
+                # Check subsequent candles until breakout or end of data
+                for j in range(i + lookback, len(df)):
+                    breakout_idx = j
+                    current_c = df['Close'].iloc[j]
+                    if current_c > h_max or current_c < l_min:
+                        break # Price left the box
+                
+                return {
+                    "start": int(df.index[i].timestamp()),
+                    "end": int(df.index[breakout_idx].timestamp()),
+                    "top": h_max,
+                    "bottom": l_min,
+                    "is_active": breakout_idx == (len(df) - 1)
+                }
+        return None
+    except Exception as e:
+        print(f"Error in detection: {e}")
+        return None
 
 @app.route('/')
 def index():
