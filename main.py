@@ -3,7 +3,7 @@ import time
 import threading
 import os
 from core.config import ASSET_CONFIGS
-from core.detector import AccumulationDetector
+from core.accumulation_detector import AccumulationDetector
 from services.data_handler import fetch_market_data # Assume logic to fetch yf
 from services.notifier import Notifier
 
