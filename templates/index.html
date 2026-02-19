@@ -154,9 +154,13 @@
         const statusEls = {};
 
         const STATUS_CONFIG = {
+            // accumulation
             looking:   { label: 'Looking for accumulation',      css: 'state-looking'   },
             potential: { label: 'Potential accumulation forming', css: 'state-potential' },
             found:     { label: 'Accumulation found',             css: 'state-found'     },
+            // supply_demand
+            sd_found:  { label: 'Supply/Demand zones found',     css: 'state-found'     },
+            sd_none:   { label: 'No S/D zones found',            css: 'state-looking'   },
         };
 
         function ensureStatusEl(detectorName) {
@@ -179,6 +183,7 @@
         // ── Detector Overlay Renderers ────────────────────────────────
         const detectorRenderers = {
             accumulation: renderAccumulation,
+            supply_demand: renderSupplyDemand,
         };
 
         const activeSeries = {};
@@ -225,6 +230,52 @@
             return [topLine, bottomLine, fill];
         }
 
+        function renderSupplyDemand(chart, zones) {
+            const allSeries = [];
+            if (!Array.isArray(zones)) return allSeries;
+
+            zones.forEach(zone => {
+                const isDemand  = zone.type === 'demand';
+                const isBroken  = zone.status === 'broken';
+                const alpha     = isBroken ? 0.15 : 0.35;
+                const fillAlpha = isBroken ? 0.03 : 0.07;
+                const color     = isDemand
+                    ? `rgba(70, 130, 220, ${alpha})`
+                    : `rgba(220, 100, 50, ${alpha})`;
+                const fill      = isDemand
+                    ? `rgba(70, 130, 220, ${fillAlpha})`
+                    : `rgba(220, 100, 50, ${fillAlpha})`;
+                const lineStyle = isBroken ? 2 : 0;
+
+                const topLine = chart.addLineSeries({
+                    color, lineWidth: 1, lineStyle,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                topLine.setData([{ time: zone.start, value: zone.top }, { time: zone.end, value: zone.top }]);
+
+                const bottomLine = chart.addLineSeries({
+                    color, lineWidth: 1, lineStyle,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                bottomLine.setData([{ time: zone.start, value: zone.bottom }, { time: zone.end, value: zone.bottom }]);
+
+                const fillSeries = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: zone.bottom },
+                    topFillColor1: fill, topFillColor2: fill,
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                fillSeries.setData([{ time: zone.start, value: zone.top }, { time: zone.end, value: zone.top }]);
+
+                allSeries.push(topLine, bottomLine, fillSeries);
+            });
+
+            return allSeries;
+        }
+
         // ── Data Loop ─────────────────────────────────────────────────
         function loadData() {
             fetch(`/api/data?interval=${currentInterval}`)
@@ -244,10 +295,16 @@
                         const renderer = detectorRenderers[name];
                         if (result && renderer) {
                             activeSeries[name] = renderer(chart, result);
-                            setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
+                            // Supply/demand returns an array — pick status from first zone
+                            if (Array.isArray(result)) {
+                                const active = result.filter(z => z.status !== 'broken');
+                                setStatus(name, active.length > 0 ? 'sd_found' : 'sd_none');
+                            } else {
+                                setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
+                            }
                         } else {
                             ensureStatusEl(name);
-                            setStatus(name, 'looking');
+                            setStatus(name, Array.isArray(result) ? 'sd_none' : 'looking');
                         }
                     }
                 })
