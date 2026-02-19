@@ -50,35 +50,45 @@
             flex-shrink: 0;
             transition: background 0.4s;
         }
-        .detector-status .label-text {
-            transition: color 0.4s;
-        }
+        .detector-status .label-text { transition: color 0.4s; }
 
-        /* ── States ── */
-        .detector-status.state-looking {
-            border-color: #2b2b43;
-        }
+        .detector-status.state-looking { border-color: #2b2b43; }
         .detector-status.state-looking .indicator { background: #444; }
         .detector-status.state-looking .label-text { color: #666; }
 
-        .detector-status.state-potential {
-            border-color: #555;
-        }
+        .detector-status.state-potential { border-color: #555; }
         .detector-status.state-potential .indicator {
             background: #aaa;
             box-shadow: 0 0 5px rgba(180,180,180,0.4);
         }
         .detector-status.state-potential .label-text { color: #bbb; }
 
-        .detector-status.state-found {
-            border-color: #888;
-            background: #1e2030;
-        }
+        .detector-status.state-found { border-color: #888; background: #1e2030; }
         .detector-status.state-found .indicator {
             background: #ccc;
             box-shadow: 0 0 8px rgba(220,220,220,0.6);
         }
         .detector-status.state-found .label-text { color: #e0e0e0; font-weight: 600; }
+
+        /* ── Interval buttons ── */
+        #interval-bar {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+        .tf-btn {
+            background: none;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            color: #666;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-family: inherit;
+            padding: 3px 9px;
+            transition: all 0.2s;
+        }
+        .tf-btn:hover { border-color: #888; color: #bbb; }
+        .tf-btn.active { border-color: #d4d0d0; color: #d4d0d0; font-weight: 600; }
 
         #chart-container {
             flex: 1;
@@ -95,6 +105,13 @@
         <div id="detector-statuses">
             <!-- Status badges injected by JS -->
         </div>
+        <div id="interval-bar">
+            <button class="tf-btn active" data-interval="1m">1m</button>
+            <button class="tf-btn" data-interval="5m">5m</button>
+            <button class="tf-btn" data-interval="15m">15m</button>
+            <button class="tf-btn" data-interval="30m">30m</button>
+            <button class="tf-btn" data-interval="1h">1h</button>
+        </div>
     </header>
 
     <div id="chart-container">
@@ -103,6 +120,17 @@
 
     <script>
         const PAIR_ID = "{{ pair_id }}";
+        let currentInterval = "1m";
+
+        // ── Interval buttons ─────────────────────────────────────────
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentInterval = btn.dataset.interval;
+                loadData();
+            });
+        });
 
         // ── Chart Setup ──────────────────────────────────────────────
         const container = document.getElementById('chart');
@@ -113,12 +141,12 @@
         });
 
         const candleSeries = chart.addCandlestickSeries({
-            upColor: '#d4d0d0',
-            downColor: '#068c76',
-            wickUpColor: '#d4d0d0',
+            upColor:       '#d4d0d0',
+            downColor:     '#068c76',
+            wickUpColor:   '#d4d0d0',
             wickDownColor: '#068c76',
             borderVisible: false,
-            wickVisible: true,
+            wickVisible:   true,
         });
 
         // ── Status Badge helpers ──────────────────────────────────────
@@ -126,9 +154,9 @@
         const statusEls = {};
 
         const STATUS_CONFIG = {
-            looking:   { label: 'Looking for accumulation',       css: 'state-looking'   },
-            potential: { label: 'Potential accumulation forming',  css: 'state-potential' },
-            found:     { label: 'Accumulation found',              css: 'state-found'     },
+            looking:   { label: 'Looking for accumulation',      css: 'state-looking'   },
+            potential: { label: 'Potential accumulation forming', css: 'state-potential' },
+            found:     { label: 'Accumulation found',             css: 'state-found'     },
         };
 
         function ensureStatusEl(detectorName) {
@@ -141,7 +169,7 @@
             return el;
         }
 
-        function setStatus(detectorName, state /* "looking"|"potential"|"found" */) {
+        function setStatus(detectorName, state) {
             const el = ensureStatusEl(detectorName);
             const cfg = STATUS_CONFIG[state] || STATUS_CONFIG.looking;
             el.className = `detector-status ${cfg.css}`;
@@ -149,64 +177,45 @@
         }
 
         // ── Detector Overlay Renderers ────────────────────────────────
-        // Each renderer receives (chart, zone) and returns an array of series.
         const detectorRenderers = {
             accumulation: renderAccumulation,
         };
 
-        const activeSeries = {};  // detectorName → [ series, ... ]
+        const activeSeries = {};
 
         function renderAccumulation(chart, zone) {
-            const isFound    = zone.status === 'found';
-            const isPotential = zone.status === 'potential';
+            const isFound   = zone.status === 'found';
+            const lineAlpha = isFound ? 0.55 : 0.28;
+            const fillAlpha = isFound ? 0.08 : 0.03;
+            const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
+            const fillColor = `rgba(200, 200, 200, ${fillAlpha})`;
 
-            // Colours: found = light grey, potential = dimmer grey
-            const lineAlpha  = isFound ? 0.55 : 0.28;
-            const fillAlpha  = isFound ? 0.08 : 0.03;
-            const lineColor  = `rgba(200, 200, 200, ${lineAlpha})`;
-            const fillColor  = `rgba(200, 200, 200, ${fillAlpha})`;
-
-            // Top boundary line
             const topLine = chart.addLineSeries({
-                color: lineColor,
-                lineWidth: 1,
-                lineStyle: isFound ? 0 : 2,   // 0 = solid, 2 = dashed
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
+                color: lineColor, lineWidth: 1, lineStyle: isFound ? 0 : 2,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             topLine.setData([
                 { time: zone.start, value: zone.top },
                 { time: zone.end,   value: zone.top },
             ]);
 
-            // Bottom boundary line
             const bottomLine = chart.addLineSeries({
-                color: lineColor,
-                lineWidth: 1,
-                lineStyle: isFound ? 0 : 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
+                color: lineColor, lineWidth: 1, lineStyle: isFound ? 0 : 2,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             bottomLine.setData([
                 { time: zone.start, value: zone.bottom },
                 { time: zone.end,   value: zone.bottom },
             ]);
 
-            // Fill — baseline series anchored at bottom, value = top
             const fill = chart.addBaselineSeries({
                 baseValue: { type: 'price', price: zone.bottom },
-                topFillColor1: fillColor,
-                topFillColor2: fillColor,
-                topLineColor:  'rgba(0,0,0,0)',
-                bottomFillColor1: 'rgba(0,0,0,0)',
-                bottomFillColor2: 'rgba(0,0,0,0)',
-                bottomLineColor:  'rgba(0,0,0,0)',
+                topFillColor1: fillColor, topFillColor2: fillColor,
+                topLineColor: 'rgba(0,0,0,0)',
+                bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                bottomLineColor: 'rgba(0,0,0,0)',
                 lineWidth: 0,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             fill.setData([
                 { time: zone.start, value: zone.top },
@@ -218,14 +227,13 @@
 
         // ── Data Loop ─────────────────────────────────────────────────
         function loadData() {
-            fetch('/api/data')
+            fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.json())
                 .then(data => {
                     if (!data.candles) return;
 
                     candleSeries.setData(data.candles);
 
-                    // Remove all previous detector overlays
                     for (const [name, seriesList] of Object.entries(activeSeries)) {
                         (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
                         delete activeSeries[name];
