@@ -12,12 +12,16 @@ Available detectors (add more in detectors/):
 
 PAIRS = {
     "US30": {
-        "ticker": "YM=F",           # yfinance ticker
+        "ticker": "YM=F",
         "port": 5000,
         "label": "US30 (Dow Jones Futures)",
         "interval": "1m",
         "period": "1d",
         "detectors": ["accumulation"],
+        # US30 ~42000 pts: 0.003 = ~126 pt range, captures real sideways chop
+        "detector_params": {
+            "accumulation": {"lookback": 40, "threshold_pct": 0.003},
+        },
     },
     "US100": {
         "ticker": "NQ=F",
@@ -26,6 +30,10 @@ PAIRS = {
         "interval": "1m",
         "period": "1d",
         "detectors": ["accumulation"],
+        # NQ ~21000 pts: 0.003 = ~63 pt range
+        "detector_params": {
+            "accumulation": {"lookback": 40, "threshold_pct": 0.003},
+        },
     },
     "XAUUSD": {
         "ticker": "GC=F",
@@ -34,8 +42,12 @@ PAIRS = {
         "interval": "1m",
         "period": "1d",
         "detectors": ["accumulation"],
+        # Gold ~3000: 0.002 = ~$6 range per zone
+        "detector_params": {
+            "accumulation": {"lookback": 40, "threshold_pct": 0.002},
+        },
     },
-    # Add more pairs here:
+    # Add more pairs here - tune threshold_pct to instrument volatility:
     # "EURUSD": {
     #     "ticker": "EURUSD=X",
     #     "port": 5003,
@@ -43,5 +55,8 @@ PAIRS = {
     #     "interval": "1m",
     #     "period": "1d",
     #     "detectors": ["accumulation"],
+    #     "detector_params": {
+    #         "accumulation": {"lookback": 40, "threshold_pct": 0.0005},
+    #     },
     # },
 }
