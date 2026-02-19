@@ -1,20 +1,74 @@
 import os
 import time
 import threading
-import yfinance as yf
+import numpy as np
 import pandas as pd
+import yfinance as yf
 from flask import Flask, render_template, jsonify
+from discord_webhook import DiscordWebhook, DiscordEmbed
+from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-# Mock or Live Tick storage
+# Environment Variables
+DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
+
+# Global storage
 live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
+last_alerted_start = 0  # To prevent duplicate alerts for the same box
 
-import numpy as np
+def capture_and_send_discord(zone_info):
+    """Background task to take a screenshot and send to Discord."""
+    global last_alerted_start
+    
+    # Logic to ensure we only alert ONCE per unique accumulation start time
+    if zone_info['start'] <= last_alerted_start:
+        return
+    
+    last_alerted_start = zone_info['start']
+    screenshot_path = "chart_alert.png"
 
-import numpy as np
+    try:
+        # 1. Capture Screenshot using Playwright
+        with sync_playwright() as p:
+            # We use chromium headless
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={'width': 1280, 'height': 720})
+            
+            # Point to your local Flask app
+            page.goto("http://127.0.0.1:5000")
+            
+            # Wait for the chart/box to render (adjust if your internet is slow)
+            page.wait_for_timeout(4000) 
+            
+            page.screenshot(path=screenshot_path)
+            browser.close()
 
-def detect_accumulation(df, lookback=40, threshold_pct=0.001): # Tighter 0.1% threshold
+        # 2. Send to Discord
+        if DISCORD_WEBHOOK_URL:
+            webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content="🚀 **US30 Accumulation Detected**")
+            
+            embed = DiscordEmbed(title="Market Consolidation", color="03b2f8")
+            embed.add_embed_field(name="Range Top", value=f"{zone_info['top']:.2f}")
+            embed.add_embed_field(name="Range Bottom", value=f"{zone_info['bottom']:.2f}")
+            embed.add_embed_field(name="Type", value="Sideways Accumulation")
+            embed.set_timestamp()
+
+            with open(screenshot_path, "rb") as f:
+                webhook.add_file(file=f.read(), filename="chart.png")
+            
+            webhook.add_embed(embed)
+            webhook.execute()
+            print(">>> Discord Alert Sent Successfully")
+
+        # Cleanup
+        if os.path.exists(screenshot_path):
+            os.remove(screenshot_path)
+
+    except Exception as e:
+        print(f"!!! Webhook/Screenshot Error: {e}")
+
+def detect_accumulation(df, lookback=40, threshold_pct=0.001):
     try:
         if len(df) < lookback + 5:
             return None
@@ -39,16 +93,14 @@ def detect_accumulation(df, lookback=40, threshold_pct=0.001): # Tighter 0.1% th
             end_p = window['Close'].iloc[-1]
             drift = abs(start_p - end_p) / start_p
 
-            # TIGHTENED LOGIC: Lower multipliers for stricter sideways requirements
+            # TIGHTENED LOGIC
             if range_pct <= threshold_pct and stability_score < (threshold_pct * 0.25) and drift < (threshold_pct * 0.3):
                 
-                # BASE FOUND. Extend the box until the first breakout candle.
                 breakout_idx = i + lookback
                 for j in range(i + lookback, len(df)):
                     breakout_idx = j
                     current_c = df['Close'].iloc[j]
                     
-                    # Breakout occurs if current candle closes outside the H/L of the base
                     if current_c > h_max or current_c < l_min:
                         break 
                 
@@ -77,6 +129,10 @@ def get_dow_data():
         df = df.dropna()
 
         acc_zone = detect_accumulation(df)
+
+        # Trigger Discord Alert in a separate thread if an active zone is found
+        if acc_zone and acc_zone['is_active']:
+            threading.Thread(target=capture_and_send_discord, args=(acc_zone,), daemon=True).start()
 
         candles = []
         for index, row in df.iterrows():
