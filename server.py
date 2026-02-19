@@ -65,22 +65,29 @@ class PairServer:
         app = self.app
         pair_id = self.pair_id
 
-        @app.route("/")
-        def index():
+        # Each function must have a globally unique __name__ — Flask uses the
+        # function name as the endpoint key. Without unique names all pairs
+        # share the same endpoint and the last one registered wins everywhere.
+
+        def _index():
             return render_template(
                 "index.html",
                 pair_id=pair_id,
                 label=self.label,
                 port=self.port,
             )
+        _index.__name__ = f"index_{pair_id}"
+        app.route("/")(_index)
 
-        @app.route("/api/data")
-        def get_data():
+        def _get_data():
             return self._api_data()
+        _get_data.__name__ = f"get_data_{pair_id}"
+        app.route("/api/data")(_get_data)
 
-        @app.route("/test-alert")
-        def test_alert():
+        def _test_alert():
             return self._test_alert()
+        _test_alert.__name__ = f"test_alert_{pair_id}"
+        app.route("/test-alert")(_test_alert)
 
     # ------------------------------------------------------------------ #
     # Data + Detection
