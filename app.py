@@ -2,77 +2,63 @@ import os
 import time
 import logging
 import threading
+import databento as db
 from flask import Flask, render_template, jsonify
 import yfinance as yf
 import pandas as pd
-from tradingview_scraper.symbols.stream import Streamer
 
 # --- SILENCE LOGGING ---
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
-# This holds the most recent candle from the Streamer
-live_tick = {
-    "time": None,
-    "open": None,
-    "high": None,
-    "low": None,
-    "close": None
-}
+# Global storage for live updates
+live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
 
-def start_tv_streamer():
+def start_databento_stream():
     global live_tick
-    while True:
-        try:
-            # Your Portainer env var: ayzvl8ectj...
-            token = os.environ.get('TRADINGVIEW_COOKIE', '').strip()
-            
-            if not token:
-                print("!!! ERROR: TRADINGVIEW_COOKIE (JWT) missing in environment")
-                time.sleep(10)
-                continue
+    api_key = os.environ.get('DATABENTO_API_KEY')
+    
+    if not api_key:
+        print("!!! ERROR: DATABENTO_API_KEY missing")
+        return
 
-            # Initialize Streamer as per documentation
-            streamer = Streamer(
-                export_result=False,
-                export_type='json',
-                websocket_jwt_token=token 
-            )
+    client = db.Live(key=api_key)
 
-            # Request 1m candles for US30 from CAPITALCOM
-            data_generator = streamer.stream(
-                exchange="OANDA", 
-                symbol="US30USD",
-                timeframe="1m"
-            )
-            
-            print(">>> Streamer: Connected to US30 (1m)")
+    try:
+        # Subscribe to E-mini Dow Futures (YM) on CME Globex
+        # 'ohlcv-1m' schema gives us the minute bars directly
+        client.subscribe(
+            dataset='GLBX.MDP3',
+            schema='ohlcv-1m',
+            symbols=['YM.HOT'] # .HOT automatically tracks the front month contract
+        )
 
-            for packet in data_generator:
-                # The streamer yields lists of candle updates
-                if packet and len(packet) > 0:
-                    candle = packet[0]
-                    
-                    # Update global tick for the Flask API
-                    # We use system time for the chart sync
-                    current_minute = int(time.time() // 60) * 60
-                    
-                    live_tick = {
-                        "time": current_minute,
-                        "open": float(candle.get('open', candle['close'])),
-                        "high": float(candle.get('high', candle['close'])),
-                        "low": float(candle.get('low', candle['close'])),
-                        "close": float(candle['close'])
-                    }
-                    print(f"PRICE UPDATE: {live_tick['close']}")
+        print(">>> Databento: Stream Connected (YM Futures)")
 
-        except Exception as e:
-            print(f"Streamer Error: {e}. Reconnecting...")
-            time.sleep(5)
+        for record in client:
+            if isinstance(record, db.OHLCVMsg):
+                # Databento timestamps are in nanoseconds (Unix)
+                timestamp_s = record.ts_event // 1_000_000_000
+                
+                live_tick = {
+                    "time": int(timestamp_s),
+                    "open": float(record.open),
+                    "high": float(record.high),
+                    "low": float(record.low),
+                    "close": float(record.close)
+                }
+                # Optional: Log the price to verify it's working
+                # print(f"Databento Tick: {live_tick['close']}")
 
-# Start the streamer thread
-threading.Thread(target=start_tv_streamer, daemon=True).start()
+    except Exception as e:
+        print(f"Databento Error: {e}")
+        time.sleep(5)
+        start_databento_stream() # Simple reconnect logic
+
+# Start the live stream in the background
+threading.Thread(target=start_databento_stream, daemon=True).start()
 
 @app.route('/')
 def index():
@@ -81,10 +67,9 @@ def index():
 @app.route('/api/data/DOW')
 def get_dow_data():
     try:
-        # History (from Yahoo Finance to fill the chart initially)
+        # 1. Fetch History from YFinance (Delayed)
         df = yf.download("YM=F", period="1d", interval="1m", progress=False)
         
-        # Flatten MultiIndex if necessary
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
@@ -100,6 +85,8 @@ def get_dow_data():
                 "close": float(row['Close'])
             })
 
+        # 2. Return history + the most recent live tick from Databento
+        # Your frontend should use chart.update(live) to append this tick
         return jsonify({
             "candles": candles,
             "live": live_tick
