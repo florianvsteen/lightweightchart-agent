@@ -1,27 +1,19 @@
 """
 detectors/accumulation.py
 
-Detects STRICTLY SIDEWAYS accumulation — choppy, directionless consolidation
-where price oscillates up and down repeatedly with no net trend.
+Detects SIDEWAYS accumulation based purely on DIRECTIONLESSNESS.
 
-Three-pillar approach:
-  1. RANGE     — total High-Low range is tight
-  2. SLOPE     — linear regression is near flat (strict)
-  3. CHOPPINESS — price reverses direction frequently (not trending)
-
-A trending window (even a slow one) will fail pillar 2 or 3.
+Rules:
+  - Only scans the most recent 60 candles (hard cap)
+  - Window size is also capped at 60
+  - Range size does NOT matter — only direction behaviour
+  - SLOPE must be near flat (linear regression)
+  - CHOPPINESS must be high (price reverses up/down frequently)
+  - No range, drift, or std dev checks
 """
 
 import numpy as np
 import pandas as pd
-
-
-def _scalar(val) -> float:
-    if hasattr(val, 'item'):
-        return val.item()
-    if hasattr(val, 'iloc'):
-        return float(val.iloc[0])
-    return float(val)
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
@@ -32,82 +24,79 @@ def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
 
 def _choppiness(closes: np.ndarray) -> float:
     """
-    Fraction of candles that reverse direction vs the previous candle.
-    Pure sideways chop → high value (0.4–0.6).
-    Trending move      → low value (0.1–0.2, few reversals).
-
-    Returns a value between 0 and 1.
+    Fraction of candle-to-candle moves that reverse direction.
+    Choppy sideways: ~0.45-0.60
+    Trending:        ~0.10-0.25
     """
     if len(closes) < 3:
         return 0.0
     diffs = np.diff(closes)
-    # Count sign changes: current diff has opposite sign to previous diff
     sign_changes = np.sum(np.sign(diffs[1:]) != np.sign(diffs[:-1]))
     return sign_changes / (len(diffs) - 1)
 
 
 def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
     """
-    Scan backwards for purely sideways accumulation zones.
-
-    A window is "found" when ALL pass:
-      1. range_pct  <= threshold_pct               (tight price range)
-      2. slope      <  threshold_pct * 0.1 / lookback  (nearly flat regression)
-      3. choppiness >= 0.40                         (frequent direction reversals)
-      4. drift      <  threshold_pct * 0.2          (no net displacement)
-
-    "potential" = 1+2+3 pass but drift is relaxed up to threshold_pct * 0.4
-
     Args:
-        lookback:      candles per window (default 40)
-        threshold_pct: tightness — tune per instrument:
-                         US30/US100 -> 0.003
-                         XAUUSD     -> 0.002
-                         FX pairs   -> 0.0005
+        lookback:      Window size in candles. Hard capped at 60.
+        threshold_pct: Used only to scale slope_limit per instrument.
+                       Does NOT filter on price range size.
     """
     try:
+        # Hard cap — never use more than 60 candles
+        lookback = min(lookback, 60)
+
         if len(df) < lookback + 5:
             return None
 
+        # Flatten MultiIndex and deduplicate columns (yfinance quirks)
         if isinstance(df.columns, pd.MultiIndex):
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
+        for col in ['Open', 'High', 'Low', 'Close']:
+            df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
+        df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        # Strict slope limit — 0.1x threshold per candle
-        slope_limit = (threshold_pct * 0.1) / lookback
-        chop_min    = 0.40   # at least 40% of candles must reverse direction
+        # Slope limit scales with instrument speed
+        slope_limit = (threshold_pct * 0.15) / lookback
 
-        last_close  = _scalar(df['Close'].iloc[-1])
+        CHOP_FOUND     = 0.44
+        CHOP_POTENTIAL = 0.36
+
+        last_close = float(df['Close'].iloc[-1])
+
+        # HARD CAP: only scan windows that START within the last 60 candles
+        # scan_start ensures the window start index is at most 60 candles ago
+        # Window START must be within the last 60 candles from end of data
+        scan_start = max(1, len(df) - 60)
+
         best_potential = None
 
-        for i in range(len(df) - lookback - 1, 0, -1):
+        for i in range(len(df) - lookback - 1, scan_start, -1):
             window = df.iloc[i: i + lookback]
 
-            closes  = window['Close'].values.astype(float)
-            h_max   = float(window['High'].max())
-            l_min   = float(window['Low'].min())
-            avg_p   = float(closes.mean())
-            start_p = float(closes[0])
-            end_p   = float(closes[-1])
+            closes = window['Close'].values.flatten().astype(float)
+            highs  = window['High'].values.flatten().astype(float)
+            lows   = window['Low'].values.flatten().astype(float)
 
-            range_pct = (h_max - l_min) / avg_p
-            drift     = abs(start_p - end_p) / start_p
-
-            # Pillar 1: tight range
-            if range_pct > threshold_pct:
+            if len(closes) < lookback:
                 continue
 
-            # Pillar 2: flat slope — rejects slow trends
+            avg_p = closes.mean()
+            if avg_p == 0:
+                continue
+
+            # Check 1: flat slope — rejects any directional trend
             slope = _slope_pct(closes, avg_p)
             if slope >= slope_limit:
                 continue
 
-            # Pillar 3: choppiness — rejects staircase/trending moves
+            # Check 2: high choppiness — price must reverse direction often
             chop = _choppiness(closes)
-            if chop < chop_min:
-                continue
 
-            # All structural checks pass — evaluate drift for found vs potential
+            h_max     = float(highs.max())
+            l_min     = float(lows.min())
             end_i     = i + lookback - 1
             is_active = (last_close >= l_min) and (last_close <= h_max)
 
@@ -120,11 +109,11 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
                 "is_active": is_active,
             }
 
-            if drift < threshold_pct * 0.2:
+            if chop >= CHOP_FOUND:
                 zone["status"] = "found"
                 return zone
 
-            if best_potential is None and drift < threshold_pct * 0.4:
+            if best_potential is None and chop >= CHOP_POTENTIAL:
                 zone["status"] = "potential"
                 best_potential = zone
 
