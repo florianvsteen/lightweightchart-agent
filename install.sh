@@ -2,7 +2,7 @@
 # --name: The nickname for your process
 # --interpreter: Tells PM2 to use the Python inside your virtual environment
 echo "[*] Starting the bot with PM2..."
-pm2 start /root/openclaw/skills/lightweightchart-agent/app.py --name "lightweightchart-agent" --interpreter ./.venv/bin/python
+pm2 start /root/openclaw/skills/lightweightchart-agent/app.py --name "lightweightchart-agent"
 
 # 3. Configure Startup
 # This generates the command you need to run to enable PM2 on boot
