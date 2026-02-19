@@ -10,22 +10,28 @@ app = Flask(__name__)
 # Mock or Live Tick storage
 live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
 
-def detect_accumulation(df, lookback=20, threshold_pct=0.001):
+def detect_accumulation(df, lookback=20, threshold_pct=0.0025): # Increased to 0.25%
     if len(df) < lookback:
         return None
     
     recent = df.tail(lookback)
-    high_max = recent['High'].max()
-    low_min = recent['Low'].min()
+    
+    # We use 'Close' for a more stable range calculation to ignore "noise" wicks
+    high_body = recent[['Open', 'Close']].max(axis=1).max()
+    low_body = recent[['Open', 'Close']].min(axis=1).min()
     current_price = recent['Close'].iloc[-1]
     
-    # Check if the price range is consolidated
-    if ((high_max - low_min) / current_price) <= threshold_pct:
+    actual_range = (high_body - low_body) / current_price
+    
+    # DEBUG: See why it's failing in your terminal
+    print(f"Current Range: {actual_range:.5f} | Threshold: {threshold_pct:.5f}")
+
+    if actual_range <= threshold_pct:
         return {
             "start": int(recent.index[0].timestamp()),
             "end": int(recent.index[-1].timestamp()),
-            "top": float(high_max),
-            "bottom": float(low_min)
+            "top": float(recent['High'].max()), # Box still covers the wicks
+            "bottom": float(recent['Low'].min())
         }
     return None
 
