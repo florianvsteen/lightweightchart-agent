@@ -10,28 +10,35 @@ app = Flask(__name__)
 # Mock or Live Tick storage
 live_tick = {"time": None, "open": None, "high": None, "low": None, "close": None}
 
-def detect_accumulation(df, lookback=20, threshold_pct=0.0025): # Increased to 0.25%
+def detect_accumulation(df, lookback=30, threshold_pct=0.0018):
     if len(df) < lookback:
         return None
     
     recent = df.tail(lookback)
     
-    # We use 'Close' for a more stable range calculation to ignore "noise" wicks
-    high_body = recent[['Open', 'Close']].max(axis=1).max()
-    low_body = recent[['Open', 'Close']].min(axis=1).min()
+    # 1. Range Calculation (Tightness)
+    high_max = recent['High'].max()
+    low_min = recent['Low'].min()
     current_price = recent['Close'].iloc[-1]
-    
-    actual_range = (high_body - low_body) / current_price
-    
-    # DEBUG: See why it's failing in your terminal
-    print(f"Current Range: {actual_range:.5f} | Threshold: {threshold_pct:.5f}")
+    actual_range_pct = (high_max - low_min) / current_price
 
-    if actual_range <= threshold_pct:
+    # 2. Trend Filter (The "Anti-Yellow" Logic)
+    # Check the difference between the start and end of the box
+    start_price = recent['Close'].iloc[0]
+    end_price = recent['Close'].iloc[-1]
+    price_change_pct = abs(start_price - end_price) / start_price
+
+    # DEBUG logs to your terminal
+    print(f"Range: {actual_range_pct:.5f} | Change: {price_change_pct:.5f}")
+
+    # To be red (accumulation), it must be TIGHT and NOT TRENDING
+    # If price_change_pct is high, it's a vertical move (Yellow)
+    if actual_range_pct <= threshold_pct and price_change_pct < (threshold_pct * 0.5):
         return {
             "start": int(recent.index[0].timestamp()),
             "end": int(recent.index[-1].timestamp()),
-            "top": float(recent['High'].max()), # Box still covers the wicks
-            "bottom": float(recent['Low'].min())
+            "top": float(high_max),
+            "bottom": float(low_min)
         }
     return None
 
