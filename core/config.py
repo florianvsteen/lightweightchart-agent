@@ -1,5 +1,21 @@
-ASSET_REGISTRY = {
-    "US30": {"symbol": "YM=F", "threshold": 0.001, "lookback": 40},
-    "US100": {"symbol": "NQ=F", "threshold": 0.0012, "lookback": 45},
-    "XAUUSD": {"symbol": "GC=F", "threshold": 0.0015, "lookback": 30},
+# core/config.py
+ASSET_CONFIGS = {
+    "US30": {
+        "ticker": "YM=F",
+        "lookback": 40,
+        "threshold": 0.001,
+        "color": "03b2f8"
+    },
+    "US100": {
+        "ticker": "NQ=F",
+        "lookback": 45,
+        "threshold": 0.0008,
+        "color": "ff9900"
+    },
+    "XAUUSD": {
+        "ticker": "GC=F",
+        "lookback": 35,
+        "threshold": 0.0015,
+        "color": "ffd700"
+    }
 }
