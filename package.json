@@ -1,0 +1,12 @@
+{
+  "name": "lightweightchart-agent",
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "pip install -r requirements.txt && npm install",
+    "start": "python main.py",
+    "dev": "python main.py --debug"
+  },
+  "dependencies": {
+    "lightweight-charts": "^4.2.1"
+  }
+}
