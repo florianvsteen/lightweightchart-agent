@@ -46,10 +46,12 @@ class PairServer:
 
         # Per-pair alert dedup tracking (keyed by detector name)
         self.last_alerted: dict[str, int] = {}
+        # Tracks zones seen while active so we can fire alert on breakout
+        self.last_active_zone: dict[str, dict] = {}
 
-        # Use absolute path so Flask resolves templates relative to the
-        # project root (cwd), not relative to server.py's location.
-        root = os.path.abspath(os.getcwd())
+        # Resolve templates relative to server.py's own location — NOT cwd.
+        # This ensures templates are found regardless of where PM2 launches from.
+        root = os.path.dirname(os.path.abspath(__file__))
         self.app = Flask(
             __name__,
             template_folder=os.path.join(root, "templates"),
@@ -95,10 +97,14 @@ class PairServer:
 
     def _fetch_df(self, interval=None):
         interval = interval or self.interval
-        # Longer timeframes need more period data
+        # Longer timeframes need a wider period to get enough candles
         period_map = {
-            "1m": "1d", "2m": "1d", "5m": "5d",
-            "15m": "5d", "30m": "5d", "1h": "30d",
+            "1m":  "1d",
+            "2m":  "1d",
+            "5m":  "5d",
+            "15m": "5d",
+            "30m": "5d",
+            "1h":  "30d",
         }
         period = period_map.get(interval, self.period)
         df = yf.download(
@@ -113,28 +119,36 @@ class PairServer:
 
     def _api_data(self):
         try:
-            # Chart interval can be changed by the user via ?interval= param
+            # Chart interval can be switched by the user via ?interval= param
             chart_interval = request.args.get("interval", self.interval)
 
-            # Always run detectors on 1m data regardless of chart view
+            # Detectors always run on 1m data regardless of chart view
             df_1m = self._fetch_df(interval="1m")
             detector_results = run_detectors(self.detector_names, df_1m, self.detector_params)
 
-            # Fetch chart data at the requested interval
+            # Fetch chart candles at the requested interval
             if chart_interval == "1m":
                 df = df_1m
             else:
                 df = self._fetch_df(interval=chart_interval)
 
-            # Trigger Discord alerts for any newly active zones
+            # Alert on BREAKOUT: fire once when a previously-active zone is broken
             for name, zone in detector_results.items():
-                if zone and zone.get("is_active"):
-                    last = self.last_alerted.get(name, 0)
-                    if zone["start"] > last:
-                        self.last_alerted[name] = zone["start"]
+                prev = self.last_active_zone.get(name)
+
+                if zone and zone.get("is_active") and zone.get("status") == "found":
+                    # Zone is active and confirmed — remember it, don't alert yet
+                    self.last_active_zone[name] = zone
+
+                elif prev is not None and (zone is None or not zone.get("is_active")):
+                    # Had an active zone last tick, now price has broken out — alert
+                    already_alerted = self.last_alerted.get(name, 0)
+                    if prev["start"] > already_alerted:
+                        self.last_alerted[name] = prev["start"]
+                        self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
-                            args=(zone,),
+                            args=(prev,),
                             daemon=True,
                         ).start()
 
@@ -193,7 +207,6 @@ class PairServer:
         print(f"[{self.pair_id}] Sending Discord alert for {detector_name} zone...")
 
         try:
-            # Screenshot via Playwright
             if PLAYWRIGHT_AVAILABLE:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
