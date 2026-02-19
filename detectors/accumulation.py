@@ -1,14 +1,15 @@
 """
 detectors/accumulation.py
 
-Detects SIDEWAYS accumulation phases only — price consolidating in a flat range
-with no meaningful directional trend (up or down).
+Detects STRICTLY SIDEWAYS accumulation — choppy, directionless consolidation
+where price oscillates up and down repeatedly with no net trend.
 
-Key design:
-  - Linear regression slope rejects any window with directional trend
-  - Box end is capped at the end of the qualifying window, NOT extended
-    forward into post-breakout trending price action
-  - is_active = True only if current price is still inside the zone
+Three-pillar approach:
+  1. RANGE     — total High-Low range is tight
+  2. SLOPE     — linear regression is near flat (strict)
+  3. CHOPPINESS — price reverses direction frequently (not trending)
+
+A trending window (even a slow one) will fail pillar 2 or 3.
 """
 
 import numpy as np
@@ -24,28 +25,45 @@ def _scalar(val) -> float:
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
-    """Normalised absolute slope of a linear regression fit, per candle."""
+    """Absolute normalised slope of linear regression per candle."""
     x = np.arange(len(closes), dtype=float)
-    slope = np.polyfit(x, closes, 1)[0]
-    return abs(slope) / avg_p
+    return abs(np.polyfit(x, closes, 1)[0]) / avg_p
+
+
+def _choppiness(closes: np.ndarray) -> float:
+    """
+    Fraction of candles that reverse direction vs the previous candle.
+    Pure sideways chop → high value (0.4–0.6).
+    Trending move      → low value (0.1–0.2, few reversals).
+
+    Returns a value between 0 and 1.
+    """
+    if len(closes) < 3:
+        return 0.0
+    diffs = np.diff(closes)
+    # Count sign changes: current diff has opposite sign to previous diff
+    sign_changes = np.sum(np.sign(diffs[1:]) != np.sign(diffs[:-1]))
+    return sign_changes / (len(diffs) - 1)
 
 
 def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
     """
     Scan backwards for purely sideways accumulation zones.
 
-    Conditions (all must pass for "found"):
-      1. range_pct       — High-Low range tight vs avg price
-      2. stability       — std dev of closes is low
-      3. drift           — start-to-end close movement is minimal
-      4. slope           — linear regression slope is near flat
+    A window is "found" when ALL pass:
+      1. range_pct  <= threshold_pct               (tight price range)
+      2. slope      <  threshold_pct * 0.1 / lookback  (nearly flat regression)
+      3. choppiness >= 0.40                         (frequent direction reversals)
+      4. drift      <  threshold_pct * 0.2          (no net displacement)
 
-    "potential" = conditions 1+2+4 pass but drift is slightly relaxed.
+    "potential" = 1+2+3 pass but drift is relaxed up to threshold_pct * 0.4
 
-    Box boundaries:
-      start = first candle of the qualifying window
-      end   = last candle of the qualifying window (NOT extended forward)
-      is_active = True if current (last) close is still inside top/bottom
+    Args:
+        lookback:      candles per window (default 40)
+        threshold_pct: tightness — tune per instrument:
+                         US30/US100 -> 0.003
+                         XAUUSD     -> 0.002
+                         FX pairs   -> 0.0005
     """
     try:
         if len(df) < lookback + 5:
@@ -55,10 +73,11 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
 
-        # slope_limit scales with threshold and lookback so it works across instruments
-        slope_limit = (threshold_pct * 0.35) / lookback
+        # Strict slope limit — 0.1x threshold per candle
+        slope_limit = (threshold_pct * 0.1) / lookback
+        chop_min    = 0.40   # at least 40% of candles must reverse direction
 
-        last_close = _scalar(df['Close'].iloc[-1])
+        last_close  = _scalar(df['Close'].iloc[-1])
         best_potential = None
 
         for i in range(len(df) - lookback - 1, 0, -1):
@@ -68,27 +87,29 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
             h_max   = float(window['High'].max())
             l_min   = float(window['Low'].min())
             avg_p   = float(closes.mean())
-            std_dev = float(closes.std())
             start_p = float(closes[0])
             end_p   = float(closes[-1])
 
-            range_pct   = (h_max - l_min) / avg_p
-            stability   = std_dev / avg_p
-            drift       = abs(start_p - end_p) / start_p
+            range_pct = (h_max - l_min) / avg_p
+            drift     = abs(start_p - end_p) / start_p
 
-            # Fast reject before expensive slope calc
-            if range_pct > threshold_pct or stability >= threshold_pct * 0.25:
+            # Pillar 1: tight range
+            if range_pct > threshold_pct:
                 continue
 
+            # Pillar 2: flat slope — rejects slow trends
             slope = _slope_pct(closes, avg_p)
-
             if slope >= slope_limit:
-                continue  # Trending — reject regardless of range/drift
+                continue
 
-            # Box spans exactly the qualifying window
-            # end is the last candle of the window, not extended further
-            end_i      = i + lookback - 1
-            is_active  = (last_close >= l_min) and (last_close <= h_max)
+            # Pillar 3: choppiness — rejects staircase/trending moves
+            chop = _choppiness(closes)
+            if chop < chop_min:
+                continue
+
+            # All structural checks pass — evaluate drift for found vs potential
+            end_i     = i + lookback - 1
+            is_active = (last_close >= l_min) and (last_close <= h_max)
 
             zone = {
                 "detector":  "accumulation",
@@ -99,13 +120,11 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
                 "is_active": is_active,
             }
 
-            # Confirmed: drift also passes
-            if drift < threshold_pct * 0.3:
+            if drift < threshold_pct * 0.2:
                 zone["status"] = "found"
                 return zone
 
-            # Potential: drift slightly relaxed
-            if best_potential is None and drift < threshold_pct * 0.6:
+            if best_potential is None and drift < threshold_pct * 0.4:
                 zone["status"] = "potential"
                 best_potential = zone
 
