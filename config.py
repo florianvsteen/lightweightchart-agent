@@ -1,17 +1,11 @@
 """
 config.py — Central configuration for all trading pairs.
 
-To add a new pair:
-1. Add an entry to PAIRS below.
-2. Assign a unique port (5000+).
-3. List the detector(s) you want enabled for that pair.
-
 detector_params for accumulation:
   lookback      — candle window size (max 60)
   threshold_pct — slope scaling factor per instrument
-  max_range_pct — maximum allowed box height as % of price.
-                  Box is rejected if (high - low) / avg_price > max_range_pct.
-                  US30: 0.2% = 0.002  |  US100: 0.25% = 0.0025  |  XAUUSD: 0.3% = 0.003
+  max_range_pct — maximum allowed box height as % of price
+  timeframe     — data interval this detector runs on (always "1m" for accumulation)
 """
 
 PAIRS = {
@@ -26,7 +20,8 @@ PAIRS = {
             "accumulation": {
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "max_range_pct": 0.002,   # 0.2% max box height
+                "max_range_pct": 0.002,
+                "timeframe": "1m",      # detector always runs on 1m regardless of chart view
             },
         },
     },
@@ -41,7 +36,8 @@ PAIRS = {
             "accumulation": {
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "max_range_pct": 0.0025,  # 0.25% max box height
+                "max_range_pct": 0.0025,
+                "timeframe": "1m",
             },
         },
     },
@@ -56,7 +52,8 @@ PAIRS = {
             "accumulation": {
                 "lookback": 40,
                 "threshold_pct": 0.002,
-                "max_range_pct": 0.003,   # 0.3% max box height
+                "max_range_pct": 0.003,
+                "timeframe": "1m",
             },
         },
     },
@@ -68,7 +65,7 @@ PAIRS = {
     #     "period": "1d",
     #     "detectors": ["accumulation"],
     #     "detector_params": {
-    #         "accumulation": {"lookback": 40, "threshold_pct": 0.0005, "max_range_pct": 0.001},
+    #         "accumulation": {"lookback": 40, "threshold_pct": 0.0005, "max_range_pct": 0.001, "timeframe": "1m"},
     #     },
     # },
 }
