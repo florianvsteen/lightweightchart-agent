@@ -1,224 +1,119 @@
 """
-server.py
+detectors/accumulation.py
 
-PairServer — a self-contained Flask server instance for a single trading pair.
-Each pair runs in its own thread on its own port.
+Detects sideways accumulation based purely on DIRECTIONLESSNESS — not price range size.
+
+What matters:
+  1. Price reverses direction frequently (choppiness)
+  2. No net directional slope (flat linear regression)
+
+What does NOT matter:
+  - How wide the range is
+  - How large individual candle moves are
+  - Drift / std dev / range thresholds
+
+Scans backwards through the last 60 candles max.
+Returns the most recent window that qualifies.
 """
 
-import os
-import time
-import threading
+import numpy as np
 import pandas as pd
-import yfinance as yf
-from flask import Flask, render_template, jsonify
-
-from detectors import run_detectors
-
-try:
-    from discord_webhook import DiscordWebhook, DiscordEmbed
-    DISCORD_AVAILABLE = True
-except ImportError:
-    DISCORD_AVAILABLE = False
-
-try:
-    from playwright.sync_api import sync_playwright
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-
-DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
 
-class PairServer:
+def _scalar(val) -> float:
+    if hasattr(val, 'item'):
+        return val.item()
+    if hasattr(val, 'iloc'):
+        return float(val.iloc[0])
+    return float(val)
+
+
+def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
+    """Absolute normalised slope of linear regression per candle."""
+    x = np.arange(len(closes), dtype=float)
+    return abs(np.polyfit(x, closes, 1)[0]) / avg_p
+
+
+def _choppiness(closes: np.ndarray) -> float:
     """
-    Encapsulates a Flask app and all state for a single trading pair.
+    Fraction of candle-to-candle moves that reverse direction.
+    Choppy sideways: ~0.45-0.60  |  Trending: ~0.10-0.25
     """
+    if len(closes) < 3:
+        return 0.0
+    diffs = np.diff(closes)
+    sign_changes = np.sum(np.sign(diffs[1:]) != np.sign(diffs[:-1]))
+    return sign_changes / (len(diffs) - 1)
 
-    def __init__(self, pair_id: str, config: dict):
-        self.pair_id = pair_id
-        self.ticker = config["ticker"]
-        self.port = config["port"]
-        self.label = config["label"]
-        self.interval = config.get("interval", "1m")
-        self.period = config.get("period", "1d")
-        self.detector_names = config.get("detectors", [])
-        self.detector_params = config.get("detector_params", {})
 
-        # Per-pair alert dedup tracking (keyed by detector name)
-        self.last_alerted: dict[str, int] = {}
+def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
+    """
+    Args:
+        lookback:      Window size in candles. Max is capped at 60.
+        threshold_pct: Only used to scale slope_limit per instrument.
+                       Does NOT gate on price range size.
+    """
+    try:
+        lookback = min(lookback, 60)  # Hard cap: never look back more than 60 candles
 
-        # Use absolute path so Flask resolves templates relative to the
-        # project root (cwd), not relative to server.py's location.
-        root = os.path.abspath(os.getcwd())
-        self.app = Flask(
-            __name__,
-            template_folder=os.path.join(root, "templates"),
-            static_folder=os.path.join(root, "static") if os.path.exists(os.path.join(root, "static")) else None,
-        )
-        self._register_routes()
+        if len(df) < lookback + 5:
+            return None
 
-    # ------------------------------------------------------------------ #
-    # Routes
-    # ------------------------------------------------------------------ #
-
-    def _register_routes(self):
-        app = self.app
-        pair_id = self.pair_id
-
-        # Each function must have a globally unique __name__ — Flask uses the
-        # function name as the endpoint key. Without unique names all pairs
-        # share the same endpoint and the last one registered wins everywhere.
-
-        def _index():
-            return render_template(
-                "index.html",
-                pair_id=pair_id,
-                label=self.label,
-                port=self.port,
-            )
-        _index.__name__ = f"index_{pair_id}"
-        app.route("/")(_index)
-
-        def _get_data():
-            return self._api_data()
-        _get_data.__name__ = f"get_data_{pair_id}"
-        app.route("/api/data")(_get_data)
-
-        def _test_alert():
-            return self._test_alert()
-        _test_alert.__name__ = f"test_alert_{pair_id}"
-        app.route("/test-alert")(_test_alert)
-
-    # ------------------------------------------------------------------ #
-    # Data + Detection
-    # ------------------------------------------------------------------ #
-
-    def _fetch_df(self):
-        df = yf.download(
-            self.ticker,
-            period=self.period,
-            interval=self.interval,
-            progress=False,
-        )
         if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
             df.columns = df.columns.get_level_values(0)
-        return df.dropna()
 
-    def _api_data(self):
-        try:
-            df = self._fetch_df()
-            detector_results = run_detectors(self.detector_names, df, self.detector_params)
+        # Slope limit: slope per candle must be below this fraction of avg price.
+        # Scales with instrument volatility via threshold_pct.
+        slope_limit = (threshold_pct * 0.15) / lookback
 
-            # Trigger Discord alerts for any newly active zones
-            for name, zone in detector_results.items():
-                if zone and zone.get("is_active"):
-                    last = self.last_alerted.get(name, 0)
-                    if zone["start"] > last:
-                        self.last_alerted[name] = zone["start"]
-                        threading.Thread(
-                            target=self._send_discord_alert,
-                            args=(zone,),
-                            daemon=True,
-                        ).start()
+        # Choppiness thresholds
+        CHOP_FOUND     = 0.44   # confirmed accumulation
+        CHOP_POTENTIAL = 0.36   # forming / possible
 
-            candles = [
-                {
-                    "time": int(idx.timestamp()),
-                    "open": float(r["Open"]),
-                    "high": float(r["High"]),
-                    "low": float(r["Low"]),
-                    "close": float(r["Close"]),
-                }
-                for idx, r in df.iterrows()
-            ]
+        last_close  = _scalar(df['Close'].iloc[-1])
+        best_potential = None
 
-            return jsonify(
-                {
-                    "pair": self.pair_id,
-                    "label": self.label,
-                    "candles": candles,
-                    "detectors": detector_results,
-                }
-            )
+        # Only scan the last 60 candles worth of windows
+        scan_start = max(1, len(df) - lookback - 60)
 
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        for i in range(len(df) - lookback - 1, scan_start, -1):
+            window  = df.iloc[i: i + lookback]
+            closes  = window['Close'].values.astype(float)
+            avg_p   = float(closes.mean())
+            h_max   = float(window['High'].max())
+            l_min   = float(window['Low'].min())
 
-    def _test_alert(self):
-        test_zone = {
-            "detector": "accumulation",
-            "start": int(time.time()),
-            "end": int(time.time()),
-            "top": 0,
-            "bottom": 0,
-            "is_active": True,
-        }
-        threading.Thread(
-            target=self._send_discord_alert, args=(test_zone,), daemon=True
-        ).start()
-        return f"Test alert triggered for {self.pair_id}. Check terminal and Discord."
+            # Check 1: flat slope — no directional trend
+            slope = _slope_pct(closes, avg_p)
+            if slope >= slope_limit:
+                continue
 
-    # ------------------------------------------------------------------ #
-    # Discord
-    # ------------------------------------------------------------------ #
+            # Check 2: choppy — price reverses direction frequently
+            chop = _choppiness(closes)
 
-    def _send_discord_alert(self, zone: dict):
-        if not DISCORD_WEBHOOK_URL:
-            print(f"[{self.pair_id}] Discord webhook URL not set.")
-            return
-        if not DISCORD_AVAILABLE:
-            print(f"[{self.pair_id}] discord-webhook package not installed.")
-            return
+            end_i     = i + lookback - 1
+            is_active = (last_close >= l_min) and (last_close <= h_max)
 
-        screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
-        detector_name = zone.get("detector", "unknown").capitalize()
+            zone = {
+                "detector":  "accumulation",
+                "start":     int(df.index[i].timestamp()),
+                "end":       int(df.index[end_i].timestamp()),
+                "top":       h_max,
+                "bottom":    l_min,
+                "is_active": is_active,
+            }
 
-        print(f"[{self.pair_id}] Sending Discord alert for {detector_name} zone...")
+            if chop >= CHOP_FOUND:
+                zone["status"] = "found"
+                return zone
 
-        try:
-            # Screenshot via Playwright
-            if PLAYWRIGHT_AVAILABLE:
-                with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
-                    page = browser.new_page(viewport={"width": 1280, "height": 720})
-                    page.goto(f"http://127.0.0.1:{self.port}")
-                    page.wait_for_timeout(6000)
-                    page.screenshot(path=screenshot_path)
-                    browser.close()
+            if best_potential is None and chop >= CHOP_POTENTIAL:
+                zone["status"] = "potential"
+                best_potential = zone
 
-            duration_min = (zone["end"] - zone["start"]) // 60
-            content = f"🚀 **{self.pair_id} — {detector_name} Confirmed ({duration_min}m)**"
-            webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
+        return best_potential
 
-            embed = DiscordEmbed(title="Market Consolidation", color="03b2f8")
-            embed.add_embed_field(
-                name="Action",
-                value="Draw a fixed range volume profile from the high to the low.",
-            )
-            embed.add_embed_field(
-                name="Signal",
-                value="If a low volume pocket is found, wait for a CVDD!",
-            )
-            embed.set_timestamp()
-            webhook.add_embed(embed)
-
-            if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
-                with open(screenshot_path, "rb") as f:
-                    webhook.add_file(file=f.read(), filename="chart.png")
-
-            webhook.execute()
-            print(f"[{self.pair_id}] Discord alert sent.")
-
-        except Exception as e:
-            print(f"[{self.pair_id}] Discord error: {e}")
-        finally:
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-
-    # ------------------------------------------------------------------ #
-    # Start
-    # ------------------------------------------------------------------ #
-
-    def run(self):
-        print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
-        self.app.run(host="0.0.0.0", port=self.port, use_reloader=False)
+    except Exception as e:
+        print(f"[accumulation] Detection error: {e}")
+        return None
