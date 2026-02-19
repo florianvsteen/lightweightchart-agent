@@ -59,9 +59,15 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
         if len(df) < lookback + 5:
             return None
 
+        # Aggressively flatten any MultiIndex yfinance may leave behind,
+        # then squeeze out any residual ticker dimension so .values is 1D.
         if isinstance(df.columns, pd.MultiIndex):
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
+        # Deduplicate columns (yfinance sometimes emits e.g. two "Close" cols)
+        df = df.loc[:, ~df.columns.duplicated()]
+        # Ensure every column is a plain 1D Series, not a DataFrame slice
+        df = pd.DataFrame({col: df[col].squeeze() for col in df.columns})
 
         # Slope limit: slope per candle must be below this fraction of avg price.
         # Scales with instrument volatility via threshold_pct.
@@ -79,10 +85,12 @@ def detect(df, lookback: int = 40, threshold_pct: float = 0.003) -> dict | None:
 
         for i in range(len(df) - lookback - 1, scan_start, -1):
             window  = df.iloc[i: i + lookback]
-            closes  = window['Close'].values.astype(float)
+            closes  = np.array(window['Close']).flatten().astype(float)
+            highs   = np.array(window['High']).flatten().astype(float)
+            lows    = np.array(window['Low']).flatten().astype(float)
             avg_p   = float(closes.mean())
-            h_max   = float(window['High'].max())
-            l_min   = float(window['Low'].min())
+            h_max   = float(highs.max())
+            l_min   = float(lows.min())
 
             # Check 1: flat slope — no directional trend
             slope = _slope_pct(closes, avg_p)
