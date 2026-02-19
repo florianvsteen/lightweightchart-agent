@@ -6,28 +6,15 @@ Register new detectors here by importing them and adding to REGISTRY.
 """
 
 from detectors.accumulation import detect as accumulation_detect
+from detectors.supply_demand import detect as supply_demand_detect
 
 REGISTRY = {
-    "accumulation": accumulation_detect,
-    # Future detectors:
-    # "distribution": distribution_detect,
-    # "breakout": breakout_detect,
-    # "orderblock": orderblock_detect,
+    "accumulation":  accumulation_detect,
+    "supply_demand": supply_demand_detect,
 }
 
 
 def run_detectors(detector_names: list, df, detector_params: dict = None) -> dict:
-    """
-    Runs all enabled detectors for a pair and returns their results.
-
-    Args:
-        detector_names: list of detector names to run
-        df:             OHLCV DataFrame
-        detector_params: optional dict of {detector_name: {kwarg: value}}
-                         e.g. {"accumulation": {"threshold_pct": 0.003}}
-
-    Returns a dict keyed by detector name, value is the result (or None).
-    """
     if detector_params is None:
         detector_params = {}
 
