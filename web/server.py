@@ -1,18 +1,31 @@
-# web/server.py
 from flask import Flask, render_template, jsonify
-# import your data_handler here
+from core.config import ASSET_CONFIGS
+from services.data_handler import fetch_market_data, format_for_charts
+from core.accumulation_detector import AccumulationDetector
 
 app = Flask(__name__)
 
 @app.route('/chart/<asset_name>')
 def chart_page(asset_name):
-    # Renders the template, JS handles the rest
     return render_template('index.html', asset_name=asset_name)
 
 @app.route('/api/data/<asset_name>')
-def get_modular_data(asset_name):
-    # 1. Look up ticker from core/config.py
-    # 2. Fetch data via services/data_handler.py
-    # 3. Run detection via core/accumulation_detector.py
-    # 4. Return JSON
-    pass
+def get_data(asset_name):
+    config = ASSET_CONFIGS.get(asset_name)
+    if not config:
+        return jsonify({"error": "Asset not found"}), 404
+
+    # 1. Fetch
+    df = fetch_market_data(config['ticker'])
+    
+    # 2. Analyze (Modular logic)
+    detector = AccumulationDetector(asset_name, config)
+    acc_zone = detector.check(df)
+    
+    # 3. Format
+    candles = format_for_charts(df)
+
+    return jsonify({
+        "candles": candles,
+        "accumulation": acc_zone
+    })
