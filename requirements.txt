@@ -3,3 +3,4 @@ yfinance
 pandas
 pandas_ta_classic
 tradingview_scraper
+databento
