@@ -58,7 +58,7 @@ def start_databento_stream():
         start_databento_stream() # Simple reconnect logic
 
 # Start the live stream in the background
-threading.Thread(target=start_databento_stream, daemon=True).start()
+#threading.Thread(target=start_databento_stream, daemon=True).start()
 
 @app.route('/')
 def index():
