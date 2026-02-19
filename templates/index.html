@@ -18,37 +18,68 @@
         header {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 20px;
+            flex-shrink: 0;
         }
         header h1 {
             font-size: 1.1rem;
             font-weight: 600;
             color: #fff;
+            white-space: nowrap;
         }
-        #status-bar {
+        #detector-statuses {
             display: flex;
-            gap: 12px;
-            font-size: 0.78rem;
-            color: #888;
+            gap: 10px;
+            flex-wrap: wrap;
         }
-        .detector-badge {
+        .detector-status {
             display: flex;
             align-items: center;
-            gap: 5px;
-            background: #1e2130;
+            gap: 7px;
+            background: #1a1d2e;
             border: 1px solid #2b2b43;
-            border-radius: 4px;
-            padding: 3px 8px;
+            border-radius: 5px;
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            transition: border-color 0.4s, background 0.4s;
         }
-        .detector-badge .dot {
-            width: 7px;
-            height: 7px;
+        .detector-status .indicator {
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #444;
-            transition: background 0.3s;
+            flex-shrink: 0;
+            transition: background 0.4s;
         }
-        .detector-badge .dot.active { background: #26a69a; }
-        .detector-badge .dot.inactive { background: #888; }
+        .detector-status .label-text {
+            transition: color 0.4s;
+        }
+
+        /* ── States ── */
+        .detector-status.state-looking {
+            border-color: #2b2b43;
+        }
+        .detector-status.state-looking .indicator { background: #444; }
+        .detector-status.state-looking .label-text { color: #666; }
+
+        .detector-status.state-potential {
+            border-color: #555;
+        }
+        .detector-status.state-potential .indicator {
+            background: #aaa;
+            box-shadow: 0 0 5px rgba(180,180,180,0.4);
+        }
+        .detector-status.state-potential .label-text { color: #bbb; }
+
+        .detector-status.state-found {
+            border-color: #888;
+            background: #1e2030;
+        }
+        .detector-status.state-found .indicator {
+            background: #ccc;
+            box-shadow: 0 0 8px rgba(220,220,220,0.6);
+        }
+        .detector-status.state-found .label-text { color: #e0e0e0; font-weight: 600; }
+
         #chart-container {
             flex: 1;
             border: 1px solid #2b2b43;
@@ -61,8 +92,8 @@
 <body>
     <header>
         <h1>{{ label }}</h1>
-        <div id="status-bar">
-            <!-- Detector badges injected here by JS -->
+        <div id="detector-statuses">
+            <!-- Status badges injected by JS -->
         </div>
     </header>
 
@@ -88,57 +119,99 @@
             wickVisible: true,
         });
 
-        // ── Detector Overlay Registry ─────────────────────────────────
-        // Each detector can register a renderer here.
-        // renderer(chart, detectorResult) → series (or null to skip)
+        // ── Status Badge helpers ──────────────────────────────────────
+        const statusContainer = document.getElementById('detector-statuses');
+        const statusEls = {};
+
+        const STATUS_CONFIG = {
+            looking:   { label: 'Looking for accumulation',       css: 'state-looking'   },
+            potential: { label: 'Potential accumulation forming',  css: 'state-potential' },
+            found:     { label: 'Accumulation found',              css: 'state-found'     },
+        };
+
+        function ensureStatusEl(detectorName) {
+            if (statusEls[detectorName]) return statusEls[detectorName];
+            const el = document.createElement('div');
+            el.className = 'detector-status state-looking';
+            el.innerHTML = `<span class="indicator"></span><span class="label-text"></span>`;
+            statusContainer.appendChild(el);
+            statusEls[detectorName] = el;
+            return el;
+        }
+
+        function setStatus(detectorName, state /* "looking"|"potential"|"found" */) {
+            const el = ensureStatusEl(detectorName);
+            const cfg = STATUS_CONFIG[state] || STATUS_CONFIG.looking;
+            el.className = `detector-status ${cfg.css}`;
+            el.querySelector('.label-text').textContent = cfg.label;
+        }
+
+        // ── Detector Overlay Renderers ────────────────────────────────
+        // Each renderer receives (chart, zone) and returns an array of series.
         const detectorRenderers = {
             accumulation: renderAccumulation,
         };
 
-        // Track series so we can clear/update them
-        const activeSeries = {};
+        const activeSeries = {};  // detectorName → [ series, ... ]
 
         function renderAccumulation(chart, zone) {
-            if (!zone) return null;
+            const isFound    = zone.status === 'found';
+            const isPotential = zone.status === 'potential';
 
-            const series = chart.addBaselineSeries({
-                baseValue: { type: 'price', price: zone.bottom },
-                topFillColor1: 'rgba(38, 166, 154, 0.12)',
-                topFillColor2: 'rgba(38, 166, 154, 0.05)',
-                topLineColor: 'rgba(38, 166, 154, 0.7)',
-                bottomFillColor1: 'rgba(0,0,0,0)',
-                bottomFillColor2: 'rgba(0,0,0,0)',
-                bottomLineColor: 'rgba(38, 166, 154, 0.7)',
+            // Colours: found = light grey, potential = dimmer grey
+            const lineAlpha  = isFound ? 0.55 : 0.28;
+            const fillAlpha  = isFound ? 0.08 : 0.03;
+            const lineColor  = `rgba(200, 200, 200, ${lineAlpha})`;
+            const fillColor  = `rgba(200, 200, 200, ${fillAlpha})`;
+
+            // Top boundary line
+            const topLine = chart.addLineSeries({
+                color: lineColor,
                 lineWidth: 1,
+                lineStyle: isFound ? 0 : 2,   // 0 = solid, 2 = dashed
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
             });
-
-            series.setData([
+            topLine.setData([
                 { time: zone.start, value: zone.top },
                 { time: zone.end,   value: zone.top },
             ]);
 
-            return series;
-        }
+            // Bottom boundary line
+            const bottomLine = chart.addLineSeries({
+                color: lineColor,
+                lineWidth: 1,
+                lineStyle: isFound ? 0 : 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            bottomLine.setData([
+                { time: zone.start, value: zone.bottom },
+                { time: zone.end,   value: zone.bottom },
+            ]);
 
-        // ── Status Bar ────────────────────────────────────────────────
-        const statusBar = document.getElementById('status-bar');
-        const badgeEls = {};
+            // Fill — baseline series anchored at bottom, value = top
+            const fill = chart.addBaselineSeries({
+                baseValue: { type: 'price', price: zone.bottom },
+                topFillColor1: fillColor,
+                topFillColor2: fillColor,
+                topLineColor:  'rgba(0,0,0,0)',
+                bottomFillColor1: 'rgba(0,0,0,0)',
+                bottomFillColor2: 'rgba(0,0,0,0)',
+                bottomLineColor:  'rgba(0,0,0,0)',
+                lineWidth: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            fill.setData([
+                { time: zone.start, value: zone.top },
+                { time: zone.end,   value: zone.top },
+            ]);
 
-        function ensureBadge(name) {
-            if (badgeEls[name]) return;
-            const badge = document.createElement('div');
-            badge.className = 'detector-badge';
-            badge.innerHTML = `<span class="dot" id="dot-${name}"></span><span>${name}</span>`;
-            statusBar.appendChild(badge);
-            badgeEls[name] = badge;
-        }
-
-        function setBadgeState(name, active) {
-            ensureBadge(name);
-            const dot = document.getElementById(`dot-${name}`);
-            if (dot) {
-                dot.className = 'dot ' + (active ? 'active' : 'inactive');
-            }
+            return [topLine, bottomLine, fill];
         }
 
         // ── Data Loop ─────────────────────────────────────────────────
@@ -150,21 +223,21 @@
 
                     candleSeries.setData(data.candles);
 
-                    // Remove all old detector series
-                    for (const [name, series] of Object.entries(activeSeries)) {
-                        if (series) chart.removeSeries(series);
+                    // Remove all previous detector overlays
+                    for (const [name, seriesList] of Object.entries(activeSeries)) {
+                        (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
                         delete activeSeries[name];
                     }
 
-                    // Render each detector result
                     const detectors = data.detectors || {};
                     for (const [name, result] of Object.entries(detectors)) {
                         const renderer = detectorRenderers[name];
-                        if (renderer && result) {
+                        if (result && renderer) {
                             activeSeries[name] = renderer(chart, result);
-                            setBadgeState(name, result.is_active === true);
+                            setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
                         } else {
-                            setBadgeState(name, false);
+                            ensureStatusEl(name);
+                            setStatus(name, 'looking');
                         }
                     }
                 })
@@ -174,7 +247,6 @@
         setInterval(loadData, 2000);
         loadData();
 
-        // Resize chart with window
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
     </script>
 </body>
