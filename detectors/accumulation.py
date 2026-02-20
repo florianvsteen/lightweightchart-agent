@@ -106,7 +106,14 @@ def detect(
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        last_close  = float(df['Close'].iloc[-1])
+        # Use last CLOSED candle (iloc[-2]) for breakout detection.
+        # A candle has broken out only if its entire BODY is outside the zone.
+        # Wicks through the boundary don't count.
+        last_closed_open  = float(df['Open'].iloc[-2])
+        last_closed_close = float(df['Close'].iloc[-2])
+        last_body_high    = max(last_closed_open, last_closed_close)
+        last_body_low     = min(last_closed_open, last_closed_close)
+
         scan_start  = max(1, len(df) - 60)
         best_potential = None
 
@@ -137,7 +144,10 @@ def detect(
 
             chop  = _choppiness(closes)
             end_i = i + lookback - 1
-            is_active = (last_close >= l_min) and (last_close <= h_max)
+
+            # is_active = last closed candle BODY is still inside the zone
+            # (body did not close outside — wicks don't count)
+            is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
             zone = {
                 "detector":  "accumulation",
