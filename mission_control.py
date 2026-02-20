@@ -12,7 +12,7 @@ Then open: http://localhost:5010
 """
 
 import requests
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 from config import PAIRS
 
 app = Flask(__name__)
