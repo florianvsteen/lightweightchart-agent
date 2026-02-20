@@ -114,7 +114,7 @@ PAIRS = {
       },
     },
       "GBPUSD": {
-      "ticker": "EURGBP=X",
+      "ticker": "GBPUSD=X",
       "port": 5005,
       "label": "GBPUSD",
       "interval": "15m",
