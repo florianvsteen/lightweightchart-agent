@@ -108,6 +108,8 @@
             border-radius: 50%;
             background: #444;
         }
+        #session-badge.inactive { border-color: #444; color: #555; }
+        #session-badge.inactive .session-dot { background: #444; }
         #session-badge.asian    { border-color: #c8a84b; color: #c8a84b; }
         #session-badge.asian    .session-dot { background: #c8a84b; box-shadow: 0 0 5px rgba(200,168,75,0.5); }
         #session-badge.london   { border-color: #4b9ecd; color: #4b9ecd; }
@@ -181,22 +183,68 @@
             new_york: 'New York',
         };
 
+        // Session hours in CET (browser local time)
+        // Asian:    02:00 – 08:00 CET
+        // London:   09:00 – 13:00 CET
+        // New York: 15:00 – 20:00 CET
+        // Outside these windows: show countdown to next session
+
+        const SESSION_WINDOWS = {
+            asian:    { start: 2,  end: 8  },
+            london:   { start: 9,  end: 13 },
+            new_york: { start: 15, end: 20 },
+        };
+
         function getCurrentSession() {
-            const hour = new Date().getUTCHours();
+            const hour = new Date().getHours();  // CET local time
             if (hour >= 15 && hour < 20) return 'new_york';
-            if (hour >= 9  && hour < 14) return 'london';
-            return 'asian';
+            if (hour >= 9  && hour < 13) return 'london';
+            if (hour >= 2  && hour < 8)  return 'asian';
+            return null;  // between sessions
+        }
+
+        function getNextSession() {
+            const now  = new Date();
+            const hour = now.getHours();
+            // Find the next session start in CET
+            const starts = [
+                { name: 'asian',    hour: 2  },
+                { name: 'london',   hour: 9  },
+                { name: 'new_york', hour: 15 },
+            ];
+            // Find next session that hasn't started yet today, or first of tomorrow
+            let next = starts.find(s => s.hour > hour);
+            if (!next) next = starts[0];  // wrap to tomorrow
+            const target = new Date(now);
+            target.setHours(next.hour, 0, 0, 0);
+            if (target <= now) target.setDate(target.getDate() + 1);
+            const diffMs   = target - now;
+            const diffH    = Math.floor(diffMs / 3600000);
+            const diffM    = Math.floor((diffMs % 3600000) / 60000);
+            const diffS    = Math.floor((diffMs % 60000) / 1000);
+            const pad      = n => String(n).padStart(2, '0');
+            return {
+                name:      next.name,
+                countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}`,
+            };
         }
 
         function updateSessionBadge() {
             const session = getCurrentSession();
-            const badge = document.getElementById('session-badge');
-            badge.className = session;
-            document.getElementById('session-label').textContent = SESSION_LABELS[session] + ' Session';
+            const badge   = document.getElementById('session-badge');
+            if (session) {
+                badge.className = session;
+                document.getElementById('session-label').textContent = SESSION_LABELS[session] + ' Session';
+            } else {
+                const next = getNextSession();
+                badge.className = 'inactive';
+                document.getElementById('session-label').textContent =
+                    SESSION_LABELS[next.name] + ' opens in ' + next.countdown;
+            }
         }
 
         updateSessionBadge();
-        setInterval(updateSessionBadge, 60000);  // update every minute
+        setInterval(updateSessionBadge, 1000);  // update every second for countdown
 
         // ── Interval buttons ─────────────────────────────────────────
         document.querySelectorAll('.tf-btn').forEach(btn => {
