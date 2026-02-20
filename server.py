@@ -235,7 +235,20 @@ DEBUG_HTML = r"""<!DOCTYPE html>
 </div>
 
 <script>
-const PAIR_ID = "__PAIR_ID__";
+const PAIR_ID  = "__PAIR_ID__";
+const TIMEZONE = "__TIMEZONE__";
+
+// ── Timezone offset (same logic as production chart) ─────────────────────
+function getTzOffsetSeconds(tz) {
+  try {
+    const now    = new Date();
+    const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
+    const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
+    return (new Date(tzStr) - new Date(utcStr)) / 1000;
+  } catch(e) { return 0; }
+}
+const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
+function shiftTime(ts) { return ts + TZ_OFFSET; }
 
 // ── State ─────────────────────────────────────────────────────────────────
 let liveData    = null;   // full /debug/data payload (never changes during session)
@@ -341,15 +354,15 @@ async function seekTo(idx) {
   replayIdx = idx;
 
   const slice = liveData.candles.slice(0, idx);
-  candleSeries.setData(slice);
+  candleSeries.setData(slice.map(c => ({ ...c, time: shiftTime(c.time) })));
   chart.timeScale().fitContent();
 
   const scrubber = document.getElementById('scrubber');
   scrubber.value = idx - 1;
   const lastCandle = slice[slice.length - 1];
-  const dt = lastCandle ? new Date(lastCandle.time * 1000) : null;
+  const dt = lastCandle ? new Date((lastCandle.time + TZ_OFFSET) * 1000) : null;
   document.getElementById('scrub-ts').textContent = dt
-    ? dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '—';
+    ? dt.toISOString().replace('T', ' ').slice(0, 16) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${total}`;
 }
 
@@ -501,18 +514,20 @@ function drawWindowOverlay(w) {
     lineWidth: 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
 
-  top.setData(  [{ time: w.start_ts, value: w.top    }, { time: w.end_ts, value: w.top    }]);
-  bot.setData(  [{ time: w.start_ts, value: w.bottom }, { time: w.end_ts, value: w.bottom }]);
-  left.setData( [{ time: w.start_ts, value: w.top    }, { time: w.start_ts, value: w.bottom }]);
-  right.setData([{ time: w.end_ts,   value: w.top    }, { time: w.end_ts,   value: w.bottom }]);
-  fillS.setData([{ time: w.start_ts, value: w.top    }, { time: w.end_ts,   value: w.top    }]);
+  const s = shiftTime(w.start_ts);
+  const e = shiftTime(w.end_ts);
+  top.setData(  [{ time: s, value: w.top    }, { time: e, value: w.top    }]);
+  bot.setData(  [{ time: s, value: w.bottom }, { time: e, value: w.bottom }]);
+  left.setData( [{ time: s, value: w.top    }, { time: s, value: w.bottom }]);
+  right.setData([{ time: e, value: w.top    }, { time: e, value: w.bottom }]);
+  fillS.setData([{ time: s, value: w.top    }, { time: e, value: w.top    }]);
 
   overlaySeriesList = [top, bot, left, right, fillS];
 }
 
 // ── Chart render ──────────────────────────────────────────────────────────
 function renderChart(candles) {
-  candleSeries.setData(candles);
+  candleSeries.setData(candles.map(c => ({ ...c, time: shiftTime(c.time) })));
   chart.timeScale().fitContent();
 }
 
@@ -601,14 +616,13 @@ scrubberEl.addEventListener('input', () => {
   stopPlay();
   const idx = parseInt(scrubberEl.value) + 1;
   const slice = liveData.candles.slice(0, idx);
-  candleSeries.setData(slice);
+  candleSeries.setData(slice.map(c => ({ ...c, time: shiftTime(c.time) })));
   const lastCandle = slice[slice.length - 1];
-  const dt = lastCandle ? new Date(lastCandle.time * 1000) : null;
+  const dt = lastCandle ? new Date((lastCandle.time + TZ_OFFSET) * 1000) : null;
   document.getElementById('scrub-ts').textContent =
-    dt ? dt.toISOString().replace('T',' ').slice(0,16) + ' UTC' : '—';
+    dt ? dt.toISOString().replace('T',' ').slice(0,16) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${liveData.candles.length}`;
   replayIdx = idx;
-  // Clear stale overlay when scrubbing
   drawWindowOverlay(null);
 });
 
@@ -930,8 +944,12 @@ class PairServer:
 
     def _debug(self):
         """Rich debug page: chart + side panel showing per-window rejection reasons + replay mode."""
-        # Serve the HTML shell — the page JS fetches /debug/data for the JSON payload
-        return DEBUG_HTML.replace("__PAIR_ID__", self.pair_id).replace("__LABEL__", self.label)
+        tz = os.environ.get("TZ", "Europe/Brussels")
+        return (DEBUG_HTML
+            .replace("__PAIR_ID__",  self.pair_id)
+            .replace("__LABEL__",    self.label)
+            .replace("__TIMEZONE__", tz)
+        )
 
     def _debug_data(self):
         """Return detailed rejection analysis JSON for the debug page."""
