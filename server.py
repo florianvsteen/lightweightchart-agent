@@ -63,8 +63,12 @@ class PairServer:
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
 
-        # Alert dedup
-        self.last_alerted: dict[str, int] = {}
+        # Alert dedup — persisted to disk so restarts don't re-fire old alerts
+        self._alerted_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f".alerted_{pair_id}.json"
+        )
+        self.last_alerted: dict[str, int] = self._load_alerted()
         self.last_active_zone: dict[str, dict] = {}
 
         # Per-request DataFrame cache (cleared each cycle)
@@ -156,14 +160,13 @@ class PairServer:
 
             # ── Accumulation ──────────────────────────────────────────
             if name == "accumulation":
-                # Clean up alerted timestamps older than 4 hours (beyond lookback range)
+                # Clean up alerted timestamps older than 4 hours
                 cutoff = int(time.time()) - (4 * 3600)
-                old_keys = [k for k, v in self.last_alerted.items()
-                            if k == name and isinstance(v, int) and v < cutoff]
-                if old_keys:
-                    for k in old_keys:
-                        del self.last_alerted[k]
-                    self._save_alerted()
+                if name in self.last_alerted and isinstance(self.last_alerted[name], int):
+                    if self.last_alerted[name] < cutoff:
+                        del self.last_alerted[name]
+                        self._save_alerted()
+
                 prev = self.last_active_zone.get(name)
                 zone = result if (result and isinstance(result, dict)) else None
                 is_active_found = (
@@ -174,20 +177,17 @@ class PairServer:
 
                 if is_active_found:
                     zone_start = zone["start"]
-                    # Only update tracking if this is a NEW zone (different start time)
-                    # Prevents re-alerting on the same zone across detection cycles
                     if zone_start != self.last_active_zone.get(name, {}).get("start"):
                         self.last_active_zone[name] = zone
                     else:
-                        # Same zone — just update end time, don't reset
                         self.last_active_zone[name] = zone
 
                 elif prev is not None and prev.get("status") == "found":
-                    # Had an active found zone — now it's gone = breakout
                     zone_start = prev["start"]
                     already_alerted = self.last_alerted.get(name, 0)
                     if zone_start != already_alerted:
                         self.last_alerted[name] = zone_start
+                        self._save_alerted()
                         self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
@@ -203,7 +203,7 @@ class PairServer:
                 curr_active = {z["start"] for z in zones if z.get("is_active")}
                 prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                # Remove invalidated zones from last_alerted (zone disappeared from chart)
+                # Remove invalidated zones from last_alerted so they can re-fire if they return
                 invalidated = prev_starts - curr_active
                 changed = False
                 for start_ts in invalidated:
@@ -222,7 +222,7 @@ class PairServer:
                     start_ts = z["start"]
                     alert_key = f"{name}_{start_ts}"
                     if self.last_alerted.get(alert_key):
-                        continue  # already alerted for this zone
+                        continue
                     self.last_alerted[alert_key] = 1
                     self._save_alerted()
                     alert_zone = {
@@ -318,8 +318,12 @@ class PairServer:
             return
 
         screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
-        detector_name = zone.get("detector", "unknown").capitalize()
-        print(f"[{self.pair_id}] Sending Discord alert for {detector_name} zone...")
+        raw = zone.get("detector", "unknown")
+        if raw in ("demand", "supply"):
+            detector_name = f"{raw.capitalize()} Zone"
+        else:
+            detector_name = raw.replace("_", " ").title()
+        print(f"[{self.pair_id}] Sending Discord alert for {detector_name}...")
 
         try:
             if PLAYWRIGHT_AVAILABLE:
@@ -332,7 +336,11 @@ class PairServer:
                     browser.close()
 
             duration_min = (zone["end"] - zone["start"]) // 60
-            content = f"🚀 **{self.pair_id} — {detector_name} Found**"
+            if zone.get("detector") in ("demand", "supply"):
+                emoji = "📈" if zone.get("detector") == "demand" else "📉"
+                content = f"{emoji} **{self.pair_id} — {detector_name} Found**"
+            else:
+                content = f"🚀 **{self.pair_id} — {detector_name} Confirmed ({duration_min}m)**"
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
             if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
