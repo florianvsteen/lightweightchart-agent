@@ -482,6 +482,7 @@
                             if (name === 'supply_demand') {
                                 const bias  = result.bias  || {};
                                 const zones = result.zones || [];
+                                updateBiasBadge(bias);
                                 if (bias.bias === 'misaligned') {
                                     setStatus(name, 'sd_misaligned');
                                 } else if (zones.filter(z => z.status !== 'broken').length > 0) {
@@ -493,20 +494,27 @@
                                 } else {
                                     setStatus(name, 'sd_none');
                                 }
-                            } else if (Array.isArray(result)) {
-                                const active = result.filter(z => z.status !== 'broken');
-                                setStatus(name, active.length > 0 ? 'sd_found' : 'sd_none');
+                            } else if (name === 'accumulation') {
+                                // accumulation returns {status:"looking"} when in-session but nothing found
+                                // and null when truly out of session
+                                const s = result.status;
+                                if (s === 'found' || s === 'potential') {
+                                    setStatus(name, s);
+                                } else {
+                                    setStatus(name, 'looking');
+                                }
                             } else {
                                 setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
                             }
                         } else {
                             ensureStatusEl(name);
-                            if (result === null) {
-                                setStatus(name, name === 'supply_demand' ? 'sd_none' : 'out_of_session');
+                            if (name === 'supply_demand') {
+                                updateBiasBadge(null);
+                                setStatus(name, 'sd_none');
                             } else {
-                                setStatus(name, 'looking');
+                                // null = truly out of session
+                                setStatus(name, 'out_of_session');
                             }
-                            if (name === 'supply_demand') updateBiasBadge(null);
                         }
                     }
                 })
