@@ -21,7 +21,7 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 100,
+                "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.003,
@@ -42,7 +42,7 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 100,
+                "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.003,
@@ -63,7 +63,7 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 100,
+                "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.002,
