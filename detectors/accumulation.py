@@ -7,14 +7,16 @@ Rules:
   - Only scans the most recent 60 candles (hard cap)
   - Window size capped at 60
   - max_range_pct varies per session (asian/london/new_york)
-  - SLOPE must be near flat (linear regression)
+  - SLOPE must be near flat (linear regression on closes)
   - CHOPPINESS must be high (price reverses up/down frequently)
+  - V-SHAPE check rejects windows where the extreme sits in the inner
+    40-60% of the window (trending up then down or vice versa)
+  - Box boundaries use candle BODIES (open/close), not wicks
 
-Session hours match index.html exactly (CET local time):
-  Asian:    02:00 – 08:00 CET
-  London:   09:00 – 13:00 CET
-  New York: 15:00 – 20:00 CET
-  Outside:  treated as asian (quiet/off-hours)
+Session hours in UTC — same for everyone worldwide:
+  Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
+  London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
+  New York: 13:00 – 19:00 UTC  (14:00 – 20:00 CET)
 """
 
 import numpy as np
@@ -22,15 +24,12 @@ import pandas as pd
 from datetime import datetime, timezone
 
 
-# Session windows in UTC — same for everyone worldwide.
-# Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
-# London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
-# New York: 14:00 – 19:00 UTC  (15:00 – 20:00 CET)
 SESSION_WINDOWS = {
     "asian":    (1,  7),
     "london":   (8,  12),
-    "new_york": (14, 19),
+    "new_york": (13, 19),
 }
+
 
 def get_current_session():
     """Return current session name based on UTC time, or None if out of session."""
@@ -41,7 +40,7 @@ def get_current_session():
         return "london"
     elif SESSION_WINDOWS["asian"][0] <= hour < SESSION_WINDOWS["asian"][1]:
         return "asian"
-    return None  # out of session — no detection
+    return None
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
@@ -58,14 +57,17 @@ def _choppiness(closes: np.ndarray) -> float:
 
 
 def _is_v_shape(closes: np.ndarray) -> bool:
+    """Reject V-shapes and inverted-V shapes.
+    If the peak or trough sits in the inner 40-60% of the window,
+    the window is trending up-then-down (or down-then-up), not sideways."""
     n = len(closes)
     if n < 6:
         return False
-    peak_i  = int(np.argmax(closes))
+    peak_i   = int(np.argmax(closes))
     trough_i = int(np.argmin(closes))
-    third = n // 3
-    # V or inverted-V: extreme (peak or trough) sits in the middle third
-    return (third <= peak_i < 2 * third) or (third <= trough_i < 2 * third)
+    lo = int(n * 0.40)
+    hi = int(n * 0.60)
+    return (lo <= peak_i <= hi) or (lo <= trough_i <= hi)
 
 
 def detect(
@@ -77,15 +79,6 @@ def detect(
     london_range_pct: float = None,
     new_york_range_pct: float = None,
 ) -> dict | None:
-    """
-    Args:
-        lookback:           Window size in candles. Hard capped at 60.
-        threshold_pct:      Slope scaling factor per instrument.
-        max_range_pct:      Fallback max box height if no session override set.
-        asian_range_pct:    Max box height during Asian session (02-08 CET).
-        london_range_pct:   Max box height during London session (09-13 CET).
-        new_york_range_pct: Max box height during New York session (15-20 CET).
-    """
     try:
         lookback = min(lookback, 60)
 
@@ -100,12 +93,10 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        # Don't run detection outside of trading sessions
         session = get_current_session()
         if session is None:
             return None
 
-        # Pick the right max_range_pct for current session
         session_range = {
             "asian":    asian_range_pct,
             "london":   london_range_pct,
@@ -117,23 +108,19 @@ def detect(
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        # Use last CLOSED candle (iloc[-2]) for breakout detection.
-        # A candle has broken out only if its entire BODY is outside the zone.
-        # Wicks through the boundary don't count.
         last_closed_open  = float(df['Open'].iloc[-2])
         last_closed_close = float(df['Close'].iloc[-2])
         last_body_high    = max(last_closed_open, last_closed_close)
         last_body_low     = min(last_closed_open, last_closed_close)
 
-        scan_start  = max(1, len(df) - 60)
+        scan_start     = max(1, len(df) - 60)
         best_potential = None
 
         for i in range(len(df) - lookback - 1, scan_start, -1):
             window = df.iloc[i: i + lookback]
 
             closes = window['Close'].values.flatten().astype(float)
-            highs  = window['High'].values.flatten().astype(float)
-            lows   = window['Low'].values.flatten().astype(float)
+            opens  = window['Open'].values.flatten().astype(float)
 
             if len(closes) < lookback:
                 continue
@@ -142,11 +129,9 @@ def detect(
             if avg_p == 0:
                 continue
 
-            # Use body range (max of opens/closes) to avoid wicks pushing box too wide
-            body_highs = np.maximum(window['Open'].values.flatten().astype(float),
-                                    window['Close'].values.flatten().astype(float))
-            body_lows  = np.minimum(window['Open'].values.flatten().astype(float),
-                                    window['Close'].values.flatten().astype(float))
+            # Body boundaries — wicks excluded
+            body_highs = np.maximum(opens, closes)
+            body_lows  = np.minimum(opens, closes)
             h_max = float(body_highs.max())
             l_min = float(body_lows.min())
 
@@ -158,16 +143,12 @@ def detect(
             if slope >= slope_limit:
                 continue
 
-            # Reject V-shapes and inverted-V shapes — trending up then down
-            # (or down then up) has a flat slope but is not accumulation.
             if _is_v_shape(closes):
                 continue
 
             chop  = _choppiness(closes)
             end_i = i + lookback - 1
 
-            # is_active = last closed candle BODY is still inside the zone
-            # (body did not close outside — wicks don't count)
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
             zone = {
@@ -191,8 +172,6 @@ def detect(
         if best_potential is not None:
             return best_potential
 
-        # In session but no zone found — return sentinel so frontend
-        # can show "Looking" instead of "Out of session"
         return {"detector": "accumulation", "status": "looking", "is_active": False}
 
     except Exception as e:
