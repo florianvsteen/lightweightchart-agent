@@ -1,14 +1,12 @@
 """
 config.py — Central configuration for all trading pairs.
 
-detector_params keys:
-  timeframe     — data interval this detector runs on (stripped before passing to detect())
-  lookback      — (accumulation) candle window size, max 60
-  threshold_pct — (accumulation) slope scaling factor
-  max_range_pct — (accumulation) max box height as % of price
-  impulse_multiplier — (supply_demand) how much bigger impulse must be vs avg candle
-  wick_ratio    — (supply_demand) min fraction of candle that must be wicks
-  max_zones     — (supply_demand) max number of zones to return
+Per-session accumulation thresholds (max_range_pct):
+  Asian session   — quieter, tighter ranges expected
+  London session  — moderate volatility
+  New York session — most volatile, widest valid boxes
+
+If a session override is not set, falls back to max_range_pct.
 """
 
 PAIRS = {
@@ -21,10 +19,12 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
+                "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "max_range_pct": 0.002,
-                "timeframe": "1m",
+                "asian_range_pct":    0.001,   # Asian: ~42pt box max
+                "london_range_pct":   0.0015,  # London: ~63pt box max
+                "new_york_range_pct": 0.002,   # NY: ~84pt box max
             },
         },
     },
@@ -37,10 +37,12 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
+                "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "max_range_pct": 0.0025,
-                "timeframe": "1m",
+                "asian_range_pct":    0.00125,  # Asian: ~26pt box max
+                "london_range_pct":   0.002,    # London: ~42pt box max
+                "new_york_range_pct": 0.0025,   # NY: ~52pt box max
             },
         },
     },
@@ -53,10 +55,12 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
+                "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.002,
-                "max_range_pct": 0.003,
-                "timeframe": "1m",
+                "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
+                "london_range_pct":   0.002,   # London: ~$6 box max
+                "new_york_range_pct": 0.003,   # NY: ~$9 box max
             },
         },
     },
@@ -69,9 +73,9 @@ PAIRS = {
         "detectors": ["supply_demand"],
         "detector_params": {
             "supply_demand": {
-                "timeframe": "30m",        # runs on 30m
-                "impulse_multiplier": 1.8, # impulse must be 1.8x avg candle size
-                "wick_ratio": 0.6,         # 60%+ of candle must be wicks
+                "timeframe": "30m",
+                "impulse_multiplier": 1.8,
+                "wick_ratio": 0.6,
                 "max_zones": 5,
             },
         },
