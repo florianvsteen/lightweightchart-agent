@@ -182,7 +182,7 @@ def detect(
         avg_body  = float(np.mean(bodies))
 
         # Use body of last fully closed candle for status checks.
-        # Last closed candle wick used for tested detection
+        # Wicks through zone boundaries don't count as broken/tested.
         last_closed_open  = opens[-2]
         last_closed_close = closes[-2]
         last_body_high    = max(last_closed_open, last_closed_close)
@@ -231,19 +231,15 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                # Remove zone if last closed candle closed below the bottom
-                if last_closed_close < bottom:
+                # Remove if wick has touched the zone (low at or below zone top)
+                if lows[-2] <= top:
                     continue
-                # Tested: wick entered the zone
-                tested = lows[-2] <= top
             else:  # supply
-                # Remove zone if last closed candle closed above the top
-                if last_closed_close > top:
+                # Remove if wick has touched the zone (high at or above zone bottom)
+                if highs[-2] >= bottom:
                     continue
-                # Tested: wick entered the zone
-                tested = highs[-2] >= bottom
 
-            status = "tested" if tested else "active" 
+            status = "active"
 
             zones.append({
                 "type":      zone_type,
