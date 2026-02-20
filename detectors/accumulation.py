@@ -1,7 +1,7 @@
 """
 detectors/accumulation.py
 
-Detects SIDEWAYS accumulation based purely on DIRECTIONLESSNESS.
+Detects SIDEWAYS accumulation based on DIRECTIONLESSNESS + LOW ADX.
 
 Rules:
   - Scans the last `lookback` candles (configurable, default 100)
@@ -9,9 +9,10 @@ Rules:
   - max_range_pct varies per session (asian/london/new_york)
   - SLOPE must be near flat (linear regression on closes)
   - CHOPPINESS must be high (price reverses up/down frequently)
-  - V-SHAPE check rejects windows where the extreme sits in the inner
-    40-60% of the window (trending up then down or vice versa)
+  - ADX must be below adx_threshold (default 25) — no directional strength
+  - V-SHAPE check rejects windows where extreme is in inner 40-60%
   - Box boundaries use candle BODIES (open/close), not wicks
+  - Prefers TIGHTER boxes (smaller range) over larger ones
 
 Session hours in UTC:
   Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
@@ -56,8 +57,6 @@ def _choppiness(closes: np.ndarray) -> float:
 
 
 def _is_v_shape(closes: np.ndarray) -> bool:
-    """Reject V-shapes and inverted-V shapes.
-    Peak or trough in the inner 40-60% = trending not sideways."""
     n = len(closes)
     if n < 6:
         return False
@@ -68,10 +67,59 @@ def _is_v_shape(closes: np.ndarray) -> bool:
     return (lo <= peak_i <= hi) or (lo <= trough_i <= hi)
 
 
+def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+    """Calculate ADX. Returns float or None if insufficient data."""
+    n = len(closes)
+    if n < period * 2 + 1:
+        return None
+
+    tr       = np.zeros(n)
+    plus_dm  = np.zeros(n)
+    minus_dm = np.zeros(n)
+
+    for i in range(1, n):
+        hl = highs[i] - lows[i]
+        hc = abs(highs[i] - closes[i-1])
+        lc = abs(lows[i] - closes[i-1])
+        tr[i] = max(hl, hc, lc)
+
+        up   = highs[i] - highs[i-1]
+        down = lows[i-1] - lows[i]
+        plus_dm[i]  = up   if (up > down and up > 0)   else 0.0
+        minus_dm[i] = down if (down > up and down > 0) else 0.0
+
+    def _smooth(arr, p):
+        out = np.zeros(n)
+        out[p] = arr[1:p+1].sum()
+        for i in range(p+1, n):
+            out[i] = out[i-1] - out[i-1] / p + arr[i]
+        return out
+
+    atr  = _smooth(tr, period)
+    pDM  = _smooth(plus_dm, period)
+    mDM  = _smooth(minus_dm, period)
+
+    with np.errstate(invalid='ignore', divide='ignore'):
+        pDI = np.where(atr > 0, 100 * pDM / atr, 0.0)
+        mDI = np.where(atr > 0, 100 * mDM / atr, 0.0)
+        dx  = np.where((pDI + mDI) > 0, 100 * np.abs(pDI - mDI) / (pDI + mDI), 0.0)
+
+    adx_arr = np.zeros(n)
+    start = 2 * period
+    if start >= n:
+        return None
+    adx_arr[start] = dx[period:start+1].mean()
+    for i in range(start+1, n):
+        adx_arr[i] = (adx_arr[i-1] * (period - 1) + dx[i]) / period
+
+    return float(adx_arr[-1])
+
+
 def detect(
     df,
     lookback: int = 100,
     min_candles: int = 20,
+    adx_threshold: float = 25,
     threshold_pct: float = 0.003,
     max_range_pct: float = None,
     asian_range_pct: float = None,
@@ -80,10 +128,11 @@ def detect(
 ) -> dict | None:
     """
     Args:
-        lookback:           How far back to scan (number of candles). Default 100.
-        min_candles:        Minimum window size for a valid accumulation. Default 20.
+        lookback:           How far back to scan (candles). Default 100.
+        min_candles:        Minimum window size for valid accumulation. Default 20.
+        adx_threshold:      Maximum ADX value allowed (default 25 = no trend).
         threshold_pct:      Slope scaling factor per instrument.
-        max_range_pct:      Fallback max box height if no session override set.
+        max_range_pct:      Fallback max box height % if no session override.
         asian_range_pct:    Max box height during Asian session.
         london_range_pct:   Max box height during London session.
         new_york_range_pct: Max box height during New York session.
@@ -114,21 +163,19 @@ def detect(
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        # Last closed candle body for is_active check (wicks don't count)
         last_closed_open  = float(df['Open'].iloc[-2])
         last_closed_close = float(df['Close'].iloc[-2])
         last_body_high    = max(last_closed_open, last_closed_close)
         last_body_low     = min(last_closed_open, last_closed_close)
 
-        # Scan start: only look at the last `lookback` candles
         scan_start = max(0, len(df) - lookback)
 
-        best_found     = None
-        best_potential = None
+        best_found     = None   # tightest found zone
+        best_potential = None   # tightest potential zone
 
-        # Try all window sizes from min_candles up to lookback
-        # Prefer larger windows (more confirmed) over smaller ones
-        for window_size in range(lookback, min_candles - 1, -1):
+        # Try all window sizes from min_candles up to lookback.
+        # Prefer SMALLER windows with tighter ranges over larger ones.
+        for window_size in range(min_candles, lookback + 1):
             slope_limit = (threshold_pct * 0.15) / window_size
 
             for i in range(len(df) - window_size, scan_start - 1, -1):
@@ -138,6 +185,8 @@ def detect(
                 window = df.iloc[i: i + window_size]
                 closes = window['Close'].values.flatten().astype(float)
                 opens  = window['Open'].values.flatten().astype(float)
+                highs  = window['High'].values.flatten().astype(float)
+                lows   = window['Low'].values.flatten().astype(float)
 
                 if len(closes) < window_size:
                     continue
@@ -151,9 +200,10 @@ def detect(
                 body_lows  = np.minimum(opens, closes)
                 h_max = float(body_highs.max())
                 l_min = float(body_lows.min())
+                range_pct = (h_max - l_min) / avg_p
 
                 if effective_range_pct is not None:
-                    if (h_max - l_min) / avg_p > effective_range_pct:
+                    if range_pct > effective_range_pct:
                         continue
 
                 slope = _slope_pct(closes, avg_p)
@@ -163,9 +213,13 @@ def detect(
                 if _is_v_shape(closes):
                     continue
 
+                # ADX filter — reject if market has directional strength
+                adx_val = _adx(highs, lows, closes)
+                if adx_val is not None and adx_val > adx_threshold:
+                    continue
+
                 chop  = _choppiness(closes)
                 end_i = i + window_size - 1
-
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
                 zone = {
@@ -176,17 +230,20 @@ def detect(
                     "top":       h_max,
                     "bottom":    l_min,
                     "is_active": is_active,
+                    "range_pct": round(range_pct, 6),
+                    "adx":       round(adx_val, 2) if adx_val is not None else None,
                 }
 
                 if chop >= CHOP_FOUND:
                     zone["status"] = "found"
-                    # Keep the best found zone (largest window that passes)
-                    if best_found is None:
+                    # Keep tightest (smallest range) found zone
+                    if best_found is None or range_pct < best_found["range_pct"]:
                         best_found = zone
 
-                elif best_potential is None and chop >= CHOP_POTENTIAL:
+                elif chop >= CHOP_POTENTIAL:
                     zone["status"] = "potential"
-                    best_potential = zone
+                    if best_potential is None or range_pct < best_potential["range_pct"]:
+                        best_potential = zone
 
         if best_found is not None:
             return best_found
