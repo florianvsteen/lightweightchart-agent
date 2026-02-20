@@ -246,9 +246,14 @@ def detect(
                         best_potential = zone
 
         if best_found is not None:
+            # If price already broke out, clear the zone and start looking again
+            if not best_found["is_active"]:
+                return {"detector": "accumulation", "status": "looking", "is_active": False}
             return best_found
 
         if best_potential is not None:
+            if not best_potential["is_active"]:
+                return {"detector": "accumulation", "status": "looking", "is_active": False}
             return best_potential
 
         return {"detector": "accumulation", "status": "looking", "is_active": False}
