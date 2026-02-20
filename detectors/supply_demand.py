@@ -187,7 +187,11 @@ def detect(
 
         zones = []
 
-        for i in range(len(df) - 2, 0, -1):
+        # len(df)-1 = currently forming candle (not closed yet, skip)
+        # len(df)-2 = last closed candle (can be impulse)
+        # len(df)-3 = candle before that (can be indecision, with i+1 being the closed impulse)
+        # So we scan indecision candidates up to len(df)-3 so impulse at i+1 is always closed.
+        for i in range(len(df) - 3, 0, -1):
             candle_ts = int(df.index[i].timestamp())
 
             if candle_ts < cutoff_ts:
@@ -226,6 +230,10 @@ def detect(
                 active = last_close < bottom
 
             status = "broken" if broken else ("tested" if tested else "active")
+
+            # Broken = price fully moved through the zone — remove from chart entirely
+            if status == "broken":
+                continue
 
             zones.append({
                 "type":      zone_type,
