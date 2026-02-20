@@ -191,19 +191,27 @@ class PairServer:
                 if not result or not isinstance(result, dict):
                     continue
                 zones = result.get("zones", [])
-                # Alert when an active zone we were tracking is no longer active
-                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
                 curr_active = {z["start"] for z in zones if z.get("is_active")}
+                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                broken_out = prev_starts - curr_active
-                for start_ts in broken_out:
+                # Alert only when a NEW zone appears for the first time
+                for z in zones:
+                    if not z.get("is_active"):
+                        continue
+                    start_ts = z["start"]
+                    if start_ts in prev_starts:
+                        continue  # already knew about this zone
                     already_alerted = self.last_alerted.get(f"{name}_{start_ts}", 0)
                     if not already_alerted:
                         self.last_alerted[f"{name}_{start_ts}"] = 1
-                        fake_zone = {"detector": "supply_demand", "start": start_ts, "end": start_ts}
+                        alert_zone = {
+                            "detector": z.get("type", "supply_demand"),
+                            "start":    start_ts,
+                            "end":      z["end"],
+                        }
                         threading.Thread(
                             target=self._send_discord_alert,
-                            args=(fake_zone,),
+                            args=(alert_zone,),
                             daemon=True,
                         ).start()
 
@@ -303,7 +311,7 @@ class PairServer:
                     browser.close()
 
             duration_min = (zone["end"] - zone["start"]) // 60
-            content = f"🚀 **{self.pair_id} — {detector_name} Confirmed**"
+            content = f"🚀 **{self.pair_id} — {detector_name} Confirmed ({duration_min}m)**"
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
             if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
