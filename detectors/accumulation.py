@@ -68,12 +68,8 @@ def _is_v_shape(closes: np.ndarray) -> bool:
 
 
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
-    """Calculate ADX. Returns float or None if insufficient data.
-    Automatically reduces period for short windows so ADX always fires."""
+    """Calculate ADX. Returns float or None if insufficient data."""
     n = len(closes)
-    # Reduce period to fit the window — minimum period of 5
-    while period > 5 and n < period * 2 + 1:
-        period = max(5, period - 2)
     if n < period * 2 + 1:
         return None
 
@@ -183,7 +179,7 @@ def detect(
         # Prefer SMALLER windows with tighter ranges over larger ones.
         last_closed_idx = len(df) - 2
         for window_size in range(min_candles, lookback + 1):
-            slope_limit = (threshold_pct * 0.15) / window_size
+            slope_limit = (threshold_pct * 0.10) / window_size
 
             # Start index so that window ends exactly at last closed candle
             i = last_closed_idx - window_size + 1
@@ -216,9 +212,6 @@ def detect(
 
             slope = _slope_pct(closes, avg_p)
             if slope >= slope_limit:
-                continue
-
-            if _is_v_shape(closes):
                 continue
 
             # ADX filter — reject if market has directional strength
