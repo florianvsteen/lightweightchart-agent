@@ -19,24 +19,29 @@ Session hours match index.html exactly (CET local time):
 
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 
 
-def get_current_session() -> str:
-    """
-    Return the current session based on CET local time.
-    Reads system local time — container must have TZ=Europe/Brussels set.
-    Matches the session windows defined in index.html exactly.
-    """
-    hour = datetime.now().hour  # system local time (CET via TZ env var)
-    if 15 <= hour < 20:
+# Session windows in UTC — same for everyone worldwide.
+# Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
+# London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
+# New York: 14:00 – 19:00 UTC  (15:00 – 20:00 CET)
+SESSION_WINDOWS = {
+    "asian":    (1,  7),
+    "london":   (8,  12),
+    "new_york": (14, 19),
+}
+
+def get_current_session():
+    """Return current session name based on UTC time, or None if out of session."""
+    hour = datetime.now(timezone.utc).hour
+    if SESSION_WINDOWS["new_york"][0] <= hour < SESSION_WINDOWS["new_york"][1]:
         return "new_york"
-    elif 9 <= hour < 13:
+    elif SESSION_WINDOWS["london"][0] <= hour < SESSION_WINDOWS["london"][1]:
         return "london"
-    elif 2 <= hour < 8:
+    elif SESSION_WINDOWS["asian"][0] <= hour < SESSION_WINDOWS["asian"][1]:
         return "asian"
-    else:
-        return None  # out of session — no detection
+    return None  # out of session — no detection
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
