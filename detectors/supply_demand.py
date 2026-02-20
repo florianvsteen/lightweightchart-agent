@@ -11,8 +11,11 @@ BIAS CHECK (runs first):
   - Bearish bias  → only SUPPLY zones returned.
 
 ZONE DETECTION:
-  1. INDECISION CANDLE — wicks > body
-  2. IMPULSE CANDLE    — next candle significantly larger than avg
+  1. INDECISION CANDLE — wicks > body (wick ratio check)
+  2. IMPULSE CANDLE    — body of next candle must be significantly larger
+                         than average candle BODY size (wicks excluded).
+  - Indecision candle may be the last candle before session open (so the
+    first candle of the session can be the impulse).
   - Only zones created during valid_sessions are kept.
   - Zones up to max_age_days old are returned.
 
@@ -20,12 +23,16 @@ Session windows (UTC):
   Asian:    01:00 – 07:00 UTC
   London:   08:00 – 12:00 UTC
   New York: 14:00 – 19:00 UTC
+
+NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
+      the `yf_lock` parameter to avoid concurrent download collisions.
 """
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timezone, timedelta
+import threading
+from datetime import datetime, timezone
 
 
 SESSION_WINDOWS = {
@@ -34,16 +41,38 @@ SESSION_WINDOWS = {
     "new_york": (14, 19),
 }
 
+# One candle before session open is also valid as the indecision candle
+# so the first session candle can be the impulse.
+# This maps session name -> (allowed_start_hour_inclusive)
+# i.e. indecision candle can start from (session_start - 1) UTC
+SESSION_PRE_OPEN = {
+    "asian":    0,   # 00:00 UTC
+    "london":   7,   # 07:00 UTC
+    "new_york": 13,  # 13:00 UTC
+}
 
-def _candle_session(ts: int) -> str | None:
+
+def _candle_session_or_pre(ts: int) -> str | None:
+    """
+    Return session name if candle falls within session OR one hour before session open.
+    This allows the pre-open candle to be the indecision candle.
+    """
     hour = datetime.fromtimestamp(ts, tz=timezone.utc).hour
     for name, (start, end) in SESSION_WINDOWS.items():
-        if start <= hour < end:
+        pre = SESSION_PRE_OPEN[name]
+        if pre <= hour < end:
             return name
     return None
 
 
+def _in_session(ts: int, valid_sessions: list) -> bool:
+    """True if timestamp falls within a valid session (or one candle before open)."""
+    session = _candle_session_or_pre(ts)
+    return session in valid_sessions
+
+
 def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
+    """Wicks must make up at least min_wick_ratio of the total candle range."""
     body = abs(c - o)
     total_range = h - l
     if total_range == 0:
@@ -51,24 +80,24 @@ def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
     return (total_range - body) / total_range >= min_wick_ratio
 
 
-def _get_bias(ticker: str) -> dict:
+def _get_bias(ticker: str, yf_lock: threading.Lock = None) -> dict:
     """
-    Fetch previous completed daily and weekly candles for the ticker.
-    Returns a dict with:
-      daily_bias:   "bullish" | "bearish"
-      weekly_bias:  "bullish" | "bearish"
-      bias:         "bullish" | "bearish" | "misaligned"
-      daily_open, daily_close, weekly_open, weekly_close
+    Fetch previous completed daily and weekly candles.
+    Uses yf_lock if provided to serialize yfinance downloads.
     """
     try:
-        # Fetch last 5 daily candles — use iloc[-2] for previous completed day
-        df_d = yf.download(ticker, period="5d", interval="1d", progress=False)
+        def _dl(t, period, interval):
+            if yf_lock:
+                with yf_lock:
+                    return yf.download(t, period=period, interval=interval, progress=False)
+            return yf.download(t, period=period, interval=interval, progress=False)
+
+        df_d = _dl(ticker, "5d", "1d")
         if isinstance(df_d.columns, pd.MultiIndex):
             df_d.columns = df_d.columns.get_level_values(0)
         df_d = df_d.dropna()
 
-        # Fetch last 3 weekly candles — use iloc[-2] for previous completed week
-        df_w = yf.download(ticker, period="3mo", interval="1wk", progress=False)
+        df_w = _dl(ticker, "3mo", "1wk")
         if isinstance(df_w.columns, pd.MultiIndex):
             df_w.columns = df_w.columns.get_level_values(0)
         df_w = df_w.dropna()
@@ -83,11 +112,7 @@ def _get_bias(ticker: str) -> dict:
 
         daily_bias  = "bullish" if d_close > d_open else "bearish"
         weekly_bias = "bullish" if w_close > w_open else "bearish"
-
-        if daily_bias == weekly_bias:
-            bias = daily_bias
-        else:
-            bias = "misaligned"
+        bias        = daily_bias if daily_bias == weekly_bias else "misaligned"
 
         return {
             "bias":         bias,
@@ -112,7 +137,8 @@ def detect(
     max_zones: int = 5,
     max_age_days: int = 3,
     valid_sessions: list = None,
-) -> dict | None:
+    yf_lock: threading.Lock = None,  # passed from server to serialize downloads
+) -> dict:
     """
     Returns a dict with:
       bias:   bias info dict (always present)
@@ -122,8 +148,7 @@ def detect(
         if valid_sessions is None:
             valid_sessions = list(SESSION_WINDOWS.keys())
 
-        # Always run bias check first
-        bias_info = _get_bias(ticker) if ticker else {"bias": "misaligned", "reason": "no ticker"}
+        bias_info = _get_bias(ticker, yf_lock) if ticker else {"bias": "misaligned", "reason": "no ticker"}
 
         result = {
             "detector": "supply_demand",
@@ -131,11 +156,9 @@ def detect(
             "zones":    [],
         }
 
-        # Stop here if bias is misaligned
         if bias_info["bias"] == "misaligned":
             return result
 
-        # Determine which zone type to look for based on bias
         look_for = "demand" if bias_info["bias"] == "bullish" else "supply"
 
         if len(df) < 10:
@@ -154,7 +177,10 @@ def detect(
         lows   = df['Low'].values.flatten().astype(float)
         closes = df['Close'].values.flatten().astype(float)
 
-        avg_range  = float(np.mean(highs - lows))
+        # Average BODY size across all candles (wicks excluded)
+        bodies    = np.abs(closes - opens)
+        avg_body  = float(np.mean(bodies))
+
         last_close = closes[-1]
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
@@ -167,8 +193,8 @@ def detect(
             if candle_ts < cutoff_ts:
                 break
 
-            candle_session = _candle_session(candle_ts)
-            if candle_session not in valid_sessions:
+            # Indecision candle must be in session or one candle before session open
+            if not _in_session(candle_ts, valid_sessions):
                 continue
 
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
@@ -176,14 +202,14 @@ def detect(
             if not _is_indecision(o, h, l, c, wick_ratio):
                 continue
 
-            ni_range = highs[i + 1] - lows[i + 1]
-            if ni_range < avg_range * impulse_multiplier:
+            # Impulse: measure by BODY size, not full range
+            impulse_body = abs(closes[i + 1] - opens[i + 1])
+            if impulse_body < avg_body * impulse_multiplier:
                 continue
 
             impulse_bullish = closes[i + 1] > opens[i + 1]
             zone_type = "demand" if impulse_bullish else "supply"
 
-            # Only keep zones matching the bias direction
             if zone_type != look_for:
                 continue
 
@@ -204,7 +230,7 @@ def detect(
             zones.append({
                 "type":      zone_type,
                 "status":    status,
-                "session":   candle_session,
+                "session":   _candle_session_or_pre(candle_ts),
                 "is_active": status == "active",
                 "start":     candle_ts,
                 "end":       int(df.index[-1].timestamp()),
@@ -220,4 +246,4 @@ def detect(
 
     except Exception as e:
         print(f"[supply_demand] Detection error: {e}")
-        return None
+        return {"detector": "supply_demand", "bias": {"bias": "misaligned", "reason": str(e)}, "zones": []}
