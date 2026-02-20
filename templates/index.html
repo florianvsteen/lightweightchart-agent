@@ -70,6 +70,10 @@
         }
         .detector-status.state-found .label-text { color: #e0e0e0; font-weight: 600; }
 
+        .detector-status.state-offline { border-color: #2b2b43; }
+        .detector-status.state-offline .indicator { background: #333; }
+        .detector-status.state-offline .label-text { color: #444; font-style: italic; }
+
         /* ── Interval buttons ── */
         #interval-bar {
             display: flex;
@@ -285,9 +289,10 @@
 
         const STATUS_CONFIG = {
             // accumulation
-            looking:   { label: 'Looking for accumulation',      css: 'state-looking'   },
-            potential: { label: 'Potential accumulation forming', css: 'state-potential' },
-            found:     { label: 'Accumulation found',             css: 'state-found'     },
+            looking:        { label: 'Looking for accumulation',      css: 'state-looking'   },
+            potential:      { label: 'Potential accumulation forming', css: 'state-potential' },
+            found:          { label: 'Accumulation found',             css: 'state-found'     },
+            out_of_session: { label: 'Out of session',                 css: 'state-offline'   },
             // supply_demand
             sd_found:  { label: 'Supply/Demand zones found',     css: 'state-found'     },
             sd_none:   { label: 'No S/D zones found',            css: 'state-looking'   },
@@ -435,7 +440,13 @@
                             }
                         } else {
                             ensureStatusEl(name);
-                            setStatus(name, Array.isArray(result) ? 'sd_none' : 'looking');
+                            if (Array.isArray(result)) {
+                                setStatus(name, 'sd_none');
+                            } else if (result === null) {
+                                setStatus(name, 'out_of_session');
+                            } else {
+                                setStatus(name, 'looking');
+                            }
                         }
                     }
                 })
