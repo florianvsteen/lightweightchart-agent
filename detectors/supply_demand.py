@@ -231,16 +231,16 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                # Broken: close (last_body_low for bearish, last_body_high for bullish)
-                # went below zone bottom — use last_closed_close directly
-                broken = last_closed_close < bottom
-                tested = (not broken) and (last_closed_close <= top)
-                active = last_closed_close > top
+                # Broken: any part of the body is below zone bottom
+                # (last_body_low = min(open, close) — if that's below bottom, body overlaps)
+                broken = last_body_low < bottom
+                tested = (not broken) and (last_body_low <= top)
+                active = (not broken) and (last_body_low > top)
             else:  # supply
-                # Broken: close went above zone top
-                broken = last_closed_close > top
-                tested = (not broken) and (last_closed_close >= bottom)
-                active = last_closed_close < bottom
+                # Broken: any part of the body is above zone top
+                broken = last_body_high > top
+                tested = (not broken) and (last_body_high >= bottom)
+                active = (not broken) and (last_body_high < bottom)
 
             status = "broken" if broken else ("tested" if tested else "active")
 
