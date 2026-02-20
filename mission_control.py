@@ -50,7 +50,10 @@ def proxy_chart(pair_id):
         html = html.replace("fetch(`/api/data", f"fetch(`/proxy/{pair_upper}/api/data")
         html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_upper}/api/data")
         html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_upper}/api/data')
-        return html, r.status_code, {"Content-Type": "text/html"}
+        # Inject charset if missing so UTF-8 arrows/emoji render correctly
+        if '<meta charset' not in html:
+            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
+        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
     except Exception as e:
         return f"Chart unavailable: {e}", 502
 
@@ -498,8 +501,9 @@ async function fetchPair(pair) {
 function updateClock() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
-  document.getElementById('clock').textContent =
-    `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const tzName  = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  document.getElementById('clock').textContent = `${timeStr} ${tzName}`;
 
   const sess  = getCurrentSession();
   const badge = document.getElementById('session-global');
