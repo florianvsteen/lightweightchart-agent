@@ -23,9 +23,9 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.0002,   # Asian: ~42pt box max
-                "london_range_pct":   0.0005,  # London: ~63pt box max
-                "new_york_range_pct": 0.002,   # NY: ~84pt box max
+                "asian_range_pct":    0.001,   # ~44pts at 44,000
+                "london_range_pct":   0.002,   # ~88pts at 44,000
+                "new_york_range_pct": 0.003,   # ~132pts at 44,000
             },
         },
     },
