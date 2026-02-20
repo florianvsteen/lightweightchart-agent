@@ -181,11 +181,12 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        # Last fully closed candle values
+        # Use body of last fully closed candle for status checks.
+        # Last closed candle wick used for tested detection
         last_closed_open  = opens[-2]
         last_closed_close = closes[-2]
-        last_wick_high    = highs[-2]   # used for tested (wick touched zone)
-        last_wick_low     = lows[-2]    # used for tested (wick touched zone)
+        last_body_high    = max(last_closed_open, last_closed_close)
+        last_body_low     = min(last_closed_open, last_closed_close)
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
@@ -230,19 +231,19 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                # Broken: body close went below zone bottom
-                broken = last_closed_close < bottom
-                # Tested: wick touched the zone (but body didn't close below)
-                tested = (not broken) and (last_wick_low <= top)
-                active = (not broken) and (last_wick_low > top)
+                # Remove zone if last closed candle closed below the bottom
+                if last_closed_close < bottom:
+                    continue
+                # Tested: wick entered the zone
+                tested = lows[-2] <= top
             else:  # supply
-                # Broken: body close went above zone top
-                broken = last_closed_close > top
-                # Tested: wick touched the zone (but body didn't close above)
-                tested = (not broken) and (last_wick_high >= bottom)
-                active = (not broken) and (last_wick_high < bottom)
+                # Remove zone if last closed candle closed above the top
+                if last_closed_close > top:
+                    continue
+                # Tested: wick entered the zone
+                tested = highs[-2] >= bottom
 
-            status = "broken" if broken else ("tested" if tested else "active")
+            status = "tested" if tested else "active" 
 
             zones.append({
                 "type":      zone_type,
