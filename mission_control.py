@@ -48,9 +48,13 @@ def proxy_debug(pair_id):
         html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
         html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
         html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
-        html = html.replace("fetch(`/debug/replay?idx=${idx}`)", f"fetch(`/proxy/{pair_upper}/debug/replay?idx=${{idx}}`)")
-        html = html.replace("'/debug/replay'", f"'/proxy/{pair_upper}/debug/replay'")
-        html = html.replace('"/debug/replay"', f'"/proxy/{pair_upper}/debug/replay"')
+        # Match the replay fetch regardless of what options follow the URL
+        import re
+        html = re.sub(
+            r"fetch\(`/debug/replay\?idx=\$\{idx\}`",
+            f"fetch(`/proxy/{pair_upper}/debug/replay?idx=${{idx}}`",
+            html,
+        )
         if '<meta charset' not in html:
             html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
         return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
