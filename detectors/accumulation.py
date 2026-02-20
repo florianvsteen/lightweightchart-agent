@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 
 # ── Session definitions (UTC hours) ────────────────────────────────────
 SESSIONS = {
-    "asian":    (0,  9),   # 00:00 – 09:00 UTC
-    "london":   (7,  16),  # 07:00 – 16:00 UTC
-    "new_york": (13, 22),  # 13:00 – 22:00 UTC
+    "asian":    (1,  7),   # 00:00 – 09:00 UTC
+    "london":   (8,  12),  # 07:00 – 16:00 UTC
+    "new_york": (14, 18),  # 13:00 – 22:00 UTC
 }
 
 def get_current_session() -> str:
