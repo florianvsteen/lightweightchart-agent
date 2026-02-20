@@ -181,7 +181,7 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        last_close = closes[-1]
+        last_close = closes[-2]  # use last fully closed candle, not the forming one
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
@@ -206,9 +206,14 @@ def detect(
             if not _is_indecision(o, h, l, c, wick_ratio):
                 continue
 
-            # Impulse: measure by BODY size, not full range
-            impulse_body = abs(closes[i + 1] - opens[i + 1])
+            # Impulse check 1: body must be larger than avg body * multiplier
+            impulse_body  = abs(closes[i + 1] - opens[i + 1])
             if impulse_body < avg_body * impulse_multiplier:
+                continue
+
+            # Impulse check 2: body must be >= 70% of total candle range (max 30% wicks)
+            impulse_range = highs[i + 1] - lows[i + 1]
+            if impulse_range > 0 and (impulse_body / impulse_range) < 0.70:
                 continue
 
             impulse_bullish = closes[i + 1] > opens[i + 1]
@@ -230,10 +235,6 @@ def detect(
                 active = last_close < bottom
 
             status = "broken" if broken else ("tested" if tested else "active")
-
-            # Broken = price fully moved through the zone — remove from chart entirely
-            if status == "broken":
-                continue
 
             zones.append({
                 "type":      zone_type,
