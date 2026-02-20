@@ -157,7 +157,12 @@ def detect(
                 zone["status"] = "potential"
                 best_potential = zone
 
-        return best_potential
+        if best_potential is not None:
+            return best_potential
+
+        # In session but no zone found — return sentinel so frontend
+        # can show "Looking" instead of "Out of session"
+        return {"detector": "accumulation", "status": "looking", "is_active": False}
 
     except Exception as e:
         print(f"[accumulation] Detection error: {e}")
