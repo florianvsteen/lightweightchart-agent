@@ -84,7 +84,7 @@ def proxy_debug_replay(pair_id):
         url = f"http://127.0.0.1:{cfg['port']}/debug/replay"
         if idx:
             url += f"?idx={idx}"
-        r = requests.get(url, timeout=30)
+        r = requests.get(url, timeout=60)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
