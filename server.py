@@ -306,12 +306,6 @@ class PairServer:
             content = f"🚀 **{self.pair_id} — {detector_name} Confirmed ({duration_min}m)**"
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
-            embed = DiscordEmbed(title="Market Consolidation", color="03b2f8")
-            embed.add_embed_field(name="Action", value="Draw a fixed range volume profile from the high to the low.")
-            embed.add_embed_field(name="Signal", value="If a low volume pocket is found, wait for a CVDD!")
-            embed.set_timestamp()
-            webhook.add_embed(embed)
-
             if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
                 with open(screenshot_path, "rb") as f:
                     webhook.add_file(file=f.read(), filename="chart.png")
