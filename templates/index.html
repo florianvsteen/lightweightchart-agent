@@ -121,6 +121,30 @@
         #session-badge.new_york { border-color: #6abf7b; color: #6abf7b; }
         #session-badge.new_york .session-dot { background: #6abf7b; box-shadow: 0 0 5px rgba(106,191,123,0.5); }
 
+        /* ── Bias badge ── */
+        #bias-badge {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 0.75rem;
+            color: #666;
+            white-space: nowrap;
+        }
+        #bias-badge .bias-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #444;
+        }
+        #bias-badge.bullish  { border-color: #4caf82; color: #4caf82; }
+        #bias-badge.bullish  .bias-dot { background: #4caf82; box-shadow: 0 0 5px rgba(76,175,130,0.5); }
+        #bias-badge.bearish  { border-color: #cf6679; color: #cf6679; }
+        #bias-badge.bearish  .bias-dot { background: #cf6679; box-shadow: 0 0 5px rgba(207,102,121,0.5); }
+        #bias-badge.misaligned { border-color: #888; color: #666; }
+        #bias-badge.misaligned .bias-dot { background: #555; }
+
         #chart-container {
             flex: 1;
             border: 1px solid #2b2b43;
@@ -139,6 +163,10 @@
         <div id="session-badge">
             <span class="session-dot"></span>
             <span id="session-label">--</span>
+        </div>
+        <div id="bias-badge">
+            <span class="bias-dot"></span>
+            <span id="bias-label">--</span>
         </div>
         <div id="interval-bar">
             <button class="tf-btn active" data-interval="1m">1m</button>
@@ -289,8 +317,11 @@
             found:          { label: 'Accumulation found',             css: 'state-found'     },
             out_of_session: { label: 'Out of session',                 css: 'state-offline'   },
             // supply_demand
-            sd_found:  { label: 'Supply/Demand zones found',     css: 'state-found'     },
-            sd_none:   { label: 'No S/D zones found',            css: 'state-looking'   },
+            sd_found:       { label: 'Supply/Demand zones found',        css: 'state-found'    },
+            sd_none:        { label: 'No S/D zones found',               css: 'state-looking'  },
+            sd_misaligned:  { label: 'Bias misaligned — not looking',    css: 'state-offline'  },
+            sd_bullish:     { label: 'Bias bullish — seeking demand',    css: 'state-found'    },
+            sd_bearish:     { label: 'Bias bearish — seeking supply',    css: 'state-found'    },
         };
 
         function ensureStatusEl(detectorName) {
@@ -360,9 +391,30 @@
             return [topLine, bottomLine, fill];
         }
 
-        function renderSupplyDemand(chart, zones) {
+        function updateBiasBadge(bias) {
+            const badge = document.getElementById('bias-badge');
+            const label = document.getElementById('bias-label');
+            if (!bias) { badge.style.display = 'none'; return; }
+            badge.style.display = 'flex';
+            badge.className = bias.bias;
+            if (bias.bias === 'bullish') {
+                label.textContent = '↑ Bullish Bias (D+W)';
+            } else if (bias.bias === 'bearish') {
+                label.textContent = '↓ Bearish Bias (D+W)';
+            } else {
+                label.textContent = '⚡ Bias Misaligned';
+            }
+        }
+
+        function renderSupplyDemand(chart, result) {
             const allSeries = [];
-            if (!Array.isArray(zones)) return allSeries;
+            // Handle new {bias, zones} structure
+            const zones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
+            const bias  = result && result.bias ? result.bias : null;
+
+            updateBiasBadge(bias);
+
+            if (!zones.length) return allSeries;
 
             zones.forEach(zone => {
                 const isDemand  = zone.type === 'demand';
@@ -427,7 +479,21 @@
                         if (result && renderer) {
                             activeSeries[name] = renderer(chart, result);
                             // Supply/demand returns an array — pick status from first zone
-                            if (Array.isArray(result)) {
+                            if (name === 'supply_demand') {
+                                const bias  = result.bias  || {};
+                                const zones = result.zones || [];
+                                if (bias.bias === 'misaligned') {
+                                    setStatus(name, 'sd_misaligned');
+                                } else if (zones.filter(z => z.status !== 'broken').length > 0) {
+                                    setStatus(name, 'sd_found');
+                                } else if (bias.bias === 'bullish') {
+                                    setStatus(name, 'sd_bullish');
+                                } else if (bias.bias === 'bearish') {
+                                    setStatus(name, 'sd_bearish');
+                                } else {
+                                    setStatus(name, 'sd_none');
+                                }
+                            } else if (Array.isArray(result)) {
                                 const active = result.filter(z => z.status !== 'broken');
                                 setStatus(name, active.length > 0 ? 'sd_found' : 'sd_none');
                             } else {
@@ -435,13 +501,12 @@
                             }
                         } else {
                             ensureStatusEl(name);
-                            if (Array.isArray(result)) {
-                                setStatus(name, 'sd_none');
-                            } else if (result === null) {
-                                setStatus(name, 'out_of_session');
+                            if (result === null) {
+                                setStatus(name, name === 'supply_demand' ? 'sd_none' : 'out_of_session');
                             } else {
                                 setStatus(name, 'looking');
                             }
+                            if (name === 'supply_demand') updateBiasBadge(null);
                         }
                     }
                 })
