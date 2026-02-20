@@ -216,9 +216,9 @@ def detect(
             if impulse_body < avg_body * impulse_multiplier:
                 continue
 
-            # Impulse check 2: body must be >= 70% of total candle range (max 30% wicks)
+            # Impulse check 2: body must be >= 60% of total candle range (max 30% wicks)
             impulse_range = highs[i + 1] - lows[i + 1]
-            if impulse_range > 0 and (impulse_body / impulse_range) < 0.70:
+            if impulse_range > 0 and (impulse_body / impulse_range) < 0.60:
                 continue
 
             impulse_bullish = closes[i + 1] > opens[i + 1]
