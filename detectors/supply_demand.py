@@ -232,7 +232,6 @@ def detect(
 
             if zone_type == "demand":
                 # Broken: any part of the body is below zone bottom
-                # (last_body_low = min(open, close) — if that's below bottom, body overlaps)
                 broken = last_body_low < bottom
                 tested = (not broken) and (last_body_low <= top)
                 active = (not broken) and (last_body_low > top)
