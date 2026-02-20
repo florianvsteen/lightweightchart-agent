@@ -42,6 +42,26 @@ def proxy_debug(pair_id):
         return jsonify({"error": "unknown pair"}), 404
     try:
         r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug", timeout=30)
+        html = r.text
+        pair_upper = pair_id.upper()
+        # Rewrite the /debug/data fetch so it goes through the proxy, not direct
+        html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
+        html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
+        html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
+        if '<meta charset' not in html:
+            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
+        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/proxy/<pair_id>/debug/data')
+def proxy_debug_data(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": "unknown pair"}), 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/data", timeout=30)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
