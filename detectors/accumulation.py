@@ -68,8 +68,12 @@ def _is_v_shape(closes: np.ndarray) -> bool:
 
 
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
-    """Calculate ADX. Returns float or None if insufficient data."""
+    """Calculate ADX. Returns float or None if insufficient data.
+    Automatically reduces period for short windows so ADX always fires."""
     n = len(closes)
+    # Reduce period to fit the window — minimum period of 5
+    while period > 5 and n < period * 2 + 1:
+        period = max(5, period - 2)
     if n < period * 2 + 1:
         return None
 
