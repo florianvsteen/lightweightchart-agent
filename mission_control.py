@@ -305,7 +305,7 @@ DASHBOARD = r"""<!DOCTYPE html>
   </div>
   <div class="header-right">
     <span id="session-global">--</span>
-    <span id="clock">--:--:-- UTC</span>
+    <span id="clock">--:--:--</span>
   </div>
 </header>
 
@@ -341,7 +341,7 @@ function formatPrice(p, id) {
 }
 
 function formatUTC(ts) {
-  return new Date(ts * 1000).toISOString().slice(11, 16) + ' UTC';
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function buildGrid() {
@@ -373,7 +373,6 @@ function buildGrid() {
       <div id="extra-${pair.id}"></div>
       <div class="card-divider"></div>
       <div class="card-meta">
-        <span>PORT ${pair.port}</span>
         <span id="meta-${pair.id}">--</span>
       </div>`;
     grid.appendChild(card);
@@ -428,7 +427,7 @@ async function fetchPair(pair) {
             ${adxStr}
             <br>Since ${formatUTC(z.start)}
           </div>`;
-        metaEl.textContent = z.session ? z.session.replace('_',' ').toUpperCase() : '--';
+        metaEl.textContent = '';
       } else if (z.status === 'potential' && z.is_active) {
         dotEl.className   = 'status-dot potential';
         statusEl.textContent = 'Potential forming';
@@ -437,13 +436,13 @@ async function fetchPair(pair) {
           <div class="accum-box potential">
             ${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}
           </div>`;
-        metaEl.textContent = z.session ? z.session.replace('_',' ').toUpperCase() : '--';
+        metaEl.textContent = '';
       } else {
         dotEl.className   = 'status-dot looking';
         statusEl.textContent = 'Looking for accumulation';
         statusEl.className = 'status-text dim';
         extraEl.innerHTML  = '';
-        metaEl.textContent = '--';
+        metaEl.textContent = '';
       }
     }
 
@@ -485,7 +484,7 @@ async function fetchPair(pair) {
         <div class="bias-row"><span class="bias-pill ${biasClass}">${biasLabel}</span></div>
         ${zones.length ? `<div class="zones-row">${zonePills}</div>` : ''}`;
 
-      metaEl.textContent = last ? formatUTC(last.time) : '--';
+      metaEl.textContent = '';
     }
 
   } catch (e) {
@@ -502,8 +501,7 @@ function updateClock() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const tzName  = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  document.getElementById('clock').textContent = `${timeStr} ${tzName}`;
+  document.getElementById('clock').textContent = timeStr;
 
   const sess  = getCurrentSession();
   const badge = document.getElementById('session-global');
@@ -532,7 +530,7 @@ async function pollAll() {
   dot.classList.remove('active');
   const now = new Date();
   document.getElementById('last-update').textContent =
-    'Last update: ' + now.toISOString().slice(11, 19) + ' UTC';
+    'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
 buildGrid();
