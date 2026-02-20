@@ -22,7 +22,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 100,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.001,   # ~44pts at 44,000
@@ -43,7 +43,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 100,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.0008,  # Asian: ~26pt box max
@@ -64,7 +64,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 100,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 25,
                 "threshold_pct": 0.002,
                 "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
