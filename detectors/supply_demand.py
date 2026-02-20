@@ -181,7 +181,12 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        last_close = closes[-2]  # use last fully closed candle, not the forming one
+        # Use body of last fully closed candle for status checks.
+        # Wicks through zone boundaries don't count as broken/tested.
+        last_closed_open  = opens[-2]
+        last_closed_close = closes[-2]
+        last_body_high    = max(last_closed_open, last_closed_close)
+        last_body_low     = min(last_closed_open, last_closed_close)
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
@@ -226,13 +231,16 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                broken = last_close < bottom
-                tested = (not broken) and (last_close <= top)
-                active = last_close > top
-            else:
-                broken = last_close > top
-                tested = (not broken) and (last_close >= bottom)
-                active = last_close < bottom
+                # Broken: close (last_body_low for bearish, last_body_high for bullish)
+                # went below zone bottom — use last_closed_close directly
+                broken = last_closed_close < bottom
+                tested = (not broken) and (last_closed_close <= top)
+                active = last_closed_close > top
+            else:  # supply
+                # Broken: close went above zone top
+                broken = last_closed_close > top
+                tested = (not broken) and (last_closed_close >= bottom)
+                active = last_closed_close < bottom
 
             status = "broken" if broken else ("tested" if tested else "active")
 
