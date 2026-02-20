@@ -3,6 +3,10 @@ server.py
 
 PairServer — a self-contained Flask server instance for a single trading pair.
 Each pair runs in its own thread on its own port.
+
+Detection runs in a background thread every 30 seconds — completely independent
+of whether anyone has the browser open. Discord alerts fire from there.
+The Flask routes only serve chart data to the browser when it's open.
 """
 
 import os
@@ -12,7 +16,7 @@ import pandas as pd
 import yfinance as yf
 from flask import Flask, render_template, jsonify, request
 
-from detectors import run_detectors
+from detectors import REGISTRY
 
 try:
     from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -28,7 +32,6 @@ except ImportError:
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
-# Maps interval string to a yfinance period wide enough to get useful data
 PERIOD_MAP = {
     "1m":  "1d",
     "2m":  "1d",
@@ -38,11 +41,11 @@ PERIOD_MAP = {
     "1h":  "30d",
 }
 
+# How often the background detector loop runs (seconds)
+DETECTION_INTERVAL = 30
+
 
 class PairServer:
-    """
-    Encapsulates a Flask app and all state for a single trading pair.
-    """
 
     def __init__(self, pair_id: str, config: dict):
         self.pair_id = pair_id
@@ -54,17 +57,14 @@ class PairServer:
         self.detector_names = config.get("detectors", [])
         self.detector_params = config.get("detector_params", {})
 
-        # Per-pair alert dedup tracking (keyed by detector name)
+        # Alert dedup
         self.last_alerted: dict[str, int] = {}
-        # Tracks zones seen while active so we can fire alert on breakout
         self.last_active_zone: dict[str, dict] = {}
 
-        # Cache fetched DataFrames per interval so detectors sharing a timeframe
-        # don't trigger duplicate downloads in the same request cycle
+        # Per-request DataFrame cache (cleared each cycle)
         self._df_cache: dict[str, pd.DataFrame] = {}
+        self._cache_lock = threading.Lock()
 
-        # Resolve paths relative to server.py's own location, not cwd.
-        # This ensures templates are found regardless of where PM2 launches from.
         root = os.path.dirname(os.path.abspath(__file__))
         self.app = Flask(
             __name__,
@@ -81,17 +81,8 @@ class PairServer:
         app = self.app
         pair_id = self.pair_id
 
-        # Each function must have a globally unique __name__ — Flask uses the
-        # function name as the endpoint key. Without unique names all pairs
-        # share the same endpoint and the last one registered wins everywhere.
-
         def _index():
-            return render_template(
-                "index.html",
-                pair_id=pair_id,
-                label=self.label,
-                port=self.port,
-            )
+            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port)
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
 
@@ -106,77 +97,94 @@ class PairServer:
         app.route("/test-alert")(_test_alert)
 
     # ------------------------------------------------------------------ #
-    # Data + Detection
+    # Data fetching
     # ------------------------------------------------------------------ #
 
     def _fetch_df(self, interval: str) -> pd.DataFrame:
         period = PERIOD_MAP.get(interval, self.period)
-        df = yf.download(
-            self.ticker,
-            period=period,
-            interval=interval,
-            progress=False,
-        )
+        df = yf.download(self.ticker, period=period, interval=interval, progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df.dropna()
 
-    def _get_df(self, interval: str) -> pd.DataFrame:
-        """Return cached DataFrame for this interval (one download per request cycle)."""
-        if interval not in self._df_cache:
-            self._df_cache[interval] = self._fetch_df(interval)
-        return self._df_cache[interval]
+    def _get_df(self, interval: str, cache: dict) -> pd.DataFrame:
+        """Return cached DataFrame for this interval within a single cycle."""
+        if interval not in cache:
+            cache[interval] = self._fetch_df(interval)
+        return cache[interval]
+
+    # ------------------------------------------------------------------ #
+    # Detection (shared by background loop and browser API)
+    # ------------------------------------------------------------------ #
+
+    def _run_detectors(self, cache: dict) -> dict:
+        """Run all detectors using their configured timeframes. Returns results dict."""
+        results = {}
+        for name in self.detector_names:
+            params = dict(self.detector_params.get(name, {}))
+            detector_interval = params.pop("timeframe", "1m")
+            df = self._get_df(detector_interval, cache)
+            fn = REGISTRY.get(name)
+            if fn is None:
+                print(f"[WARN] Detector '{name}' not found in registry.")
+                results[name] = None
+            else:
+                try:
+                    results[name] = fn(df, **params)
+                except Exception as e:
+                    print(f"[ERROR] Detector '{name}' failed: {e}")
+                    results[name] = None
+        return results
+
+    def _process_alerts(self, detector_results: dict):
+        """Check results and fire Discord alerts on breakout."""
+        for name, zone in detector_results.items():
+            prev = self.last_active_zone.get(name)
+
+            if zone and not isinstance(zone, list) and zone.get("is_active") and zone.get("status") == "found":
+                self.last_active_zone[name] = zone
+
+            elif prev is not None and (zone is None or (not isinstance(zone, list) and not zone.get("is_active"))):
+                already_alerted = self.last_alerted.get(name, 0)
+                if prev["start"] > already_alerted:
+                    self.last_alerted[name] = prev["start"]
+                    self.last_active_zone[name] = None
+                    threading.Thread(
+                        target=self._send_discord_alert,
+                        args=(prev,),
+                        daemon=True,
+                    ).start()
+
+    # ------------------------------------------------------------------ #
+    # Background detection loop — runs regardless of browser
+    # ------------------------------------------------------------------ #
+
+    def _detection_loop(self):
+        print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
+        while True:
+            try:
+                cache = {}
+                results = self._run_detectors(cache)
+                self._process_alerts(results)
+                print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
+            except Exception as e:
+                print(f"[{self.pair_id}] Detection loop error: {e}")
+            time.sleep(DETECTION_INTERVAL)
+
+    # ------------------------------------------------------------------ #
+    # Flask API — serves chart data to browser when open
+    # ------------------------------------------------------------------ #
 
     def _api_data(self):
-        # Clear cache at the start of each request cycle
-        self._df_cache = {}
-
         try:
-            # Chart interval can be switched by the user via ?interval= param
             chart_interval = request.args.get("interval", self.interval)
+            cache = {}
 
-            # Run each detector on its own configured timeframe.
-            # The timeframe is stored in detector_params under "timeframe"
-            # and must be stripped before passing kwargs to detect().
-            detector_results = {}
-            for name in self.detector_names:
-                params = dict(self.detector_params.get(name, {}))
-                detector_interval = params.pop("timeframe", "1m")  # default 1m
-                df_for_detector = self._get_df(detector_interval)
-                from detectors import REGISTRY
-                fn = REGISTRY.get(name)
-                if fn is None:
-                    print(f"[WARN] Detector '{name}' not found in registry.")
-                    detector_results[name] = None
-                else:
-                    try:
-                        detector_results[name] = fn(df_for_detector, **params)
-                    except Exception as e:
-                        print(f"[ERROR] Detector '{name}' failed: {e}")
-                        detector_results[name] = None
+            # Run detectors fresh for the browser response
+            detector_results = self._run_detectors(cache)
 
-            # Alert on BREAKOUT: fire once when a previously-active zone is broken
-            for name, zone in detector_results.items():
-                prev = self.last_active_zone.get(name)
-
-                if zone and zone.get("is_active") and zone.get("status") == "found":
-                    # Zone is active and confirmed — remember it, don't alert yet
-                    self.last_active_zone[name] = zone
-
-                elif prev is not None and (zone is None or not zone.get("is_active")):
-                    # Had an active zone last tick, now price has broken out — alert
-                    already_alerted = self.last_alerted.get(name, 0)
-                    if prev["start"] > already_alerted:
-                        self.last_alerted[name] = prev["start"]
-                        self.last_active_zone[name] = None
-                        threading.Thread(
-                            target=self._send_discord_alert,
-                            args=(prev,),
-                            daemon=True,
-                        ).start()
-
-            # Fetch chart candles at the chart interval (cached if same as a detector)
-            df_chart = self._get_df(chart_interval)
+            # Fetch chart candles at the requested interval
+            df_chart = self._get_df(chart_interval, cache)
             candles = [
                 {
                     "time": int(idx.timestamp()),
@@ -188,14 +196,12 @@ class PairServer:
                 for idx, r in df_chart.iterrows()
             ]
 
-            return jsonify(
-                {
-                    "pair": self.pair_id,
-                    "label": self.label,
-                    "candles": candles,
-                    "detectors": detector_results,
-                }
-            )
+            return jsonify({
+                "pair": self.pair_id,
+                "label": self.label,
+                "candles": candles,
+                "detectors": detector_results,
+            })
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -209,9 +215,7 @@ class PairServer:
             "bottom": 0,
             "is_active": True,
         }
-        threading.Thread(
-            target=self._send_discord_alert, args=(test_zone,), daemon=True
-        ).start()
+        threading.Thread(target=self._send_discord_alert, args=(test_zone,), daemon=True).start()
         return f"Test alert triggered for {self.pair_id}. Check terminal and Discord."
 
     # ------------------------------------------------------------------ #
@@ -228,7 +232,6 @@ class PairServer:
 
         screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
         detector_name = zone.get("detector", "unknown").capitalize()
-
         print(f"[{self.pair_id}] Sending Discord alert for {detector_name} zone...")
 
         try:
@@ -246,14 +249,8 @@ class PairServer:
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
             embed = DiscordEmbed(title="Market Consolidation", color="03b2f8")
-            embed.add_embed_field(
-                name="Action",
-                value="Draw a fixed range volume profile from the high to the low.",
-            )
-            embed.add_embed_field(
-                name="Signal",
-                value="If a low volume pocket is found, wait for a CVDD!",
-            )
+            embed.add_embed_field(name="Action", value="Draw a fixed range volume profile from the high to the low.")
+            embed.add_embed_field(name="Signal", value="If a low volume pocket is found, wait for a CVDD!")
             embed.set_timestamp()
             webhook.add_embed(embed)
 
@@ -276,4 +273,10 @@ class PairServer:
 
     def run(self):
         print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
+
+        # Start background detection loop in a daemon thread
+        t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
+        t.start()
+
+        # Start Flask (blocks this thread)
         self.app.run(host="0.0.0.0", port=self.port, use_reloader=False)
