@@ -1060,9 +1060,9 @@ class PairServer:
         """
         try:
             import numpy as np
-            from detectors.accumulation import (
-                get_current_session, _slope_pct, _choppiness, _is_v_shape, _adx
-            )
+            import pandas as pd
+            from datetime import timezone
+            from detectors.accumulation import _slope_pct, _choppiness, _is_v_shape, _adx
 
             cache = {}
             full_df = self._get_df("1m", cache)
@@ -1070,35 +1070,43 @@ class PairServer:
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             lookback      = params.get("lookback", 100)
-            min_candles   = params.get("min_candles", 20)
+            min_candles   = params.get("min_candles", 15)
             adx_threshold = params.get("adx_threshold", 25)
             threshold_pct = params.get("threshold_pct", 0.003)
 
             total = len(full_df)
             idx = int(request.args.get("idx", total))
-            idx = max(min_candles + 2, min(idx, total))  # clamp
+            idx = max(min_candles + 3, min(idx, total))  # clamp — need at least min_candles + a few
 
-            # Slice the dataframe — this is what the detector would have seen
+            # Slice the dataframe — this is what the detector would have seen at candle N
             df = full_df.iloc[:idx].copy()
 
-            if isinstance(df.columns, __import__('pandas').MultiIndex):
+            if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             df = df.loc[:, ~df.columns.duplicated()].copy()
             for col in ['Open', 'High', 'Low', 'Close']:
-                df[col] = __import__('pandas').to_numeric(df[col].squeeze(), errors='coerce')
+                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
             df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-            # Determine session based on the timestamp of the last candle in the slice
+            # Determine session from the last candle's timestamp (not wall clock)
             last_ts = df.index[-1]
-            from datetime import timezone
-            hour = last_ts.to_pydatetime().replace(tzinfo=timezone.utc).hour
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize('UTC')
+            else:
+                last_ts = last_ts.tz_convert('UTC')
+            hour = last_ts.hour
+
             session = None
-            if 1 <= hour < 7:   session = "asian"
+            if 1 <= hour < 7:    session = "asian"
             elif 8 <= hour < 12: session = "london"
             elif 13 <= hour < 19: session = "new_york"
 
+            # Resolve effective range — fall back through session → generic → None
             session_range_key   = f"{session}_range_pct" if session else None
-            effective_range_pct = params.get(session_range_key) or params.get("max_range_pct")
+            effective_range_pct = (
+                params.get(session_range_key)
+                or params.get("max_range_pct")
+            )
 
             last_closed_idx   = len(df) - 2
             scan_start        = max(0, len(df) - lookback)
@@ -1172,7 +1180,7 @@ class PairServer:
                 key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
 
-            # Best zone: tightest passing window that is active
+            # Best zone: tightest active passing window
             best_zone = None
             active_passing = [w for w in passed if w.get("is_active")]
             if active_passing:
