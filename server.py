@@ -452,7 +452,7 @@ function selectWindow(windowSize) {
     `Window ${windowSize} — ${w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase()}`;
 
   const rows = [
-    { key: 'Range %',  val: (w.range_pct*100).toFixed(4)+'%',   limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'%' : '—', pass: !w.range_limit || w.range_pct <= w.range_limit, ratio: w.range_limit ? w.range_pct/w.range_limit : 0 },
+    { key: 'Range %',  val: (w.range_pct*100).toFixed(4)+'%',   limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max' : 'no session limit', pass: !w.range_limit || w.range_pct <= w.range_limit, ratio: w.range_limit ? w.range_pct/w.range_limit : 0.5 },
     { key: 'Slope',    val: w.slope,                             limit: w.slope_limit,   pass: w.slope < w.slope_limit, ratio: w.slope / w.slope_limit },
     { key: 'Chop',     val: w.chop,                              limit: '≥ 0.44 (found) / 0.36 (pot)', pass: w.chop >= 0.36, ratio: w.chop / 0.44 },
     { key: 'ADX',      val: w.adx != null ? w.adx : 'N/A',      limit: '< ' + w.adx_limit, pass: w.adx == null || w.adx < w.adx_limit, ratio: w.adx != null ? w.adx / w.adx_limit : 0 },
@@ -946,7 +946,7 @@ class PairServer:
 
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
-            lookback      = params.get("lookback", 100)
+            lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 20)
             adx_threshold = params.get("adx_threshold", 25)
             threshold_pct = params.get("threshold_pct", 0.003)
@@ -1088,7 +1088,7 @@ class PairServer:
 
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
-            lookback      = params.get("lookback", 100)
+            lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 15)
             adx_threshold = params.get("adx_threshold", 25)
             threshold_pct = params.get("threshold_pct", 0.003)
