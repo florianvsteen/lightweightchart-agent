@@ -428,9 +428,9 @@ async function fetchPair(pair) {
         statusEl.className = 'status-text dim';
         extraEl.innerHTML  = '';
         metaEl.textContent = z?.session ? z.session.replace('_',' ').toUpperCase() : '--';
-      } else if (z.status === 'found' && z.is_active) {
+      } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
         dotEl.className   = 'status-dot found';
-        statusEl.textContent = 'Accumulation found';
+        statusEl.textContent = z.status === 'confirmed' ? 'Accumulation confirmed ✓' : 'Accumulation found';
         statusEl.className = 'status-text';
         const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
         extraEl.innerHTML = `
