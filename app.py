@@ -13,6 +13,7 @@ import sys
 import threading
 from config import PAIRS
 from server import PairServer
+from mission_control import app as mission_app
 
 
 def launch_pair(pair_id: str, config: dict, stagger: int = 0):
@@ -52,6 +53,16 @@ def main():
         )
         t.start()
         threads.append(t)
+
+    # Start mission control dashboard
+    mc_thread = threading.Thread(
+        target=lambda: mission_app.run(host="0.0.0.0", port=6767, use_reloader=False),
+        daemon=True,
+        name="mission-control",
+    )
+    mc_thread.start()
+    print("  Mission Control → http://localhost:6767")
+    print("=" * 50)
 
     # Keep main thread alive
     try:
