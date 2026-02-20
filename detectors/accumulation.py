@@ -174,76 +174,80 @@ def detect(
         best_potential = None   # tightest potential zone
 
         # Try all window sizes from min_candles up to lookback.
+        # Window MUST end at the last closed candle — no historical zones.
+        # As price stays in the box the window grows each cycle.
         # Prefer SMALLER windows with tighter ranges over larger ones.
+        last_closed_idx = len(df) - 2
         for window_size in range(min_candles, lookback + 1):
             slope_limit = (threshold_pct * 0.15) / window_size
 
-            for i in range(len(df) - window_size, scan_start - 1, -1):
-                if i < 0:
-                    break
+            # Start index so that window ends exactly at last closed candle
+            i = last_closed_idx - window_size + 1
+            if i < 0 or i < scan_start:
+                continue
 
-                window = df.iloc[i: i + window_size]
-                closes = window['Close'].values.flatten().astype(float)
-                opens  = window['Open'].values.flatten().astype(float)
-                highs  = window['High'].values.flatten().astype(float)
-                lows   = window['Low'].values.flatten().astype(float)
+            window = df.iloc[i: i + window_size]
+            closes = window['Close'].values.flatten().astype(float)
+            opens  = window['Open'].values.flatten().astype(float)
+            highs  = window['High'].values.flatten().astype(float)
+            lows   = window['Low'].values.flatten().astype(float)
 
-                if len(closes) < window_size:
+            if len(closes) < window_size:
+                continue
+
+            avg_p = closes.mean()
+            if avg_p == 0:
+                continue
+
+            # Body boundaries — wicks excluded
+            body_highs = np.maximum(opens, closes)
+            body_lows  = np.minimum(opens, closes)
+            h_max = float(body_highs.max())
+            l_min = float(body_lows.min())
+            range_pct = (h_max - l_min) / avg_p
+
+            if effective_range_pct is not None:
+                if range_pct > effective_range_pct:
                     continue
 
-                avg_p = closes.mean()
-                if avg_p == 0:
-                    continue
+            slope = _slope_pct(closes, avg_p)
+            if slope >= slope_limit:
+                continue
 
-                # Body boundaries — wicks excluded
-                body_highs = np.maximum(opens, closes)
-                body_lows  = np.minimum(opens, closes)
-                h_max = float(body_highs.max())
-                l_min = float(body_lows.min())
-                range_pct = (h_max - l_min) / avg_p
+            if _is_v_shape(closes):
+                continue
 
-                if effective_range_pct is not None:
-                    if range_pct > effective_range_pct:
-                        continue
+            # ADX filter — reject if market has directional strength
+            adx_val = _adx(highs, lows, closes)
+            if adx_val is not None and adx_val > adx_threshold:
+                continue
 
-                slope = _slope_pct(closes, avg_p)
-                if slope >= slope_limit:
-                    continue
+            chop  = _choppiness(closes)
+            end_i = i + window_size - 1
+            is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
-                if _is_v_shape(closes):
-                    continue
+            zone = {
+                "detector":  "accumulation",
+                "session":   session,
+                "start":     int(df.index[i].timestamp()),
+                "end":       int(df.index[end_i].timestamp()),
+                "top":       h_max,
+                "bottom":    l_min,
+                "is_active": is_active,
+                "range_pct": round(range_pct, 6),
+                "adx":       round(adx_val, 2) if adx_val is not None else None,
+            }
 
-                # ADX filter — reject if market has directional strength
-                adx_val = _adx(highs, lows, closes)
-                if adx_val is not None and adx_val > adx_threshold:
-                    continue
+            if chop >= CHOP_FOUND:
+                zone["status"] = "found"
+                # Keep tightest (smallest range) found zone
+                if best_found is None or range_pct < best_found["range_pct"]:
+                    best_found = zone
 
-                chop  = _choppiness(closes)
-                end_i = i + window_size - 1
-                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
-
-                zone = {
-                    "detector":  "accumulation",
-                    "session":   session,
-                    "start":     int(df.index[i].timestamp()),
-                    "end":       int(df.index[end_i].timestamp()),
-                    "top":       h_max,
-                    "bottom":    l_min,
-                    "is_active": is_active,
-                    "range_pct": round(range_pct, 6),
-                    "adx":       round(adx_val, 2) if adx_val is not None else None,
-                }
-
-                if chop >= CHOP_FOUND:
-                    zone["status"] = "found"
-                    # Keep tightest (smallest range) found zone
-                    if best_found is None or range_pct < best_found["range_pct"]:
-                        best_found = zone
-
-                elif chop >= CHOP_POTENTIAL:
-                    zone["status"] = "potential"
-                    if best_potential is None or range_pct < best_potential["range_pct"]:
-                        best_potential = zone
+            elif chop >= CHOP_POTENTIAL:
+                zone["status"] = "potential"
+                if best_potential is None or range_pct < best_potential["range_pct"]:
+                    best_potential = zone
 
         if best_found is not None:
             # If price already broke out, clear the zone and start looking again
