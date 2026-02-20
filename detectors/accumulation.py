@@ -57,6 +57,10 @@ def _choppiness(closes: np.ndarray) -> float:
     return sign_changes / (len(diffs) - 1)
 
 
+def _std_pct(closes: np.ndarray, avg_p: float) -> float:
+    return float(np.std(closes)) / avg_p
+
+
 def detect(
     df,
     lookback: int = 40,
@@ -140,6 +144,14 @@ def detect(
 
             slope = _slope_pct(closes, avg_p)
             if slope >= slope_limit:
+                continue
+
+            # Reject windows with high price dispersion — catches V-shapes and
+            # trending moves whose up+down legs cancel out in linear regression.
+            # std > 35% of the allowed range means price swung too wildly.
+            std = _std_pct(closes, avg_p)
+            std_limit = (effective_range_pct if effective_range_pct else slope_limit * lookback / 0.15) * 0.35
+            if std > std_limit:
                 continue
 
             chop  = _choppiness(closes)
