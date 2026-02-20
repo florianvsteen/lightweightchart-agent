@@ -112,5 +112,25 @@ PAIRS = {
               "valid_sessions": ["london", "new_york"],
           },
       },
+    },
+      "GBPUSD": {
+      "ticker": "EURGBP=X",
+      "port": 5005,
+      "label": "GBPUSD",
+      "interval": "15m",
+      "period": "5d",
+      "default_interval": "30m",
+      "detectors": ["supply_demand"],
+      "detector_params": {
+          "supply_demand": {
+              "timeframe": "30m",
+              "ticker": "GBPUSD=X",          # needed for bias fetch (daily + weekly)
+              "impulse_multiplier": 1.8,
+              "wick_ratio": 0.6,
+              "max_zones": 5,
+              "max_age_days": 3,
+              "valid_sessions": ["london", "new_york"],
+          },
+      },
   },
 }
