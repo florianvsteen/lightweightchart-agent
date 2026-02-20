@@ -220,11 +220,11 @@
         // Session windows in UTC hours
         // Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
         // London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
-        // New York: 13:00 – 19:00 UTC  (15:00 – 20:00 CET)
+        // New York: 14:00 – 19:00 UTC  (15:00 – 20:00 CET)
         const SESSION_WINDOWS_UTC = [
             { name: 'asian',    start: 1,  end: 7  },
             { name: 'london',   start: 8,  end: 12 },
-            { name: 'new_york', start: 13, end: 19 },
+            { name: 'new_york', start: 14, end: 19 },
         ];
 
         function getCurrentSession() {
@@ -355,25 +355,39 @@
             const fillAlpha = isFound ? 0.08 : 0.03;
             const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
             const fillColor = `rgba(200, 200, 200, ${fillAlpha})`;
+            const lineStyle = isFound ? 0 : 2;
+            const seriesOpts = { color: lineColor, lineWidth: 1, lineStyle,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-            const topLine = chart.addLineSeries({
-                color: lineColor, lineWidth: 1, lineStyle: isFound ? 0 : 2,
-                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-            });
+            // Top horizontal line
+            const topLine = chart.addLineSeries(seriesOpts);
             topLine.setData([
                 { time: shiftTime(zone.start), value: zone.top },
                 { time: shiftTime(zone.end),   value: zone.top },
             ]);
 
-            const bottomLine = chart.addLineSeries({
-                color: lineColor, lineWidth: 1, lineStyle: isFound ? 0 : 2,
-                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-            });
+            // Bottom horizontal line
+            const bottomLine = chart.addLineSeries(seriesOpts);
             bottomLine.setData([
                 { time: shiftTime(zone.start), value: zone.bottom },
                 { time: shiftTime(zone.end),   value: zone.bottom },
             ]);
 
+            // Left vertical line
+            const leftLine = chart.addLineSeries(seriesOpts);
+            leftLine.setData([
+                { time: shiftTime(zone.start), value: zone.top },
+                { time: shiftTime(zone.start), value: zone.bottom },
+            ]);
+
+            // Right vertical line
+            const rightLine = chart.addLineSeries(seriesOpts);
+            rightLine.setData([
+                { time: shiftTime(zone.end), value: zone.top },
+                { time: shiftTime(zone.end), value: zone.bottom },
+            ]);
+
+            // Fill
             const fill = chart.addBaselineSeries({
                 baseValue: { type: 'price', price: zone.bottom },
                 topFillColor1: fillColor, topFillColor2: fillColor,
@@ -388,7 +402,7 @@
                 { time: shiftTime(zone.end),   value: zone.top },
             ]);
 
-            return [topLine, bottomLine, fill];
+            return [topLine, bottomLine, leftLine, rightLine, fill];
         }
 
         function updateBiasBadge(bias) {
