@@ -65,6 +65,9 @@ class PairServer:
         self._df_cache: dict[str, pd.DataFrame] = {}
         self._cache_lock = threading.Lock()
 
+        self._detection_lock = threading.Lock()
+        self._stagger_seconds = 0  # set by app.py before run()
+
         root = os.path.dirname(os.path.abspath(__file__))
         self.app = Flask(
             __name__,
@@ -160,12 +163,16 @@ class PairServer:
     # ------------------------------------------------------------------ #
 
     def _detection_loop(self):
+        # Stagger startup so pairs don't all hit yfinance simultaneously
+        if self._stagger_seconds:
+            time.sleep(self._stagger_seconds)
         print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
         while True:
             try:
-                cache = {}
-                results = self._run_detectors(cache)
-                self._process_alerts(results)
+                with self._detection_lock:
+                    cache = {}
+                    results = self._run_detectors(cache)
+                    self._process_alerts(results)
                 print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
             except Exception as e:
                 print(f"[{self.pair_id}] Detection loop error: {e}")
