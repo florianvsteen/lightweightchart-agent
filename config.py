@@ -23,8 +23,8 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.001,   # Asian: ~42pt box max
-                "london_range_pct":   0.00125,  # London: ~63pt box max
+                "asian_range_pct":    0.0002,   # Asian: ~42pt box max
+                "london_range_pct":   0.0005,  # London: ~63pt box max
                 "new_york_range_pct": 0.002,   # NY: ~84pt box max
             },
         },
