@@ -150,6 +150,28 @@
     <script>
         const PAIR_ID = "{{ pair_id }}";
         const TIMEZONE = "{{ timezone }}";
+
+        // ── Timezone offset ───────────────────────────────────────────
+        // LightweightCharts 4.x doesn't support timezone config directly.
+        // We shift timestamps by the container's UTC offset so the chart
+        // displays times in the correct local timezone.
+        function getTzOffsetSeconds(tz) {
+            try {
+                const now = new Date();
+                // Get UTC time and local time in the target timezone
+                const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
+                const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
+                const diff   = (new Date(tzStr) - new Date(utcStr)) / 1000;
+                return diff;
+            } catch(e) {
+                return 0;
+            }
+        }
+        const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
+
+        function shiftTime(ts) {
+            return ts + TZ_OFFSET;
+        }
         let currentInterval = "1m";
 
         // ── Session clock ─────────────────────────────────────────────
@@ -191,7 +213,7 @@
         const chart = LightweightCharts.createChart(container, {
             layout: { background: { color: '#1e1e1f' }, textColor: '#d1d4dc' },
             grid: { vertLines: { visible: false }, horzLines: { visible: false } },
-            timeScale: { timeVisible: true, borderColor: '#2B2B43', timezone: TIMEZONE },
+            timeScale: { timeVisible: true, borderColor: '#2B2B43' },
         });
 
         const candleSeries = chart.addCandlestickSeries({
@@ -254,8 +276,8 @@
                 priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             topLine.setData([
-                { time: zone.start, value: zone.top },
-                { time: zone.end,   value: zone.top },
+                { time: shiftTime(zone.start), value: zone.top },
+                { time: shiftTime(zone.end),   value: zone.top },
             ]);
 
             const bottomLine = chart.addLineSeries({
@@ -263,8 +285,8 @@
                 priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             bottomLine.setData([
-                { time: zone.start, value: zone.bottom },
-                { time: zone.end,   value: zone.bottom },
+                { time: shiftTime(zone.start), value: zone.bottom },
+                { time: shiftTime(zone.end),   value: zone.bottom },
             ]);
 
             const fill = chart.addBaselineSeries({
@@ -277,8 +299,8 @@
                 priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             });
             fill.setData([
-                { time: zone.start, value: zone.top },
-                { time: zone.end,   value: zone.top },
+                { time: shiftTime(zone.start), value: zone.top },
+                { time: shiftTime(zone.end),   value: zone.top },
             ]);
 
             return [topLine, bottomLine, fill];
@@ -305,13 +327,13 @@
                     color, lineWidth: 1, lineStyle,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
-                topLine.setData([{ time: zone.start, value: zone.top }, { time: zone.end, value: zone.top }]);
+                topLine.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
 
                 const bottomLine = chart.addLineSeries({
                     color, lineWidth: 1, lineStyle,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
-                bottomLine.setData([{ time: zone.start, value: zone.bottom }, { time: zone.end, value: zone.bottom }]);
+                bottomLine.setData([{ time: shiftTime(zone.start), value: zone.bottom }, { time: shiftTime(zone.end), value: zone.bottom }]);
 
                 const fillSeries = chart.addBaselineSeries({
                     baseValue: { type: 'price', price: zone.bottom },
@@ -322,7 +344,7 @@
                     lineWidth: 0,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
-                fillSeries.setData([{ time: zone.start, value: zone.top }, { time: zone.end, value: zone.top }]);
+                fillSeries.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
 
                 allSeries.push(topLine, bottomLine, fillSeries);
             });
@@ -337,7 +359,8 @@
                 .then(data => {
                     if (!data.candles) return;
 
-                    candleSeries.setData(data.candles);
+                    const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
+                    candleSeries.setData(shifted);
 
                     for (const [name, seriesList] of Object.entries(activeSeries)) {
                         (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
