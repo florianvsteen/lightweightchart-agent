@@ -22,8 +22,8 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.001,   # Asian: ~42pt box max
-                "london_range_pct":   0.0015,  # London: ~63pt box max
+                "asian_range_pct":    0.0005,   # Asian: ~42pt box max
+                "london_range_pct":   0.001,  # London: ~63pt box max
                 "new_york_range_pct": 0.002,   # NY: ~84pt box max
             },
         },
@@ -40,8 +40,8 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.00125,  # Asian: ~26pt box max
-                "london_range_pct":   0.002,    # London: ~42pt box max
+                "asian_range_pct":    0.000625,  # Asian: ~26pt box max
+                "london_range_pct":   0.00125,    # London: ~42pt box max
                 "new_york_range_pct": 0.0025,   # NY: ~52pt box max
             },
         },
@@ -58,8 +58,8 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "threshold_pct": 0.002,
-                "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
-                "london_range_pct":   0.002,   # London: ~$6 box max
+                "asian_range_pct":    0.001,  # Asian: ~$4.5 box max
+                "london_range_pct":   0.0015,   # London: ~$6 box max
                 "new_york_range_pct": 0.003,   # NY: ~$9 box max
             },
         },
