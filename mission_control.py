@@ -35,6 +35,18 @@ def proxy_api(pair_id):
         return jsonify({"error": str(e)}), 502
 
 
+@app.route('/proxy/<pair_id>/debug')
+def proxy_debug(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": "unknown pair"}), 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug", timeout=30)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.route('/chart/<pair_id>')
 @app.route('/chart/<pair_id>/')
 def proxy_chart(pair_id):
