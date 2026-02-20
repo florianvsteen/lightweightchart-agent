@@ -1,613 +1,1320 @@
 """
-mission_control.py — Mission Control dashboard server.
+server.py
 
-Runs on port 5010 (separate from all pair servers).
-Serves the dashboard HTML and proxies /proxy/<pair_id>/api/data
-to each pair's internal port so there are zero CORS issues.
+PairServer — a self-contained Flask server instance for a single trading pair.
+Each pair runs in its own thread on its own port.
 
-Usage:
-    python mission_control.py
-
-Then open: http://localhost:5010
+Detection runs in a background thread every 30 seconds — completely independent
+of whether anyone has the browser open. Discord alerts fire from there.
+The Flask routes only serve chart data to the browser when it's open.
 """
 
-import requests
-from flask import Flask, jsonify, render_template_string
-from config import PAIRS
+import os
+import json
+import time
+import threading
+import pandas as pd
+import yfinance as yf
+from flask import Flask, render_template, jsonify, request
 
-app = Flask(__name__)
+from detectors import REGISTRY
 
-MISSION_PORT = 6767
+try:
+    from discord_webhook import DiscordWebhook, DiscordEmbed
+    DISCORD_AVAILABLE = True
+except ImportError:
+    DISCORD_AVAILABLE = False
 
-# ── Proxy ──────────────────────────────────────────────────────────────────
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
-@app.route('/proxy/<pair_id>/api/data')
-def proxy_api(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        interval = cfg.get("default_interval", cfg.get("interval", "1m"))
-        url = f"http://127.0.0.1:{cfg['port']}/api/data?interval={interval}"
-        r = requests.get(url, timeout=5)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
-
-@app.route('/proxy/<pair_id>/debug')
-def proxy_debug(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug", timeout=30)
-        html = r.text
-        pair_upper = pair_id.upper()
-        # Rewrite the /debug/data and /debug/replay fetches so they go through the proxy
-        html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
-        html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
-        html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
-        # Match the replay fetch regardless of what options follow the URL
-        import re
-        html = re.sub(
-            r"fetch\(`/debug/replay\?idx=\$\{idx\}`",
-            f"fetch(`/proxy/{pair_upper}/debug/replay?idx=${{idx}}`",
-            html,
-        )
-        if '<meta charset' not in html:
-            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
-        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route('/proxy/<pair_id>/debug/data')
-def proxy_debug_data(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/data", timeout=30)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route('/proxy/<pair_id>/debug/replay')
-def proxy_debug_replay(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        idx = request.args.get("idx", "")
-        url = f"http://127.0.0.1:{cfg['port']}/debug/replay"
-        if idx:
-            url += f"?idx={idx}"
-        r = requests.get(url, timeout=60)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route('/chart/<pair_id>')
-@app.route('/chart/<pair_id>/')
-def proxy_chart(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return "Unknown pair", 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/", timeout=5)
-        html = r.text
-        # Rewrite ALL /api/data fetch patterns to go through our proxy.
-        # Covers single quotes, double quotes, and template literals.
-        pair_upper = pair_id.upper()
-        html = html.replace("fetch(`/api/data", f"fetch(`/proxy/{pair_upper}/api/data")
-        html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_upper}/api/data")
-        html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_upper}/api/data')
-        # Inject charset if missing so UTF-8 arrows/emoji render correctly
-        if '<meta charset' not in html:
-            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
-        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
-    except Exception as e:
-        return f"Chart unavailable: {e}", 502
-
-
-# ── Dashboard ──────────────────────────────────────────────────────────────
-
-PAIRS_JS = [
-    {
-        "id":    pair_id,
-        "label": cfg["label"],
-        "port":  cfg["port"],
-        "type":  "supply_demand" if "supply_demand" in cfg["detectors"] else "accumulation",
-    }
-    for pair_id, cfg in PAIRS.items()
-]
-
-DASHBOARD = r"""<!DOCTYPE html>
-<html lang="en">
+# ── Debug page HTML ─────────────────────────────────────────────────────────
+DEBUG_HTML = r"""<!DOCTYPE html>
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mission Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<title>Debug — __LABEL__</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  :root {
-    --bg:        #0a0a0c;
-    --surface:   #111116;
-    --border:    #1e1e28;
-    --border2:   #2a2a38;
-    --text:      #c8c8d8;
-    --muted:     #4a4a60;
-    --accent:    #5af0c4;
-    --accent2:   #f05a7e;
-    --blue:      #5a9ef0;
-    --found:     #e8e8f0;
-    --potential: #888898;
-  }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #131316;
+    --surface: #1a1a1f;
+    --border:  #252530;
+    --text:    #c8c8d8;
+    --muted:   #55556a;
+    --accent:  #5af0c4;
+    --red:     #f05a7e;
+    --yellow:  #f0c45a;
+    --blue:    #5a9ef0;
+    --pass:    #5af0c4;
+  }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font-family: 'Space Mono', 'Menlo', monospace; font-size: 12px; }
+  #layout { display: flex; height: 100vh; flex-direction: column; }
+  #main   { display: flex; flex: 1; min-height: 0; }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Space Mono', monospace;
-    min-height: 100vh;
-    overflow-x: hidden;
+  /* ── Left: chart ── */
+  #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+  #topbar h1 { font-size: 13px; color: #fff; white-space: nowrap; margin-right: 4px; }
+  .tag { font-size: 10px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
+    color: var(--muted); white-space: nowrap; }
+  .tag.session { border-color: #5a9ef0; color: #5a9ef0; }
+  .tag.passed  { border-color: var(--pass); color: var(--pass); }
+  .tag.range   { border-color: var(--yellow); color: var(--yellow); }
+  .tag.replay  { border-color: var(--red); color: var(--red); }
+  #btn-group { display: flex; gap: 6px; margin-left: auto; }
+  .rbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+    color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit;
+    padding: 3px 10px; transition: all 0.15s; white-space: nowrap; }
+  .rbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .rbtn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.06); }
+  .rbtn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
+
+  #chart-wrap { flex: 1; position: relative; min-height: 0; }
+  #chart { width: 100%; height: 100%; }
+
+  /* ── Replay cursor line ── */
+  #cursor-line {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(240, 90, 126, 0.6);
+    pointer-events: none; display: none;
+    z-index: 10;
   }
 
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 2px,
-      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
-    );
-    pointer-events: none;
-    z-index: 9999;
-  }
+  /* ── Scrubber bar ── */
+  #scrubber-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+    border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
+  #scrubber { flex: 1; accent-color: var(--accent); cursor: pointer; height: 4px; }
+  #scrub-label { font-size: 10px; color: var(--muted); min-width: 110px; text-align: right; white-space: nowrap; }
+  #scrub-ts    { font-size: 10px; color: var(--muted); min-width: 120px; white-space: nowrap; }
+  #replay-speed { width: 60px; font-size: 10px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 3px; color: var(--text);
+    padding: 2px 5px; font-family: inherit; }
 
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 32px;
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 100;
-  }
+  /* ── Right panel ── */
+  #right { width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+    border-left: 1px solid var(--border); overflow: hidden; }
+  #right-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .rtab { flex: 1; padding: 8px 4px; text-align: center; font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
+    transition: all 0.15s; }
+  .rtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .rtab-panel { display: none; flex: 1; overflow-y: auto; padding: 10px; }
+  .rtab-panel.active { display: block; }
 
-  .logo { display: flex; align-items: baseline; gap: 12px; }
-  .logo-title {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.1rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-  .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.2em; text-transform: uppercase; }
+  /* Summary */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; }
+  .stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3px; }
+  .stat-val { font-size: 18px; font-weight: 700; color: #fff; }
+  .stat-val.green  { color: var(--pass); }
+  .stat-val.red    { color: var(--red);  }
+  .stat-val.yellow { color: var(--yellow); }
+  .reject-list { margin-top: 10px; }
+  .reject-row { padding: 5px 8px; border-radius: 3px; margin-bottom: 3px;
+    background: var(--surface); border-left: 3px solid; }
+  .reject-row.range   { border-color: var(--yellow); }
+  .reject-row.slope   { border-color: var(--blue); }
+  .reject-row.adx     { border-color: var(--red); }
+  .reject-row.chop    { border-color: #a070f0; }
+  .reject-row.v_shape { border-color: var(--muted); }
+  .reject-label { font-size: 10px; color: var(--text); }
+  .reject-count { font-size: 12px; font-weight: 700; color: #fff; }
+  .reject-bar  { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
+  .reject-bar-fill { height: 100%; border-radius: 2px; }
 
-  .header-right { display: flex; align-items: center; gap: 20px; }
-  #clock { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.1em; }
+  /* Windows */
+  #window-search { width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--text); padding: 5px 8px; font-family: inherit;
+    font-size: 11px; margin-bottom: 8px; }
+  #window-search:focus { outline: none; border-color: var(--accent); }
+  .win-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 3px;
+    margin-bottom: 2px; cursor: pointer; border: 1px solid transparent; transition: all 0.1s; }
+  .win-row:hover   { border-color: var(--border); background: var(--surface); }
+  .win-row.selected { border-color: var(--accent); background: rgba(90,240,196,0.04); }
+  .win-row.pass-row { border-left: 3px solid var(--pass); }
+  .win-row.fail-row { border-left: 3px solid #333; }
+  .win-num    { width: 28px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
+  .win-status { font-size: 10px; flex: 1; }
+  .win-status.pass { color: var(--pass); }
+  .win-status.fail { color: var(--muted); }
+  .win-chop   { font-size: 10px; color: var(--muted); width: 42px; text-align: right; flex-shrink: 0; }
 
-  #session-global {
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    padding: 4px 10px;
-    border-radius: 3px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    transition: all 0.3s;
-  }
-  #session-global.asian    { border-color: #c8a84b; color: #c8a84b; }
-  #session-global.london   { border-color: var(--blue); color: var(--blue); }
-  #session-global.new_york { border-color: var(--accent); color: var(--accent); }
+  /* Detail */
+  #detail-title { font-size: 11px; color: var(--accent); margin-bottom: 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border); }
+  .detail-row { display: flex; justify-content: space-between; padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .detail-key  { color: var(--muted); font-size: 10px; }
+  .detail-val  { font-size: 10px; font-weight: 600; }
+  .detail-val.pass    { color: var(--pass); }
+  .detail-val.fail    { color: var(--red);  }
+  .detail-val.neutral { color: var(--text); }
+  .bar-track { height: 3px; background: var(--border); border-radius: 2px; flex: 1; margin-left: 10px; }
+  .bar-fill  { height: 100%; border-radius: 2px; max-width: 100%; }
 
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 1px;
-    background: var(--border);
-  }
+  /* Replay status banner */
+  #replay-banner { display: none; padding: 4px 14px; font-size: 10px; color: var(--red);
+    background: rgba(240,90,126,0.07); border-bottom: 1px solid rgba(240,90,126,0.2);
+    letter-spacing: 0.06em; }
 
-  .card {
-    background: var(--surface);
-    padding: 20px 22px;
-    position: relative;
-    cursor: pointer;
-    transition: background 0.2s;
-    text-decoration: none;
-    display: block;
-    color: var(--text);
-  }
-  .card:hover { background: #13131a; }
-  .card::after {
-    content: '↗';
-    position: absolute;
-    top: 16px; right: 16px;
-    font-size: 0.75rem;
-    color: var(--muted);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-  .card:hover::after { opacity: 1; }
-
-  .card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 14px;
-  }
-
-  .pair-name {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.3rem;
-    color: #fff;
-    letter-spacing: 0.05em;
-    line-height: 1;
-  }
-  .pair-label { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
-
-  .detector-badge {
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    background: var(--bg);
-  }
-  .detector-badge.accum { border-color: #3a3a50; color: #7070a0; }
-  .detector-badge.sd    { border-color: #3a5050; color: #70a0a0; }
-
-  .price-row { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 12px; }
-  .price { font-size: 1.6rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; line-height: 1; }
-  .price-change { font-size: 0.72rem; padding: 2px 6px; border-radius: 2px; }
-  .price-change.up   { color: var(--accent);  background: rgba(90,240,196,0.08); }
-  .price-change.down { color: var(--accent2); background: rgba(240,90,126,0.08); }
-
-  .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  .status-dot.found     { background: var(--found); box-shadow: 0 0 8px rgba(232,232,240,0.6); animation: pulse 2s ease-in-out infinite; }
-  .status-dot.potential { background: var(--potential); }
-  .status-dot.looking   { background: #2a2a3a; }
-  .status-dot.offline   { background: #1a1a2a; }
-  .status-dot.bullish   { background: var(--accent); box-shadow: 0 0 6px rgba(90,240,196,0.4); }
-  .status-dot.bearish   { background: var(--accent2); box-shadow: 0 0 6px rgba(240,90,126,0.4); }
-  .status-dot.misaligned{ background: var(--muted); }
-
-  .status-text { font-size: 0.72rem; color: var(--text); letter-spacing: 0.05em; }
-  .status-text.dim { color: var(--muted); }
-
-  .accum-box {
-    margin-top: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--border2);
-    border-left: 2px solid var(--muted);
-    font-size: 0.65rem;
-    color: var(--muted);
-    display: none;
-    line-height: 1.6;
-  }
-  .accum-box.found     { border-left-color: var(--found); color: var(--text); display: block; }
-  .accum-box.potential { border-left-color: var(--potential); color: var(--potential); display: block; }
-  .accum-range { font-size: 0.7rem; color: #fff; font-weight: 700; }
-
-  .zones-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .zone-pill {
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid;
-    text-transform: uppercase;
-  }
-  .zone-pill.demand { border-color: rgba(90,158,240,0.4); color: #5a9ef0; background: rgba(90,158,240,0.06); }
-  .zone-pill.supply { border-color: rgba(240,90,126,0.4); color: #f05a7e; background: rgba(240,90,126,0.06); }
-
-  .bias-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-  .bias-pill {
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-  }
-  .bias-pill.bullish    { border-color: rgba(90,240,196,0.4); color: var(--accent); background: rgba(90,240,196,0.06); }
-  .bias-pill.bearish    { border-color: rgba(240,90,126,0.4); color: var(--accent2); background: rgba(240,90,126,0.06); }
-  .bias-pill.misaligned { border-color: var(--border2); color: var(--muted); }
-
-  .card-divider { height: 1px; background: var(--border); margin: 12px 0; }
-  .card-meta { display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.08em; }
-
-  .card.error { opacity: 0.4; }
-  .card.error .pair-name { color: var(--muted); }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.4; }
-  }
-
-  footer {
-    border-top: 1px solid var(--border);
-    padding: 12px 32px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.6rem;
-    color: var(--muted);
-    letter-spacing: 0.1em;
-  }
-  .refresh-indicator { display: flex; align-items: center; gap: 6px; }
-  .refresh-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
-  .refresh-dot.active { background: var(--accent); animation: pulse 0.5s ease-in-out; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 </style>
 </head>
 <body>
+<div id="layout">
+  <div id="main">
 
-<header>
-  <div class="logo">
-    <span class="logo-title">Mission Control</span>
-    <span class="logo-sub">Trading Agent</span>
-  </div>
-  <div class="header-right">
-    <span id="session-global">--</span>
-    <span id="clock">--:--:--</span>
-  </div>
-</header>
+    <!-- LEFT: Chart + scrubber -->
+    <div id="left">
+      <div id="topbar">
+        <h1>⚙ DEBUG — __LABEL__</h1>
+        <span class="tag session" id="tag-session">loading…</span>
+        <span class="tag passed"  id="tag-passed">…</span>
+        <span class="tag range"   id="tag-range">…</span>
+        <span class="tag replay"  id="tag-replay" style="display:none">⏮ REPLAY</span>
+        <div id="btn-group">
+          <button class="rbtn active" id="btn-live">Live</button>
+          <button class="rbtn" id="btn-replay">⏮ Replay</button>
+          <button class="rbtn" id="btn-prev" disabled>◀</button>
+          <button class="rbtn" id="btn-play" disabled>▶</button>
+          <button class="rbtn" id="btn-next" disabled>▶|</button>
+          <select id="replay-speed" disabled>
+            <option value="600">0.5×</option>
+            <option value="300" selected>1×</option>
+            <option value="150">2×</option>
+            <option value="60">4×</option>
+          </select>
+        </div>
+      </div>
+      <div id="replay-banner">⏮ REPLAY MODE — click any candle or drag the scrubber to seek</div>
+      <div id="chart-wrap">
+        <div id="chart"></div>
+        <div id="cursor-line"></div>
+      </div>
+      <div id="scrubber-row">
+        <input type="range" id="scrubber" min="0" value="0" step="1" disabled />
+        <span id="scrub-ts">—</span>
+        <span id="scrub-label">candle — / —</span>
+        <button class="rbtn" id="btn-analyze" disabled>▶ Run Detector</button>
+      </div>
+    </div>
 
-<div class="grid" id="grid"></div>
+    <!-- RIGHT: Debug panel -->
+    <div id="right">
+      <div id="right-tabs">
+        <div class="rtab active" data-tab="summary">Summary</div>
+        <div class="rtab" data-tab="windows">Windows</div>
+        <div class="rtab" data-tab="detail">Detail</div>
+      </div>
+      <div id="tab-summary" class="rtab-panel active">
+        <div class="stat-grid" id="stat-grid"></div>
+        <div class="reject-list" id="reject-list"></div>
+      </div>
+      <div id="tab-windows" class="rtab-panel">
+        <input id="window-search" placeholder="Filter: pass / fail / range / slope / adx…" />
+        <div id="window-list"></div>
+      </div>
+      <div id="tab-detail" class="rtab-panel">
+        <div id="detail-title">← click a window row</div>
+        <div id="detail-body"></div>
+      </div>
+    </div>
 
-<footer>
-  <span id="last-update">Waiting for data...</span>
-  <div class="refresh-indicator">
-    <div class="refresh-dot" id="refresh-dot"></div>
-    <span>LIVE · 5s</span>
   </div>
-</footer>
+</div>
 
 <script>
-const PAIRS = """ + str(PAIRS_JS).replace("'", '"').replace("True", "true").replace("False", "false") + r""";
+const PAIR_ID = "__PAIR_ID__";
 
-const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
-];
+// ── State ─────────────────────────────────────────────────────────────────
+let liveData    = null;   // full /debug/data payload (never changes during session)
+let replayData  = null;   // current /debug/replay?idx=N payload
+let replayMode  = false;
+let replayIdx   = 0;
+let replayTimer = null;
+let selectedWindow = null;
+let overlaySeriesList = [];
 
-function getCurrentSession() {
-  const h = new Date().getUTCHours();
-  return SESSION_WINDOWS.find(s => h >= s.start && h < s.end) || null;
-}
+// ── Chart ─────────────────────────────────────────────────────────────────
+const container = document.getElementById('chart');
+const chart = LightweightCharts.createChart(container, {
+  layout:    { background: { color: '#131316' }, textColor: '#c8c8d8' },
+  grid:      { vertLines: { visible: false }, horzLines: { visible: false } },
+  timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#252530' },
+  crosshair: { mode: 1 },
+});
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#d4d0d0', downColor: '#068c76',
+  wickUpColor: '#d4d0d0', wickDownColor: '#068c76',
+  borderVisible: false,
+});
 
-function formatPrice(p, id) {
-  if (p == null) return '---';
-  if (id === 'EURUSD' || id === 'EURGBP') return p.toFixed(5);
-  if (id === 'XAUUSD') return p.toFixed(2);
-  return p.toFixed(0);
-}
+// Click-to-seek: when in replay mode, clicking a candle seeks to that index
+chart.subscribeClick(param => {
+  if (!replayMode || !param.time || !liveData) return;
+  const ts  = param.time;
+  const idx = liveData.candles.findIndex(c => c.time === ts);
+  if (idx >= 0) seekTo(idx + 1);  // idx+1 = how many candles are visible (1-based)
+});
 
-function formatUTC(ts) {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-}
+window.addEventListener('resize', () => chart.applyOptions({
+  width:  container.clientWidth,
+  height: container.clientHeight,
+}));
 
-function buildGrid() {
-  const grid = document.getElementById('grid');
-  PAIRS.forEach(pair => {
-    const card = document.createElement('a');
-    card.className = 'card';
-    card.id = `card-${pair.id}`;
-    card.href = `/chart/${pair.id}`;
-    card.target = '_blank';
-    card.innerHTML = `
-      <div class="card-header">
-        <div>
-          <div class="pair-name">${pair.id}</div>
-          <div class="pair-label">${pair.label}</div>
-        </div>
-        <span class="detector-badge ${pair.type === 'accumulation' ? 'accum' : 'sd'}">
-          ${pair.type === 'accumulation' ? 'Accum' : 'S/D'}
-        </span>
-      </div>
-      <div class="price-row">
-        <span class="price" id="price-${pair.id}">---</span>
-        <span class="price-change" id="change-${pair.id}"></span>
-      </div>
-      <div class="status-row">
-        <div class="status-dot looking" id="dot-${pair.id}"></div>
-        <span class="status-text dim" id="status-${pair.id}">Connecting...</span>
-      </div>
-      <div id="extra-${pair.id}"></div>
-      <div class="card-divider"></div>
-      <div class="card-meta">
-        <span id="meta-${pair.id}">--</span>
-      </div>`;
-    grid.appendChild(card);
+// ── Tabs ──────────────────────────────────────────────────────────────────
+document.querySelectorAll('.rtab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
   });
+});
+
+// ── Load live data ────────────────────────────────────────────────────────
+async function loadLiveData() {
+  if (replayMode) return;   // don't clobber replay state
+  const res = await fetch(`/debug/data`);
+  liveData = await res.json();
+  renderChart(liveData.candles);
+  renderSummary(liveData);
+  renderWindowList(liveData.windows);
+  updateTopbar(liveData, false);
+  const scrubber = document.getElementById('scrubber');
+  scrubber.max   = liveData.candles.length - 1;
+  scrubber.value = liveData.candles.length - 1;
 }
 
-async function fetchPair(pair) {
+// ── Replay fetch (real server-side analysis on sliced df) ────────────────
+let replayFetchController = null;
+
+async function fetchReplay(idx) {
+  if (replayFetchController) replayFetchController.abort();
+  replayFetchController = new AbortController();
+  const btn = document.getElementById('btn-analyze');
+  btn.textContent = '⏳ Running…';
+  btn.disabled = true;
   try {
-    const res = await fetch(`/proxy/${pair.id}/api/data`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const res = await fetch(`/debug/replay?idx=${idx}`, { signal: replayFetchController.signal });
     const data = await res.json();
-
-    const candles = data.candles || [];
-    const last = candles[candles.length - 1];
-    const prev = candles[candles.length - 2];
-    const price = last?.close;
-
-    document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
-
-    if (prev?.close && price) {
-      const chg = ((price - prev.close) / prev.close) * 100;
-      const el = document.getElementById(`change-${pair.id}`);
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
-      el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
+    if (data.error) {
+      console.error('Replay error from server:', data.error, data.trace || '');
+      document.getElementById('tag-session').textContent = 'ERROR — see console';
+      return;
     }
-
-    const det = data.detectors || {};
-    const dotEl    = document.getElementById(`dot-${pair.id}`);
-    const statusEl = document.getElementById(`status-${pair.id}`);
-    const extraEl  = document.getElementById(`extra-${pair.id}`);
-    const metaEl   = document.getElementById(`meta-${pair.id}`);
-    const card     = document.getElementById(`card-${pair.id}`);
-    card.classList.remove('error');
-
-    // ── Accumulation ─────────────────────────────────────────────────────
-    if (pair.type === 'accumulation') {
-      const z = det.accumulation;
-      if (!z || z.status === 'looking' || !z.status) {
-        dotEl.className   = 'status-dot looking';
-        statusEl.textContent = 'Looking for accumulation';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML  = '';
-        metaEl.textContent = z?.session ? z.session.replace('_',' ').toUpperCase() : '--';
-      } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
-        dotEl.className   = 'status-dot found';
-        statusEl.textContent = z.status === 'confirmed' ? 'Accumulation confirmed ✓' : 'Accumulation found';
-        statusEl.className = 'status-text';
-        const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
-        extraEl.innerHTML = `
-          <div class="accum-box found">
-            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
-            ${adxStr}
-            <br>Since ${formatUTC(z.start)}
-          </div>`;
-        metaEl.textContent = '';
-      } else if (z.status === 'potential' && z.is_active) {
-        dotEl.className   = 'status-dot potential';
-        statusEl.textContent = 'Potential forming';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML = `
-          <div class="accum-box potential">
-            ${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}
-          </div>`;
-        metaEl.textContent = '';
-      } else {
-        dotEl.className   = 'status-dot looking';
-        statusEl.textContent = 'Looking for accumulation';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML  = '';
-        metaEl.textContent = '';
-      }
+    replayData = data;
+    renderSummary(replayData);
+    renderWindowList(replayData.windows || []);
+    updateTopbar(replayData, true);
+    if (selectedWindow == null && replayData.best_zone) {
+      drawWindowOverlay(replayData.best_zone);
+    } else if (selectedWindow != null) {
+      const w = (replayData.windows || []).find(x => x.window === selectedWindow);
+      drawWindowOverlay(w || null);
+    } else {
+      drawWindowOverlay(null);
     }
-
-    // ── Supply & Demand ───────────────────────────────────────────────────
-    if (pair.type === 'supply_demand') {
-      const result = det.supply_demand;
-      const bias   = result?.bias || {};
-      const zones  = (result?.zones || []).filter(z => z.is_active);
-
-      if (bias.bias === 'bullish') {
-        dotEl.className = 'status-dot bullish';
-      } else if (bias.bias === 'bearish') {
-        dotEl.className = 'status-dot bearish';
-      } else {
-        dotEl.className = 'status-dot misaligned';
-      }
-
-      if (!bias.bias || bias.bias === 'misaligned') {
-        statusEl.textContent = 'Bias misaligned — not looking';
-        statusEl.className   = 'status-text dim';
-      } else if (zones.length > 0) {
-        statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} active`;
-        statusEl.className   = 'status-text';
-      } else {
-        statusEl.textContent = bias.bias === 'bullish' ? 'Seeking demand zones' : 'Seeking supply zones';
-        statusEl.className   = 'status-text dim';
-      }
-
-      const biasLabel = bias.bias === 'bullish' ? '↑ Bullish D+W'
-                      : bias.bias === 'bearish' ? '↓ Bearish D+W'
-                      : '⚡ Misaligned';
-      const biasClass = bias.bias || 'misaligned';
-
-      const zonePills = zones.map(z =>
-        `<span class="zone-pill ${z.type}">${z.type.toUpperCase()} ${formatPrice(z.bottom, pair.id)}–${formatPrice(z.top, pair.id)}</span>`
-      ).join('');
-
-      extraEl.innerHTML = `
-        <div class="bias-row"><span class="bias-pill ${biasClass}">${biasLabel}</span></div>
-        ${zones.length ? `<div class="zones-row">${zonePills}</div>` : ''}`;
-
-      metaEl.textContent = '';
-    }
-
-  } catch (e) {
-    const card = document.getElementById(`card-${pair.id}`);
-    card.classList.add('error');
-    document.getElementById(`status-${pair.id}`).textContent = 'Offline';
-    document.getElementById(`dot-${pair.id}`).className = 'status-dot offline';
-    document.getElementById(`meta-${pair.id}`).textContent = 'ERR';
-    document.getElementById(`extra-${pair.id}`).innerHTML = '';
+  } catch(e) {
+    if (e.name !== 'AbortError') console.error('Replay fetch error', e);
+  } finally {
+    btn.textContent = '▶ Run Detector';
+    btn.disabled = false;
   }
 }
 
-function updateClock() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  document.getElementById('clock').textContent = timeStr;
+// ── Seek to candle index (chart only — analysis runs on button click) ────
+async function seekTo(idx) {
+  const total = liveData.candles.length;
+  idx = Math.max(18, Math.min(idx, total));
+  replayIdx = idx;
 
-  const sess  = getCurrentSession();
-  const badge = document.getElementById('session-global');
-  if (sess) {
-    badge.textContent = sess.label;
-    badge.className   = sess.name;
-  } else {
-    const utcH = now.getUTCHours();
-    const next = SESSION_WINDOWS.find(s => s.start > utcH) || SESSION_WINDOWS[0];
-    const target = new Date(now);
-    target.setUTCHours(next.start, 0, 0, 0);
-    if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
-    const diff = target - now;
-    const dh = Math.floor(diff / 3600000);
-    const dm = Math.floor((diff % 3600000) / 60000);
-    const ds = Math.floor((diff % 60000) / 1000);
-    badge.textContent = `${next.label.split(' ')[0]} in ${pad(dh)}:${pad(dm)}:${pad(ds)}`;
-    badge.className   = '';
+  const slice = liveData.candles.slice(0, idx);
+  candleSeries.setData(slice);
+  chart.timeScale().fitContent();
+
+  const scrubber = document.getElementById('scrubber');
+  scrubber.value = idx - 1;
+  const lastCandle = slice[slice.length - 1];
+  const dt = lastCandle ? new Date(lastCandle.time * 1000) : null;
+  document.getElementById('scrub-ts').textContent = dt
+    ? dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '—';
+  document.getElementById('scrub-label').textContent = `candle ${idx} / ${total}`;
+}
+
+// ── Topbar update ─────────────────────────────────────────────────────────
+function updateTopbar(d, isReplay) {
+  document.getElementById('tag-session').textContent =
+    d.session ? d.session.replace('_',' ').toUpperCase() : 'OUT OF SESSION';
+  document.getElementById('tag-passed').textContent =
+    `${d.passed} / ${d.windows_checked} passed`;
+  document.getElementById('tag-range').textContent =
+    `range ${d.effective_range ? (d.effective_range * 100).toFixed(3) + '%' : '—'}`;
+  document.getElementById('tag-replay').style.display = isReplay ? '' : 'none';
+}
+
+// ── Summary tab ───────────────────────────────────────────────────────────
+function renderSummary(d) {
+  const total    = d.windows_checked || 1;
+  const passRate = Math.round((d.passed / total) * 100);
+  const stats = [
+    { label: 'Candles',   val: d.idx || d.candles?.length || '—',  cls: 'neutral' },
+    { label: 'Windows',   val: d.windows_checked,                   cls: 'neutral' },
+    { label: 'Passed',    val: d.passed,                            cls: d.passed > 0 ? 'green' : 'red' },
+    { label: 'Pass Rate', val: passRate + '%',                      cls: passRate > 10 ? 'green' : 'yellow' },
+  ];
+  document.getElementById('stat-grid').innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-val ${s.cls}">${s.val}</div>
+    </div>`).join('');
+
+  const reasons = d.rejection_summary || {};
+  const sorted  = Object.entries(reasons).sort((a, b) => b[1] - a[1]);
+  const maxCnt  = sorted.length ? sorted[0][1] : 1;
+  const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', v_shape:'#666' };
+  document.getElementById('reject-list').innerHTML = `
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">Rejection Reasons</div>
+    ${sorted.map(([key, cnt]) => `
+      <div class="reject-row ${key}">
+        <div style="display:flex;justify-content:space-between">
+          <span class="reject-label">${key}</span>
+          <span class="reject-count">${cnt}</span>
+        </div>
+        <div class="reject-bar">
+          <div class="reject-bar-fill" style="width:${Math.round(cnt/maxCnt*100)}%;background:${colorMap[key]||'#666'}"></div>
+        </div>
+      </div>`).join('')}`;
+}
+
+// ── Windows tab ───────────────────────────────────────────────────────────
+function getActiveWindows() {
+  return replayMode && replayData ? replayData.windows : (liveData?.windows || []);
+}
+
+function renderWindowList(windows, filter = '') {
+  const lf       = filter.toLowerCase().trim();
+  const filtered = windows.filter(w => {
+    if (!lf) return true;
+    if (lf === 'pass') return w.pass;
+    if (lf === 'fail') return !w.pass;
+    return (w.reject || '').toLowerCase().includes(lf);
+  });
+  document.getElementById('window-list').innerHTML = filtered.map(w => {
+    const cls   = w.pass ? 'pass-row' : 'fail-row';
+    const stCls = w.pass ? 'pass' : 'fail';
+    const label = w.pass ? '✓ pass' : (w.reject || '?').split(' ')[0];
+    return `<div class="win-row ${cls}" data-win="${w.window}" onclick="selectWindow(${w.window})">
+      <span class="win-num">${w.window}</span>
+      <span class="win-status ${stCls}">${label}</span>
+      <span class="win-chop">chop ${w.chop}</span>
+    </div>`;
+  }).join('');
+  if (selectedWindow != null) {
+    const el = document.querySelector(`[data-win="${selectedWindow}"]`);
+    if (el) el.classList.add('selected');
   }
 }
 
-async function pollAll() {
-  const dot = document.getElementById('refresh-dot');
-  dot.classList.add('active');
-  await Promise.all(PAIRS.map(fetchPair));
-  dot.classList.remove('active');
-  const now = new Date();
-  document.getElementById('last-update').textContent =
-    'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+document.getElementById('window-search').addEventListener('input', e => {
+  renderWindowList(getActiveWindows(), e.target.value);
+});
+
+// ── Detail tab ────────────────────────────────────────────────────────────
+function selectWindow(windowSize) {
+  selectedWindow = windowSize;
+  document.querySelectorAll('.win-row').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector(`[data-win="${windowSize}"]`);
+  if (el) el.classList.add('selected');
+
+  const windows = getActiveWindows();
+  const w = windows.find(x => x.window === windowSize);
+  if (!w) return;
+
+  // Switch to detail tab
+  document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-tab="detail"]').classList.add('active');
+  document.getElementById('tab-detail').classList.add('active');
+
+  document.getElementById('detail-title').textContent =
+    `Window ${windowSize} — ${w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase()}`;
+
+  const rows = [
+    { key: 'Range %',  val: (w.range_pct*100).toFixed(4)+'%',   limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'%' : '—', pass: !w.range_limit || w.range_pct <= w.range_limit, ratio: w.range_limit ? w.range_pct/w.range_limit : 0 },
+    { key: 'Slope',    val: w.slope,                             limit: w.slope_limit,   pass: w.slope < w.slope_limit, ratio: w.slope / w.slope_limit },
+    { key: 'Chop',     val: w.chop,                              limit: '≥ 0.44 (found) / 0.36 (pot)', pass: w.chop >= 0.36, ratio: w.chop / 0.44 },
+    { key: 'ADX',      val: w.adx != null ? w.adx : 'N/A',      limit: '< ' + w.adx_limit, pass: w.adx == null || w.adx < w.adx_limit, ratio: w.adx != null ? w.adx / w.adx_limit : 0 },
+    { key: 'V-Shape',  val: w.v_shape ? 'YES' : 'no',           limit: 'must be no',    pass: !w.v_shape, ratio: 0 },
+    { key: 'Top',      val: w.top,                               limit: '',               pass: null, ratio: 0 },
+    { key: 'Bottom',   val: w.bottom,                            limit: '',               pass: null, ratio: 0 },
+    { key: 'Active',   val: w.is_active ? 'YES' : 'no',         limit: '',               pass: null, ratio: 0 },
+  ];
+
+  document.getElementById('detail-body').innerHTML = rows.map(r => {
+    const cls      = r.pass === null ? 'neutral' : r.pass ? 'pass' : 'fail';
+    const barW     = Math.min(100, Math.round((r.ratio || 0) * 100));
+    const barColor = r.pass === null ? '#444' : r.pass ? 'var(--pass)' : 'var(--red)';
+    return `<div class="detail-row">
+      <span class="detail-key">${r.key}</span>
+      <div style="display:flex;align-items:center;flex:1;justify-content:flex-end;gap:6px">
+        ${r.ratio > 0 ? `<div class="bar-track"><div class="bar-fill" style="width:${barW}%;background:${barColor}"></div></div>` : ''}
+        <span class="detail-val ${cls}">${r.val}</span>
+      </div>
+    </div>
+    ${r.limit ? `<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: ${r.limit}</div>` : ''}`;
+  }).join('');
+
+  drawWindowOverlay(w);
 }
 
-buildGrid();
-setInterval(updateClock, 1000);
-updateClock();
-pollAll();
-setInterval(pollAll, 5000);
+// ── Overlay drawing ───────────────────────────────────────────────────────
+function drawWindowOverlay(w) {
+  overlaySeriesList.forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+  overlaySeriesList = [];
+  if (!w || !w.start_ts) return;
+
+  const color  = w.pass ? 'rgba(90,240,196,0.7)'  : 'rgba(240,90,126,0.55)';
+  const fill   = w.pass ? 'rgba(90,240,196,0.06)' : 'rgba(240,90,126,0.04)';
+  const opts   = { color, lineWidth: 1, lineStyle: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
+  const top   = chart.addLineSeries(opts);
+  const bot   = chart.addLineSeries(opts);
+  const left  = chart.addLineSeries(opts);
+  const right = chart.addLineSeries(opts);
+  const fillS = chart.addBaselineSeries({
+    baseValue: { type: 'price', price: w.bottom },
+    topFillColor1: fill, topFillColor2: fill, topLineColor: 'rgba(0,0,0,0)',
+    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+    bottomLineColor: 'rgba(0,0,0,0)',
+    lineWidth: 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+
+  top.setData(  [{ time: w.start_ts, value: w.top    }, { time: w.end_ts, value: w.top    }]);
+  bot.setData(  [{ time: w.start_ts, value: w.bottom }, { time: w.end_ts, value: w.bottom }]);
+  left.setData( [{ time: w.start_ts, value: w.top    }, { time: w.start_ts, value: w.bottom }]);
+  right.setData([{ time: w.end_ts,   value: w.top    }, { time: w.end_ts,   value: w.bottom }]);
+  fillS.setData([{ time: w.start_ts, value: w.top    }, { time: w.end_ts,   value: w.top    }]);
+
+  overlaySeriesList = [top, bot, left, right, fillS];
+}
+
+// ── Chart render ──────────────────────────────────────────────────────────
+function renderChart(candles) {
+  candleSeries.setData(candles);
+  chart.timeScale().fitContent();
+}
+
+// ── Replay controls ───────────────────────────────────────────────────────
+function enterReplayMode() {
+  replayMode = true;
+  selectedWindow = null;
+  const total = liveData.candles.length;
+  replayIdx = Math.max(22, Math.floor(total * 0.6));
+
+  document.getElementById('btn-live').classList.remove('active');
+  document.getElementById('btn-replay').classList.add('active');
+  document.getElementById('btn-prev').disabled   = false;
+  document.getElementById('btn-play').disabled   = false;
+  document.getElementById('btn-next').disabled   = false;
+  document.getElementById('replay-speed').disabled = false;
+  document.getElementById('scrubber').disabled   = false;
+  document.getElementById('btn-analyze').disabled = false;
+  document.getElementById('scrubber').max        = total - 1;
+  document.getElementById('replay-banner').style.display = '';
+
+  seekTo(replayIdx);
+}
+
+function exitReplayMode() {
+  stopPlay();
+  replayMode  = false;
+  replayData  = null;
+  selectedWindow = null;
+
+  document.getElementById('btn-live').classList.add('active');
+  document.getElementById('btn-replay').classList.remove('active');
+  document.getElementById('btn-prev').disabled   = true;
+  document.getElementById('btn-play').disabled   = true;
+  document.getElementById('btn-next').disabled   = true;
+  document.getElementById('replay-speed').disabled = true;
+  document.getElementById('scrubber').disabled    = true;
+  document.getElementById('btn-analyze').disabled = true;
+  document.getElementById('replay-banner').style.display = 'none';
+  document.getElementById('tag-replay').style.display    = 'none';
+
+  drawWindowOverlay(null);
+  renderChart(liveData.candles);
+  renderSummary(liveData);
+  renderWindowList(liveData.windows);
+  updateTopbar(liveData, false);
+  const sc = document.getElementById('scrubber');
+  sc.value = liveData.candles.length - 1;
+  document.getElementById('scrub-label').textContent = `candle — / —`;
+  document.getElementById('scrub-ts').textContent    = '—';
+}
+
+function startPlay() {
+  const speed = parseInt(document.getElementById('replay-speed').value);
+  document.getElementById('btn-play').textContent = '⏸';
+  replayTimer = setInterval(async () => {
+    if (replayIdx >= liveData.candles.length) { stopPlay(); return; }
+    replayIdx++;
+    await seekTo(replayIdx);
+  }, speed);
+}
+
+function stopPlay() {
+  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  document.getElementById('btn-play').textContent = '▶';
+}
+
+document.getElementById('btn-live').addEventListener('click', exitReplayMode);
+document.getElementById('btn-replay').addEventListener('click', () => {
+  if (!replayMode) enterReplayMode();
+});
+document.getElementById('btn-play').addEventListener('click', () => {
+  replayTimer ? stopPlay() : startPlay();
+});
+document.getElementById('btn-prev').addEventListener('click', () => {
+  stopPlay(); seekTo(replayIdx - 1);
+});
+document.getElementById('btn-next').addEventListener('click', () => {
+  stopPlay(); seekTo(replayIdx + 1);
+});
+
+// Scrubber — moves chart only, no auto-fetch
+const scrubberEl = document.getElementById('scrubber');
+scrubberEl.addEventListener('input', () => {
+  if (!replayMode) return;
+  stopPlay();
+  const idx = parseInt(scrubberEl.value) + 1;
+  const slice = liveData.candles.slice(0, idx);
+  candleSeries.setData(slice);
+  const lastCandle = slice[slice.length - 1];
+  const dt = lastCandle ? new Date(lastCandle.time * 1000) : null;
+  document.getElementById('scrub-ts').textContent =
+    dt ? dt.toISOString().replace('T',' ').slice(0,16) + ' UTC' : '—';
+  document.getElementById('scrub-label').textContent = `candle ${idx} / ${liveData.candles.length}`;
+  replayIdx = idx;
+  // Clear stale overlay when scrubbing
+  drawWindowOverlay(null);
+});
+
+// Run Detector button — runs analysis against current replay slice
+document.getElementById('btn-analyze').addEventListener('click', () => {
+  if (!replayMode) return;
+  fetchReplay(replayIdx);
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadLiveData();
+setInterval(() => { if (!replayMode) loadLiveData(); }, 30000);
 </script>
 </body>
 </html>"""
 
+# Global lock — yfinance has shared internal state and returns wrong data
+# when multiple tickers download simultaneously across threads.
+_YF_LOCK = threading.Lock()
 
-@app.route('/')
-def index():
-    return render_template_string(DASHBOARD)
+PERIOD_MAP = {
+    "1m":  "1d",
+    "2m":  "1d",
+    "5m":  "5d",
+    "15m": "5d",
+    "30m": "5d",
+    "1h":  "30d",
+}
+
+# How often the background detector loop runs (seconds)
+DETECTION_INTERVAL = 30
 
 
-if __name__ == '__main__':
-    print("=" * 50)
-    print("Mission Control — http://0.0.0.0:6767")
-    print("=" * 50)
-    for pair_id, cfg in PAIRS.items():
-        print(f"  {pair_id:10s} → proxied from port {cfg['port']}")
-    print("=" * 50)
-    app.run(host='0.0.0.0', port=MISSION_PORT, use_reloader=False)
+class PairServer:
+
+    def __init__(self, pair_id: str, config: dict):
+        self.pair_id = pair_id
+        self.ticker = config["ticker"]
+        self.port = config["port"]
+        self.label = config["label"]
+        self.interval = config.get("interval", "1m")
+        self.period = config.get("period", "1d")
+        self.detector_names = config.get("detectors", [])
+        self.detector_params = config.get("detector_params", {})
+        self.default_interval = config.get("default_interval", self.interval)
+
+        # Alert dedup — persisted to disk so restarts don't re-fire old alerts
+        self._alerted_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f".alerted_{pair_id}.json"
+        )
+        self.last_alerted: dict[str, int] = self._load_alerted()
+        self.last_active_zone: dict[str, dict] = {}
+
+        # Per-request DataFrame cache (cleared each cycle)
+        self._df_cache: dict[str, pd.DataFrame] = {}
+        self._cache_lock = threading.Lock()
+
+        self._detection_lock = threading.Lock()
+        self._stagger_seconds = 0  # set by app.py before run()
+
+        root = os.path.dirname(os.path.abspath(__file__))
+        self.app = Flask(
+            __name__,
+            template_folder=os.path.join(root, "templates"),
+            static_folder=os.path.join(root, "static") if os.path.exists(os.path.join(root, "static")) else None,
+        )
+        self._register_routes()
+
+    # ------------------------------------------------------------------ #
+    # Routes
+    # ------------------------------------------------------------------ #
+
+    def _register_routes(self):
+        app = self.app
+        pair_id = self.pair_id
+
+        def _index():
+            tz = os.environ.get("TZ", "UTC")
+            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval)
+        _index.__name__ = f"index_{pair_id}"
+        app.route("/")(_index)
+
+        def _get_data():
+            return self._api_data()
+        _get_data.__name__ = f"get_data_{pair_id}"
+        app.route("/api/data")(_get_data)
+
+        def _test_alert():
+            return self._test_alert()
+        _test_alert.__name__ = f"test_alert_{pair_id}"
+        app.route("/test-alert")(_test_alert)
+
+        def _debug():
+            return self._debug()
+        _debug.__name__ = f"debug_{pair_id}"
+        app.route("/debug")(_debug)
+
+        def _debug_data():
+            return self._debug_data()
+        _debug_data.__name__ = f"debug_data_{pair_id}"
+        app.route("/debug/data")(_debug_data)
+
+        def _debug_replay():
+            return self._debug_replay()
+        _debug_replay.__name__ = f"debug_replay_{pair_id}"
+        app.route("/debug/replay")(_debug_replay)
+
+    # ------------------------------------------------------------------ #
+    # Data fetching
+    # ------------------------------------------------------------------ #
+
+    def _fetch_df(self, interval: str) -> pd.DataFrame:
+        period = PERIOD_MAP.get(interval, self.period)
+        with _YF_LOCK:  # serialize all yfinance downloads process-wide
+            df = yf.download(self.ticker, period=period, interval=interval, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df.dropna()
+
+    def _get_df(self, interval: str, cache: dict) -> pd.DataFrame:
+        """Return cached DataFrame for this interval within a single cycle."""
+        if interval not in cache:
+            cache[interval] = self._fetch_df(interval)
+        return cache[interval]
+
+    # ------------------------------------------------------------------ #
+    # Detection (shared by background loop and browser API)
+    # ------------------------------------------------------------------ #
+
+    def _run_detectors(self, cache: dict) -> dict:
+        """Run all detectors using their configured timeframes. Returns results dict."""
+        results = {}
+        for name in self.detector_names:
+            params = dict(self.detector_params.get(name, {}))
+            detector_interval = params.pop("timeframe", "1m")
+            df = self._get_df(detector_interval, cache)
+            fn = REGISTRY.get(name)
+            if fn is None:
+                print(f"[WARN] Detector '{name}' not found in registry.")
+                results[name] = None
+            else:
+                try:
+                    # Pass yf_lock to detectors that do their own downloads (supply_demand)
+                    if name == "supply_demand":
+                        params["yf_lock"] = _YF_LOCK
+                    results[name] = fn(df, **params)
+                except Exception as e:
+                    print(f"[ERROR] Detector '{name}' failed: {e}")
+                    results[name] = None
+        return results
+
+    def _process_alerts(self, detector_results: dict):
+        """Check results and fire Discord alerts on breakout."""
+        for name, result in detector_results.items():
+
+            # ── Accumulation ──────────────────────────────────────────
+            if name == "accumulation":
+                # Clean up alerted timestamps older than 4 hours
+                cutoff = int(time.time()) - (4 * 3600)
+                if name in self.last_alerted and isinstance(self.last_alerted[name], int):
+                    if self.last_alerted[name] < cutoff:
+                        del self.last_alerted[name]
+                        self._save_alerted()
+
+                prev = self.last_active_zone.get(name)
+                zone = result if (result and isinstance(result, dict)) else None
+                is_active_found = (
+                    zone is not None
+                    and zone.get("is_active")
+                    and zone.get("status") == "found"
+                )
+
+                # ── State machine ──────────────────────────────────────
+                # looking   → found     (zone active, all checks pass)
+                # found     → confirmed (breakout detected — screenshot dispatched
+                #                        WHILE zone still drawn on chart this cycle)
+                # confirmed → looking   (next cycle after screenshot dispatched, reset)
+                prev_status = (prev or {}).get("status")
+
+                if is_active_found:
+                    # Zone alive — keep tracking
+                    zone_start = zone["start"]
+                    already_alerted = self.last_alerted.get(name, 0)
+                    if zone_start != already_alerted:
+                        self.last_active_zone[name] = zone
+
+                elif prev_status == "found" and (
+                    zone is None
+                    or not zone.get("is_active")
+                    or zone.get("status") == "looking"
+                ):
+                    # Breakout detected this cycle. Mark "confirmed" so the browser
+                    # still renders the box for one more cycle while the screenshot runs.
+                    zone_start = prev["start"]
+                    already_alerted = self.last_alerted.get(name, 0)
+                    if zone_start != already_alerted:
+                        confirmed_zone = dict(prev)
+                        confirmed_zone["status"] = "confirmed"
+                        self.last_active_zone[name] = confirmed_zone
+                        self.last_alerted[name] = zone_start
+                        self._save_alerted()
+                        threading.Thread(
+                            target=self._send_discord_alert,
+                            args=(confirmed_zone,),
+                            daemon=True,
+                        ).start()
+
+                elif prev_status == "confirmed":
+                    # Screenshot was dispatched last cycle — now truly reset
+                    self.last_active_zone[name] = None
+
+            # ── Supply & Demand ───────────────────────────────────────
+            elif name == "supply_demand":
+                if not result or not isinstance(result, dict):
+                    continue
+                zones = result.get("zones", [])
+                curr_active = {z["start"] for z in zones if z.get("is_active")}
+                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
+
+                # Remove invalidated zones from last_alerted so they can re-fire if they return
+                invalidated = prev_starts - curr_active
+                changed = False
+                for start_ts in invalidated:
+                    key = f"{name}_{start_ts}"
+                    if key in self.last_alerted:
+                        del self.last_alerted[key]
+                        changed = True
+                        print(f"[{self.pair_id}] Removed invalidated zone {key} from alerted state")
+                if changed:
+                    self._save_alerted()
+
+                # Alert only once per zone (keyed by start timestamp)
+                for z in zones:
+                    if not z.get("is_active"):
+                        continue
+                    start_ts = z["start"]
+                    alert_key = f"{name}_{start_ts}"
+                    if self.last_alerted.get(alert_key):
+                        continue
+                    self.last_alerted[alert_key] = 1
+                    self._save_alerted()
+                    alert_zone = {
+                        "detector": z.get("type", "supply_demand"),
+                        "start":    start_ts,
+                        "end":      z["end"],
+                    }
+                    threading.Thread(
+                        target=self._send_discord_alert,
+                        args=(alert_zone,),
+                        daemon=True,
+                    ).start()
+
+                self.last_active_zone[name + "_starts"] = list(curr_active)
+
+    # ------------------------------------------------------------------ #
+    # Background detection loop — runs regardless of browser
+    # ------------------------------------------------------------------ #
+
+    def _detection_loop(self):
+        # Stagger startup so pairs don't all hit yfinance simultaneously
+        if self._stagger_seconds:
+            time.sleep(self._stagger_seconds)
+        print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
+        while True:
+            try:
+                with self._detection_lock:
+                    cache = {}
+                    results = self._run_detectors(cache)
+                    self._process_alerts(results)
+                print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
+            except Exception as e:
+                print(f"[{self.pair_id}] Detection loop error: {e}")
+            time.sleep(DETECTION_INTERVAL)
+
+    # ------------------------------------------------------------------ #
+    # Flask API — serves chart data to browser when open
+    # ------------------------------------------------------------------ #
+
+    def _api_data(self):
+        try:
+            chart_interval = request.args.get("interval", self.interval)
+            cache = {}
+
+            # Run detectors fresh for the browser response
+            detector_results = self._run_detectors(cache)
+
+            # If a "confirmed" zone is held in state (breakout just detected,
+            # screenshot in-flight), override the fresh result so the browser
+            # still renders the box for one cycle while Playwright screenshots it.
+            for det_name in self.detector_names:
+                if det_name == "accumulation":
+                    held = self.last_active_zone.get(det_name)
+                    if held and held.get("status") == "confirmed":
+                        detector_results[det_name] = held
+
+            # Fetch chart candles at the requested interval
+            df_chart = self._get_df(chart_interval, cache)
+            candles = [
+                {
+                    "time": int(idx.timestamp()),
+                    "open": float(r["Open"]),
+                    "high": float(r["High"]),
+                    "low": float(r["Low"]),
+                    "close": float(r["Close"]),
+                }
+                for idx, r in df_chart.iterrows()
+            ]
+
+            return jsonify({
+                "pair": self.pair_id,
+                "label": self.label,
+                "candles": candles,
+                "detectors": detector_results,
+            })
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    def _debug(self):
+        """Rich debug page: chart + side panel showing per-window rejection reasons + replay mode."""
+        # Serve the HTML shell — the page JS fetches /debug/data for the JSON payload
+        return DEBUG_HTML.replace("__PAIR_ID__", self.pair_id).replace("__LABEL__", self.label)
+
+    def _debug_data(self):
+        """Return detailed rejection analysis JSON for the debug page."""
+        try:
+            import numpy as np
+            from detectors.accumulation import (
+                get_current_session, _slope_pct, _choppiness, _is_v_shape, _adx
+            )
+
+            cache = {}
+            df = self._get_df("1m", cache)
+
+            params        = dict(self.detector_params.get("accumulation", {}))
+            params.pop("timeframe", None)
+            lookback      = params.get("lookback", 100)
+            min_candles   = params.get("min_candles", 20)
+            adx_threshold = params.get("adx_threshold", 25)
+            threshold_pct = params.get("threshold_pct", 0.003)
+
+            session = get_current_session()
+            session_range_key = f"{session}_range_pct" if session else None
+            effective_range_pct = params.get(session_range_key) or params.get("max_range_pct")
+
+            if isinstance(df.columns, __import__('pandas').MultiIndex):
+                df = df.copy()
+                df.columns = df.columns.get_level_values(0)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            for col in ['Open','High','Low','Close']:
+                df[col] = __import__('pandas').to_numeric(df[col].squeeze(), errors='coerce')
+            df = df.dropna(subset=['Open','High','Low','Close'])
+
+            last_closed_idx = len(df) - 2
+            scan_start      = max(0, len(df) - lookback)
+
+            last_closed_open  = float(df['Open'].iloc[-2])
+            last_closed_close = float(df['Close'].iloc[-2])
+            last_body_high    = max(last_closed_open, last_closed_close)
+            last_body_low     = min(last_closed_open, last_closed_close)
+
+            # Export candle data for the chart
+            candles = [
+                {
+                    "time":  int(idx.timestamp()),
+                    "open":  float(r["Open"]),
+                    "high":  float(r["High"]),
+                    "low":   float(r["Low"]),
+                    "close": float(r["Close"]),
+                }
+                for idx, r in df.iterrows()
+            ]
+
+            windows = []
+            for window_size in range(min_candles, lookback + 1):
+                slope_limit = (threshold_pct * 0.15) / window_size
+                i = last_closed_idx - window_size + 1
+                if i < 0 or i < scan_start:
+                    windows.append({"window": window_size, "skip": "out of scan range"})
+                    continue
+
+                window = df.iloc[i: i + window_size]
+                closes = window['Close'].values.flatten().astype(float)
+                opens  = window['Open'].values.flatten().astype(float)
+                highs  = window['High'].values.flatten().astype(float)
+                lows   = window['Low'].values.flatten().astype(float)
+
+                avg_p = closes.mean()
+                body_highs = np.maximum(opens, closes)
+                body_lows  = np.minimum(opens, closes)
+                h_max = float(body_highs.max())
+                l_min = float(body_lows.min())
+                range_pct = round((h_max - l_min) / avg_p, 6)
+                slope     = round(_slope_pct(closes, avg_p), 8)
+                chop      = round(_choppiness(closes), 4)
+                adx_val   = _adx(highs, lows, closes)
+                v_shape   = _is_v_shape(closes)
+                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+
+                reject = None
+                if effective_range_pct and range_pct > effective_range_pct:
+                    reject = f"range {range_pct} > limit {effective_range_pct}"
+                elif slope >= slope_limit:
+                    reject = f"slope {slope} >= limit {round(slope_limit,8)}"
+                elif v_shape:
+                    reject = "v_shape"
+                elif adx_val is not None and adx_val > adx_threshold:
+                    reject = f"adx {round(adx_val,2)} > {adx_threshold}"
+                elif chop < 0.36:
+                    reject = f"chop {chop} < 0.36"
+
+                windows.append({
+                    "window":      window_size,
+                    "start_ts":    int(df.index[i].timestamp()),
+                    "end_ts":      int(df.index[i + window_size - 1].timestamp()),
+                    "top":         round(h_max, 5),
+                    "bottom":      round(l_min, 5),
+                    "range_pct":   range_pct,
+                    "range_limit": effective_range_pct,
+                    "slope":       slope,
+                    "slope_limit": round(slope_limit, 8),
+                    "chop":        chop,
+                    "adx":         round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":   adx_threshold,
+                    "v_shape":     v_shape,
+                    "is_active":   is_active,
+                    "reject":      reject,
+                    "pass":        reject is None,
+                })
+
+            passed   = [w for w in windows if w.get("pass")]
+            rejected = [w for w in windows if not w.get("pass") and "skip" not in w]
+            reasons  = {}
+            for r in rejected:
+                key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+
+            return jsonify({
+                "pair":              self.pair_id,
+                "session":           session,
+                "effective_range":   effective_range_pct,
+                "adx_threshold":     adx_threshold,
+                "last_close":        round(float(df['Close'].iloc[-2]), 5),
+                "windows_checked":   len([w for w in windows if "skip" not in w]),
+                "passed":            len(passed),
+                "rejection_summary": reasons,
+                "windows":           windows,
+                "candles":           candles,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    def _debug_replay(self):
+        """
+        Run the accumulation detector against only the first `idx` candles.
+        Query param: idx=N (1-based candle index to replay up to)
+        """
+        # Read query param immediately while Flask request context is guaranteed active
+        try:
+            raw_idx = int(request.args.get("idx", -1))
+        except Exception:
+            raw_idx = -1
+
+        try:
+            import numpy as np
+            import pandas as pd
+            from datetime import timezone
+            from detectors.accumulation import _slope_pct, _choppiness, _is_v_shape, _adx
+
+            acquired = _YF_LOCK.acquire(timeout=10)
+            try:
+                full_df = yf.download(self.ticker, period=self.period, interval="1m", progress=False)
+            finally:
+                if acquired:
+                    _YF_LOCK.release()
+
+            if isinstance(full_df.columns, pd.MultiIndex):
+                full_df.columns = full_df.columns.get_level_values(0)
+            full_df = full_df.dropna()
+
+            params        = dict(self.detector_params.get("accumulation", {}))
+            params.pop("timeframe", None)
+            lookback      = params.get("lookback", 100)
+            min_candles   = params.get("min_candles", 15)
+            adx_threshold = params.get("adx_threshold", 25)
+            threshold_pct = params.get("threshold_pct", 0.003)
+
+            total = len(full_df)
+            idx = raw_idx if raw_idx > 0 else total
+            idx = max(min_candles + 3, min(idx, total))
+
+            # Slice the dataframe — this is what the detector would have seen at candle N
+            df = full_df.iloc[:idx].copy()
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            for col in ['Open', 'High', 'Low', 'Close']:
+                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
+            df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+
+            # Determine session from the last candle's timestamp (not wall clock)
+            last_ts = df.index[-1]
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize('UTC')
+            else:
+                last_ts = last_ts.tz_convert('UTC')
+            hour = last_ts.hour
+
+            session = None
+            if 1 <= hour < 7:    session = "asian"
+            elif 8 <= hour < 12: session = "london"
+            elif 13 <= hour < 19: session = "new_york"
+
+            # Resolve effective range — fall back through session → generic → None
+            session_range_key   = f"{session}_range_pct" if session else None
+            effective_range_pct = (
+                params.get(session_range_key)
+                or params.get("max_range_pct")
+            )
+
+            last_closed_idx   = len(df) - 2
+            scan_start        = max(0, len(df) - lookback)
+            last_closed_open  = float(df['Open'].iloc[-2])
+            last_closed_close = float(df['Close'].iloc[-2])
+            last_body_high    = max(last_closed_open, last_closed_close)
+            last_body_low     = min(last_closed_open, last_closed_close)
+
+            windows = []
+            for window_size in range(min_candles, lookback + 1):
+                slope_limit = (threshold_pct * 0.15) / window_size
+                i = last_closed_idx - window_size + 1
+                if i < 0 or i < scan_start:
+                    continue
+
+                window = df.iloc[i: i + window_size]
+                closes = window['Close'].values.flatten().astype(float)
+                opens  = window['Open'].values.flatten().astype(float)
+                highs  = window['High'].values.flatten().astype(float)
+                lows   = window['Low'].values.flatten().astype(float)
+
+                avg_p = closes.mean()
+                if avg_p == 0:
+                    continue
+                body_highs = np.maximum(opens, closes)
+                body_lows  = np.minimum(opens, closes)
+                h_max = float(body_highs.max())
+                l_min = float(body_lows.min())
+                range_pct = round((h_max - l_min) / avg_p, 6)
+                slope     = round(_slope_pct(closes, avg_p), 8)
+                chop      = round(_choppiness(closes), 4)
+                adx_val   = _adx(highs, lows, closes)
+                v_shape   = _is_v_shape(closes)
+                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+
+                reject = None
+                if effective_range_pct and range_pct > effective_range_pct:
+                    reject = f"range {range_pct} > limit {effective_range_pct}"
+                elif slope >= slope_limit:
+                    reject = f"slope {slope} >= limit {round(slope_limit,8)}"
+                elif v_shape:
+                    reject = "v_shape"
+                elif adx_val is not None and adx_val > adx_threshold:
+                    reject = f"adx {round(adx_val,2)} > {adx_threshold}"
+                elif chop < 0.36:
+                    reject = f"chop {chop} < 0.36"
+
+                windows.append({
+                    "window":      window_size,
+                    "start_ts":    int(df.index[i].timestamp()),
+                    "end_ts":      int(df.index[i + window_size - 1].timestamp()),
+                    "top":         round(h_max, 5),
+                    "bottom":      round(l_min, 5),
+                    "range_pct":   range_pct,
+                    "range_limit": effective_range_pct,
+                    "slope":       slope,
+                    "slope_limit": round(slope_limit, 8),
+                    "chop":        chop,
+                    "adx":         round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":   adx_threshold,
+                    "v_shape":     v_shape,
+                    "is_active":   is_active,
+                    "reject":      reject,
+                    "pass":        reject is None,
+                })
+
+            passed   = [w for w in windows if w.get("pass")]
+            rejected = [w for w in windows if not w.get("pass")]
+            reasons  = {}
+            for r in rejected:
+                key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+
+            # Best zone: tightest active passing window
+            best_zone = None
+            active_passing = [w for w in passed if w.get("is_active")]
+            if active_passing:
+                best_zone = min(active_passing, key=lambda w: w["range_pct"])
+
+            return jsonify({
+                "idx":               idx,
+                "total":             total,
+                "session":           session,
+                "effective_range":   effective_range_pct,
+                "adx_threshold":     adx_threshold,
+                "last_close":        round(float(df['Close'].iloc[-2]), 5),
+                "windows_checked":   len(windows),
+                "passed":            len(passed),
+                "rejection_summary": reasons,
+                "windows":           windows,
+                "best_zone":         best_zone,
+            })
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+    def _test_alert(self):
+        test_zone = {
+            "detector": "accumulation",
+            "start": int(time.time()),
+            "end": int(time.time()),
+            "top": 0,
+            "bottom": 0,
+            "is_active": True,
+        }
+        threading.Thread(target=self._send_discord_alert, args=(test_zone,), daemon=True).start()
+        return f"Test alert triggered for {self.pair_id}. Check terminal and Discord."
+
+    # ------------------------------------------------------------------ #
+    # Discord
+    # ------------------------------------------------------------------ #
+
+    def _send_discord_alert(self, zone: dict):
+        if not DISCORD_WEBHOOK_URL:
+            print(f"[{self.pair_id}] Discord webhook URL not set.")
+            return
+        if not DISCORD_AVAILABLE:
+            print(f"[{self.pair_id}] discord-webhook package not installed.")
+            return
+
+        screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
+        raw = zone.get("detector", "unknown")
+        if raw in ("demand", "supply"):
+            detector_name = f"{raw.capitalize()} Zone"
+        else:
+            detector_name = raw.replace("_", " ").title()
+        print(f"[{self.pair_id}] Sending Discord alert for {detector_name}...")
+
+        try:
+            if PLAYWRIGHT_AVAILABLE:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page(viewport={"width": 1280, "height": 720})
+                    page.goto(f"http://127.0.0.1:{self.port}")
+                    page.wait_for_timeout(6000)
+                    page.screenshot(path=screenshot_path)
+                    browser.close()
+
+            if zone.get("detector") in ("demand", "supply"):
+                emoji = "📈" if zone.get("detector") == "demand" else "📉"
+                content = f"{emoji} **{self.pair_id} — {detector_name} Found**"
+            else:
+                content = f"🚀 **{self.pair_id} — {detector_name} Confirmed**"
+            webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
+
+            if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
+                with open(screenshot_path, "rb") as f:
+                    webhook.add_file(file=f.read(), filename="chart.png")
+
+            webhook.execute()
+            print(f"[{self.pair_id}] Discord alert sent.")
+
+        except Exception as e:
+            print(f"[{self.pair_id}] Discord error: {e}")
+        finally:
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+
+    # ------------------------------------------------------------------ #
+    # Start
+    # ------------------------------------------------------------------ #
+
+    def _load_alerted(self) -> dict:
+        try:
+            if os.path.exists(self._alerted_file):
+                with open(self._alerted_file, 'r') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_alerted(self):
+        try:
+            with open(self._alerted_file, 'w') as f:
+                json.dump(self.last_alerted, f)
+        except Exception as e:
+            print(f"[{self.pair_id}] Failed to save alerted state: {e}")
+
+    def run(self):
+        print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
+
+        # Start background detection loop in a daemon thread
+        t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
+        t.start()
+
+        # Start Flask (blocks this thread)
+        self.app.run(host="0.0.0.0", port=self.port, use_reloader=False)
