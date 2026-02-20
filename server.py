@@ -206,6 +206,7 @@ DEBUG_HTML = r"""<!DOCTYPE html>
         <input type="range" id="scrubber" min="0" value="0" step="1" disabled />
         <span id="scrub-ts">—</span>
         <span id="scrub-label">candle — / —</span>
+        <button class="rbtn" id="btn-analyze" disabled>▶ Run Detector</button>
       </div>
     </div>
 
@@ -300,16 +301,17 @@ async function loadLiveData() {
 let replayFetchController = null;
 
 async function fetchReplay(idx) {
-  // Abort any in-flight request
   if (replayFetchController) replayFetchController.abort();
   replayFetchController = new AbortController();
+  const btn = document.getElementById('btn-analyze');
+  btn.textContent = '⏳ Running…';
+  btn.disabled = true;
   try {
     const res = await fetch(`/debug/replay?idx=${idx}`, { signal: replayFetchController.signal });
     replayData = await res.json();
     renderSummary(replayData);
     renderWindowList(replayData.windows);
     updateTopbar(replayData, true);
-    // Auto-draw best zone if any
     if (selectedWindow == null && replayData.best_zone) {
       drawWindowOverlay(replayData.best_zone);
     } else if (selectedWindow != null) {
@@ -320,21 +322,22 @@ async function fetchReplay(idx) {
     }
   } catch(e) {
     if (e.name !== 'AbortError') console.error('Replay fetch error', e);
+  } finally {
+    btn.textContent = '▶ Run Detector';
+    btn.disabled = false;
   }
 }
 
-// ── Seek to candle index ──────────────────────────────────────────────────
+// ── Seek to candle index (chart only — analysis runs on button click) ────
 async function seekTo(idx) {
   const total = liveData.candles.length;
-  idx = Math.max(22, Math.min(idx, total));
+  idx = Math.max(18, Math.min(idx, total));
   replayIdx = idx;
 
-  // Show only first idx candles, freeze the time axis
   const slice = liveData.candles.slice(0, idx);
   candleSeries.setData(slice);
   chart.timeScale().fitContent();
 
-  // Update scrubber + label
   const scrubber = document.getElementById('scrubber');
   scrubber.value = idx - 1;
   const lastCandle = slice[slice.length - 1];
@@ -342,9 +345,6 @@ async function seekTo(idx) {
   document.getElementById('scrub-ts').textContent = dt
     ? dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '—';
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${total}`;
-
-  // Fetch real detector analysis for this slice
-  await fetchReplay(idx);
 }
 
 // ── Topbar update ─────────────────────────────────────────────────────────
@@ -525,6 +525,7 @@ function enterReplayMode() {
   document.getElementById('btn-next').disabled   = false;
   document.getElementById('replay-speed').disabled = false;
   document.getElementById('scrubber').disabled   = false;
+  document.getElementById('btn-analyze').disabled = false;
   document.getElementById('scrubber').max        = total - 1;
   document.getElementById('replay-banner').style.display = '';
 
@@ -543,7 +544,8 @@ function exitReplayMode() {
   document.getElementById('btn-play').disabled   = true;
   document.getElementById('btn-next').disabled   = true;
   document.getElementById('replay-speed').disabled = true;
-  document.getElementById('scrubber').disabled   = true;
+  document.getElementById('scrubber').disabled    = true;
+  document.getElementById('btn-analyze').disabled = true;
   document.getElementById('replay-banner').style.display = 'none';
   document.getElementById('tag-replay').style.display    = 'none';
 
@@ -587,16 +589,12 @@ document.getElementById('btn-next').addEventListener('click', () => {
   stopPlay(); seekTo(replayIdx + 1);
 });
 
-// Scrubber drag
+// Scrubber — moves chart only, no auto-fetch
 const scrubberEl = document.getElementById('scrubber');
-let scrubTimer = null;
 scrubberEl.addEventListener('input', () => {
   if (!replayMode) return;
   stopPlay();
   const idx = parseInt(scrubberEl.value) + 1;
-  // Debounce the API fetch slightly so dragging fast doesn't flood requests
-  clearTimeout(scrubTimer);
-  // Update candles immediately for responsiveness
   const slice = liveData.candles.slice(0, idx);
   candleSeries.setData(slice);
   const lastCandle = slice[slice.length - 1];
@@ -605,7 +603,14 @@ scrubberEl.addEventListener('input', () => {
     dt ? dt.toISOString().replace('T',' ').slice(0,16) + ' UTC' : '—';
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${liveData.candles.length}`;
   replayIdx = idx;
-  scrubTimer = setTimeout(() => fetchReplay(idx), 250);
+  // Clear stale overlay when scrubbing
+  drawWindowOverlay(null);
+});
+
+// Run Detector button — runs analysis against current replay slice
+document.getElementById('btn-analyze').addEventListener('click', () => {
+  if (!replayMode) return;
+  fetchReplay(replayIdx);
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────
