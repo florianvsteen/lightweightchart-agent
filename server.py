@@ -456,7 +456,6 @@ function selectWindow(windowSize) {
     { key: 'Slope',    val: w.slope,                             limit: w.slope_limit,   pass: w.slope < w.slope_limit, ratio: w.slope / w.slope_limit },
     { key: 'Chop',     val: w.chop,                              limit: '≥ 0.44 (found) / 0.36 (pot)', pass: w.chop >= 0.36, ratio: w.chop / 0.44 },
     { key: 'ADX',      val: w.adx != null ? w.adx : 'N/A',      limit: '< ' + w.adx_limit, pass: w.adx == null || w.adx < w.adx_limit, ratio: w.adx != null ? w.adx / w.adx_limit : 0 },
-    { key: 'V-Shape',  val: w.v_shape ? 'YES' : 'no',           limit: 'must be no',    pass: !w.v_shape, ratio: 0 },
     { key: 'Top',      val: w.top,                               limit: '',               pass: null, ratio: 0 },
     { key: 'Bottom',   val: w.bottom,                            limit: '',               pass: null, ratio: 0 },
     { key: 'Active',   val: w.is_active ? 'YES' : 'no',         limit: '',               pass: null, ratio: 0 },
@@ -939,7 +938,7 @@ class PairServer:
         try:
             import numpy as np
             from detectors.accumulation import (
-                get_current_session, _slope_pct, _choppiness, _is_v_shape, _adx
+                get_current_session, _slope_pct, _choppiness, _adx
             )
 
             cache = {}
@@ -986,7 +985,7 @@ class PairServer:
 
             windows = []
             for window_size in range(min_candles, lookback + 1):
-                slope_limit = (threshold_pct * 0.15) / window_size
+                slope_limit = (threshold_pct * 0.10) / window_size
                 i = last_closed_idx - window_size + 1
                 if i < 0 or i < scan_start:
                     windows.append({"window": window_size, "skip": "out of scan range"})
@@ -1007,7 +1006,6 @@ class PairServer:
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
-                v_shape   = _is_v_shape(closes)
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
                 reject = None
@@ -1015,8 +1013,6 @@ class PairServer:
                     reject = f"range {range_pct} > limit {effective_range_pct}"
                 elif slope >= slope_limit:
                     reject = f"slope {slope} >= limit {round(slope_limit,8)}"
-                elif v_shape:
-                    reject = "v_shape"
                 elif adx_val is not None and adx_val > adx_threshold:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
                 elif chop < 0.36:
@@ -1035,7 +1031,6 @@ class PairServer:
                     "chop":        chop,
                     "adx":         round(adx_val, 2) if adx_val is not None else None,
                     "adx_limit":   adx_threshold,
-                    "v_shape":     v_shape,
                     "is_active":   is_active,
                     "reject":      reject,
                     "pass":        reject is None,
@@ -1078,7 +1073,7 @@ class PairServer:
             import numpy as np
             import pandas as pd
             from datetime import timezone
-            from detectors.accumulation import _slope_pct, _choppiness, _is_v_shape, _adx
+            from detectors.accumulation import _slope_pct, _choppiness, _adx
 
             acquired = _YF_LOCK.acquire(timeout=10)
             try:
@@ -1141,7 +1136,7 @@ class PairServer:
 
             windows = []
             for window_size in range(min_candles, lookback + 1):
-                slope_limit = (threshold_pct * 0.15) / window_size
+                slope_limit = (threshold_pct * 0.10) / window_size
                 i = last_closed_idx - window_size + 1
                 if i < 0 or i < scan_start:
                     continue
@@ -1163,7 +1158,6 @@ class PairServer:
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
-                v_shape   = _is_v_shape(closes)
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
                 reject = None
@@ -1171,8 +1165,6 @@ class PairServer:
                     reject = f"range {range_pct} > limit {effective_range_pct}"
                 elif slope >= slope_limit:
                     reject = f"slope {slope} >= limit {round(slope_limit,8)}"
-                elif v_shape:
-                    reject = "v_shape"
                 elif adx_val is not None and adx_val > adx_threshold:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
                 elif chop < 0.36:
@@ -1191,7 +1183,6 @@ class PairServer:
                     "chop":        chop,
                     "adx":         round(adx_val, 2) if adx_val is not None else None,
                     "adx_limit":   adx_threshold,
-                    "v_shape":     v_shape,
                     "is_active":   is_active,
                     "reject":      reject,
                     "pass":        reject is None,
