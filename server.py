@@ -110,6 +110,11 @@ class PairServer:
         _test_alert.__name__ = f"test_alert_{pair_id}"
         app.route("/test-alert")(_test_alert)
 
+        def _debug():
+            return self._debug()
+        _debug.__name__ = f"debug_{pair_id}"
+        app.route("/debug")(_debug)
+
     # ------------------------------------------------------------------ #
     # Data fetching
     # ------------------------------------------------------------------ #
@@ -188,15 +193,10 @@ class PairServer:
                     if zone_start != already_alerted:
                         self.last_alerted[name] = zone_start
                         self._save_alerted()
-                        # Mark as confirmed so the chart still shows the box
-                        # while the screenshot is taken, then clear it after.
-                        confirmed_zone = dict(prev)
-                        confirmed_zone["status"] = "confirmed"
-                        confirmed_zone["is_active"] = True
-                        self.last_active_zone[name] = confirmed_zone
+                        self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
-                            args=(confirmed_zone,),
+                            args=(prev,),
                             daemon=True,
                         ).start()
 
@@ -272,14 +272,8 @@ class PairServer:
             chart_interval = request.args.get("interval", self.interval)
             cache = {}
 
-            # If a confirmed zone is pending (waiting for screenshot), serve it
-            # so the box stays visible on the chart during Playwright capture.
-            confirmed = self.last_active_zone.get("accumulation")
-            if confirmed and isinstance(confirmed, dict) and confirmed.get("status") == "confirmed":
-                detector_results = {"accumulation": confirmed}
-            else:
-                # Run detectors fresh for the browser response
-                detector_results = self._run_detectors(cache)
+            # Run detectors fresh for the browser response
+            detector_results = self._run_detectors(cache)
 
             # Fetch chart candles at the requested interval
             df_chart = self._get_df(chart_interval, cache)
@@ -301,6 +295,120 @@ class PairServer:
                 "detectors": detector_results,
             })
 
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    def _debug(self):
+        """Return detailed rejection reasons for each window size to help tune parameters."""
+        try:
+            import numpy as np
+            from detectors.accumulation import (
+                get_current_session, _slope_pct, _choppiness, _is_v_shape, _adx
+            )
+
+            cache = {}
+            df = self._get_df("1m", cache)
+
+            params   = dict(self.detector_params.get("accumulation", {}))
+            params.pop("timeframe", None)
+            lookback      = params.get("lookback", 100)
+            min_candles   = params.get("min_candles", 20)
+            adx_threshold = params.get("adx_threshold", 25)
+            threshold_pct = params.get("threshold_pct", 0.003)
+
+            session = get_current_session()
+            session_range_key = f"{session}_range_pct" if session else None
+            effective_range_pct = params.get(session_range_key) or params.get("max_range_pct")
+
+            if isinstance(df.columns, __import__('pandas').MultiIndex):
+                df = df.copy()
+                df.columns = df.columns.get_level_values(0)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            for col in ['Open','High','Low','Close']:
+                df[col] = __import__('pandas').to_numeric(df[col].squeeze(), errors='coerce')
+            df = df.dropna(subset=['Open','High','Low','Close'])
+
+            last_closed_idx = len(df) - 2
+            scan_start      = max(0, len(df) - lookback)
+
+            last_closed_open  = float(df['Open'].iloc[-2])
+            last_closed_close = float(df['Close'].iloc[-2])
+            last_body_high    = max(last_closed_open, last_closed_close)
+            last_body_low     = min(last_closed_open, last_closed_close)
+
+            results = []
+            for window_size in range(min_candles, lookback + 1):
+                slope_limit = (threshold_pct * 0.15) / window_size
+                i = last_closed_idx - window_size + 1
+                if i < 0 or i < scan_start:
+                    results.append({"window": window_size, "skip": "out of scan range"})
+                    continue
+
+                window = df.iloc[i: i + window_size]
+                closes = window['Close'].values.flatten().astype(float)
+                opens  = window['Open'].values.flatten().astype(float)
+                highs  = window['High'].values.flatten().astype(float)
+                lows   = window['Low'].values.flatten().astype(float)
+
+                avg_p = closes.mean()
+                body_highs = np.maximum(opens, closes)
+                body_lows  = np.minimum(opens, closes)
+                h_max = float(body_highs.max())
+                l_min = float(body_lows.min())
+                range_pct = round((h_max - l_min) / avg_p, 6)
+                slope     = round(_slope_pct(closes, avg_p), 8)
+                chop      = round(_choppiness(closes), 4)
+                adx_val   = _adx(highs, lows, closes)
+                v_shape   = _is_v_shape(closes)
+                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+
+                reject = None
+                if effective_range_pct and range_pct > effective_range_pct:
+                    reject = f"range {range_pct} > limit {effective_range_pct}"
+                elif slope >= slope_limit:
+                    reject = f"slope {slope} >= limit {round(slope_limit,8)}"
+                elif v_shape:
+                    reject = "v_shape"
+                elif adx_val is not None and adx_val > adx_threshold:
+                    reject = f"adx {round(adx_val,2)} > threshold {adx_threshold}"
+                elif chop < 0.36:
+                    reject = f"chop {chop} < 0.36"
+
+                results.append({
+                    "window":     window_size,
+                    "range_pct":  range_pct,
+                    "range_limit":effective_range_pct,
+                    "slope":      slope,
+                    "slope_limit":round(slope_limit, 8),
+                    "chop":       chop,
+                    "adx":        round(adx_val, 2) if adx_val else None,
+                    "adx_limit":  adx_threshold,
+                    "v_shape":    v_shape,
+                    "is_active":  is_active,
+                    "reject":     reject,
+                    "pass":       reject is None,
+                })
+
+            passed   = [r for r in results if r.get("pass")]
+            rejected = [r for r in results if not r.get("pass") and "skip" not in r]
+            # Count rejection reasons
+            reasons  = {}
+            for r in rejected:
+                key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+
+            return jsonify({
+                "pair":            self.pair_id,
+                "session":         session,
+                "effective_range": effective_range_pct,
+                "adx_threshold":   adx_threshold,
+                "last_close":      round(float(df['Close'].iloc[-2]), 5),
+                "windows_checked": len([r for r in results if "skip" not in r]),
+                "passed":          len(passed),
+                "rejection_summary": reasons,
+                "passing_windows": passed,
+                "sample_rejections": rejected[:5],
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -366,10 +474,6 @@ class PairServer:
         finally:
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
-            # Clear confirmed zone now that screenshot is done
-            if self.last_active_zone.get("accumulation", {}).get("status") == "confirmed":
-                self.last_active_zone["accumulation"] = None
-                print(f"[{self.pair_id}] Cleared confirmed accumulation zone.")
 
     # ------------------------------------------------------------------ #
     # Start
