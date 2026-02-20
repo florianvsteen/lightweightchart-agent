@@ -81,6 +81,8 @@ PAIRS = {
                 "impulse_multiplier": 1.8,
                 "wick_ratio": 0.6,
                 "max_zones": 5,
+                "max_age_days": 3,
+                "valid_sessions": ["london", "new_york"],  # only zones created in these sessions
             },
         },
     },
