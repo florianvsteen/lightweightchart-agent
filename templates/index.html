@@ -90,6 +90,31 @@
         .tf-btn:hover { border-color: #888; color: #bbb; }
         .tf-btn.active { border-color: #d4d0d0; color: #d4d0d0; font-weight: 600; }
 
+        /* ── Session badge ── */
+        #session-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 0.75rem;
+            color: #666;
+            white-space: nowrap;
+        }
+        #session-badge .session-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #444;
+        }
+        #session-badge.asian    { border-color: #c8a84b; color: #c8a84b; }
+        #session-badge.asian    .session-dot { background: #c8a84b; box-shadow: 0 0 5px rgba(200,168,75,0.5); }
+        #session-badge.london   { border-color: #4b9ecd; color: #4b9ecd; }
+        #session-badge.london   .session-dot { background: #4b9ecd; box-shadow: 0 0 5px rgba(75,158,205,0.5); }
+        #session-badge.new_york { border-color: #6abf7b; color: #6abf7b; }
+        #session-badge.new_york .session-dot { background: #6abf7b; box-shadow: 0 0 5px rgba(106,191,123,0.5); }
+
         #chart-container {
             flex: 1;
             border: 1px solid #2b2b43;
@@ -104,6 +129,10 @@
         <h1>{{ label }}</h1>
         <div id="detector-statuses">
             <!-- Status badges injected by JS -->
+        </div>
+        <div id="session-badge">
+            <span class="session-dot"></span>
+            <span id="session-label">--</span>
         </div>
         <div id="interval-bar">
             <button class="tf-btn active" data-interval="1m">1m</button>
@@ -120,7 +149,32 @@
 
     <script>
         const PAIR_ID = "{{ pair_id }}";
+        const TIMEZONE = "{{ timezone }}";
         let currentInterval = "1m";
+
+        // ── Session clock ─────────────────────────────────────────────
+        const SESSION_LABELS = {
+            asian:    'Asian',
+            london:   'London',
+            new_york: 'New York',
+        };
+
+        function getCurrentSession() {
+            const hour = new Date().getUTCHours();
+            if (hour >= 13 && hour < 22) return 'new_york';
+            if (hour >= 7  && hour < 16) return 'london';
+            return 'asian';
+        }
+
+        function updateSessionBadge() {
+            const session = getCurrentSession();
+            const badge = document.getElementById('session-badge');
+            badge.className = session;
+            document.getElementById('session-label').textContent = SESSION_LABELS[session] + ' Session';
+        }
+
+        updateSessionBadge();
+        setInterval(updateSessionBadge, 60000);  // update every minute
 
         // ── Interval buttons ─────────────────────────────────────────
         document.querySelectorAll('.tf-btn').forEach(btn => {
@@ -137,7 +191,7 @@
         const chart = LightweightCharts.createChart(container, {
             layout: { background: { color: '#1e1e1f' }, textColor: '#d1d4dc' },
             grid: { vertLines: { visible: false }, horzLines: { visible: false } },
-            timeScale: { timeVisible: true, borderColor: '#2B2B43' },
+            timeScale: { timeVisible: true, borderColor: '#2B2B43', timezone: TIMEZONE },
         });
 
         const candleSeries = chart.addCandlestickSeries({
