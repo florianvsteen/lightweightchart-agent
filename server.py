@@ -32,6 +32,10 @@ except ImportError:
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
+# Global lock — yfinance has shared internal state and returns wrong data
+# when multiple tickers download simultaneously across threads.
+_YF_LOCK = threading.Lock()
+
 PERIOD_MAP = {
     "1m":  "1d",
     "2m":  "1d",
@@ -106,7 +110,8 @@ class PairServer:
 
     def _fetch_df(self, interval: str) -> pd.DataFrame:
         period = PERIOD_MAP.get(interval, self.period)
-        df = yf.download(self.ticker, period=period, interval=interval, progress=False)
+        with _YF_LOCK:  # serialize all yfinance downloads process-wide
+            df = yf.download(self.ticker, period=period, interval=interval, progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df.dropna()
