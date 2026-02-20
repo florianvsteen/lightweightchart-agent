@@ -191,31 +191,28 @@ class PairServer:
                 if not result or not isinstance(result, dict):
                     continue
                 zones = result.get("zones", [])
-                curr_active = {z["start"] for z in zones if z.get("is_active")}
-                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                # Alert only when a NEW zone appears for the first time
+                # Alert only once per zone (keyed by start timestamp).
+                # last_alerted persists across detection cycles so restarts
+                # don't cause duplicate alerts.
                 for z in zones:
                     if not z.get("is_active"):
                         continue
                     start_ts = z["start"]
-                    if start_ts in prev_starts:
-                        continue  # already knew about this zone
-                    already_alerted = self.last_alerted.get(f"{name}_{start_ts}", 0)
-                    if not already_alerted:
-                        self.last_alerted[f"{name}_{start_ts}"] = 1
-                        alert_zone = {
-                            "detector": z.get("type", "supply_demand"),
-                            "start":    start_ts,
-                            "end":      z["end"],
-                        }
-                        threading.Thread(
-                            target=self._send_discord_alert,
-                            args=(alert_zone,),
-                            daemon=True,
-                        ).start()
-
-                self.last_active_zone[name + "_starts"] = list(curr_active)
+                    alert_key = f"{name}_{start_ts}"
+                    if self.last_alerted.get(alert_key):
+                        continue  # already alerted for this zone
+                    self.last_alerted[alert_key] = 1
+                    alert_zone = {
+                        "detector": z.get("type", "supply_demand"),
+                        "start":    start_ts,
+                        "end":      z["end"],
+                    }
+                    threading.Thread(
+                        target=self._send_discord_alert,
+                        args=(alert_zone,),
+                        daemon=True,
+                    ).start()
 
     # ------------------------------------------------------------------ #
     # Background detection loop — runs regardless of browser
