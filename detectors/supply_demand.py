@@ -181,12 +181,11 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        # Use body of last fully closed candle for status checks.
-        # Wicks through zone boundaries don't count as broken/tested.
+        # Last fully closed candle values
         last_closed_open  = opens[-2]
         last_closed_close = closes[-2]
-        last_body_high    = max(last_closed_open, last_closed_close)
-        last_body_low     = min(last_closed_open, last_closed_close)
+        last_wick_high    = highs[-2]   # used for tested (wick touched zone)
+        last_wick_low     = lows[-2]    # used for tested (wick touched zone)
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
@@ -231,15 +230,17 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                # Broken: any part of the body is below zone bottom
-                broken = last_body_low < bottom
-                tested = (not broken) and (last_body_low <= top)
-                active = (not broken) and (last_body_low > top)
+                # Broken: body close went below zone bottom
+                broken = last_closed_close < bottom
+                # Tested: wick touched the zone (but body didn't close below)
+                tested = (not broken) and (last_wick_low <= top)
+                active = (not broken) and (last_wick_low > top)
             else:  # supply
-                # Broken: any part of the body is above zone top
-                broken = last_body_high > top
-                tested = (not broken) and (last_body_high >= bottom)
-                active = (not broken) and (last_body_high < bottom)
+                # Broken: body close went above zone top
+                broken = last_closed_close > top
+                # Tested: wick touched the zone (but body didn't close above)
+                tested = (not broken) and (last_wick_high >= bottom)
+                active = (not broken) and (last_wick_high < bottom)
 
             status = "broken" if broken else ("tested" if tested else "active")
 
