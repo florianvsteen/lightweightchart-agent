@@ -174,7 +174,7 @@
         function shiftTime(ts) {
             return ts + TZ_OFFSET;
         }
-        let currentInterval = "1m";
+        let currentInterval = "{{ default_interval }}";
 
         // ── Session clock ─────────────────────────────────────────────
         const SESSION_LABELS = {
@@ -247,6 +247,12 @@
         setInterval(updateSessionBadge, 1000);  // update every second for countdown
 
         // ── Interval buttons ─────────────────────────────────────────
+        // Activate correct button on page load
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            if (btn.dataset.interval === currentInterval) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+
         document.querySelectorAll('.tf-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
