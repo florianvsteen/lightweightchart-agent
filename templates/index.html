@@ -410,7 +410,7 @@
             const allSeries = [];
             // Handle new {bias, zones} structure
             const allZones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
-            const zones = allZones;  // keep broken zones — rendered at opacity 0
+            const zones = allZones.filter(z => z.status !== 'broken');
             const bias  = result && result.bias ? result.bias : null;
 
             updateBiasBadge(bias);
@@ -421,9 +421,9 @@
                 const isDemand  = zone.type === 'demand';
                 const isBroken  = zone.status === 'broken';
                 const isTested  = zone.status === 'tested';
-                // Broken = opacity 0 (invisible), tested = dimmed, active = full colour
-                const alpha     = isBroken ? 0 : (isTested ? 0.2 : 0.35);
-                const fillAlpha = isBroken ? 0 : (isTested ? 0.04 : 0.07);
+                // Broken = very faded + dashed, tested = slightly dimmed, active = full colour
+                const alpha     = isBroken ? 0.12 : (isTested ? 0.2 : 0.35);
+                const fillAlpha = isBroken ? 0.02 : (isTested ? 0.04 : 0.07);
                 const color     = isDemand
                     ? `rgba(70, 130, 220, ${alpha})`
                     : `rgba(220, 100, 50, ${alpha})`;
