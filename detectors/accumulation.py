@@ -68,8 +68,11 @@ def _is_v_shape(closes: np.ndarray) -> bool:
 
 
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
-    """Calculate ADX. Returns float or None if insufficient data."""
+    """Calculate ADX. Auto-reduces period for short windows. Returns float or None."""
     n = len(closes)
+    # Auto-reduce period so short windows still get an ADX value
+    while period > 5 and n < period * 2 + 1:
+        period = max(5, period - 2)
     if n < period * 2 + 1:
         return None
 
@@ -117,7 +120,7 @@ def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 
 
 def detect(
     df,
-    lookback: int = 100,
+    lookback: int = 40,
     min_candles: int = 20,
     adx_threshold: float = 25,
     threshold_pct: float = 0.003,
