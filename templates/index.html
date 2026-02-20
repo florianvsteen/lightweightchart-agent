@@ -409,7 +409,8 @@
         function renderSupplyDemand(chart, result) {
             const allSeries = [];
             // Handle new {bias, zones} structure
-            const zones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
+            const allZones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
+            const zones = allZones.filter(z => z.status !== 'broken');  // remove broken zones from chart
             const bias  = result && result.bias ? result.bias : null;
 
             updateBiasBadge(bias);
