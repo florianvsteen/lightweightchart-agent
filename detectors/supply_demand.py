@@ -181,12 +181,8 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        # Use body of last fully closed candle for status checks.
-        # Wicks through zone boundaries don't count as broken/tested.
-        last_closed_open  = opens[-2]
+        # Last fully closed candle for removal checks
         last_closed_close = closes[-2]
-        last_body_high    = max(last_closed_open, last_closed_close)
-        last_body_low     = min(last_closed_open, last_closed_close)
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
