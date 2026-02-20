@@ -85,7 +85,8 @@ class PairServer:
         pair_id = self.pair_id
 
         def _index():
-            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port)
+            tz = os.environ.get("TZ", "UTC")
+            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz)
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
 
