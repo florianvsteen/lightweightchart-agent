@@ -90,7 +90,7 @@ PAIRS = {
     "EURGBP": {
       "ticker": "EURGBP=X",
       "port": 5003,
-      "label": "EUR/USD",
+      "label": "EUR/GBP",
       "interval": "15m",
       "period": "5d",
       "default_interval": "30m",
