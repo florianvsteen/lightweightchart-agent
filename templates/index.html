@@ -418,17 +418,18 @@
 
             zones.forEach(zone => {
                 const isDemand  = zone.type === 'demand';
+                const isBroken  = zone.status === 'broken';
                 const isTested  = zone.status === 'tested';
-                // Tested zones appear slightly dimmer than active
-                const alpha     = isTested ? 0.2 : 0.35;
-                const fillAlpha = isTested ? 0.04 : 0.07;
+                // Broken = very faded + dashed, tested = slightly dimmed, active = full colour
+                const alpha     = isBroken ? 0.12 : (isTested ? 0.2 : 0.35);
+                const fillAlpha = isBroken ? 0.02 : (isTested ? 0.04 : 0.07);
                 const color     = isDemand
                     ? `rgba(70, 130, 220, ${alpha})`
                     : `rgba(220, 100, 50, ${alpha})`;
                 const fill      = isDemand
                     ? `rgba(70, 130, 220, ${fillAlpha})`
                     : `rgba(220, 100, 50, ${fillAlpha})`;
-                const lineStyle = isTested ? 2 : 0;
+                const lineStyle = isBroken ? 2 : (isTested ? 2 : 0);
 
                 const topLine = chart.addLineSeries({
                     color, lineWidth: 1, lineStyle,
