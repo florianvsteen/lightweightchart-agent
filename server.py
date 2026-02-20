@@ -60,6 +60,7 @@ class PairServer:
         self.period = config.get("period", "1d")
         self.detector_names = config.get("detectors", [])
         self.detector_params = config.get("detector_params", {})
+        self.default_interval = config.get("default_interval", self.interval)
 
         # Alert dedup
         self.last_alerted: dict[str, int] = {}
@@ -90,8 +91,7 @@ class PairServer:
 
         def _index():
             tz = os.environ.get("TZ", "UTC")
-            default_interval = config.get("default_interval", self.interval)
-            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=default_interval)
+            return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval)
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
 
