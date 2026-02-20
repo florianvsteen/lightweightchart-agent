@@ -23,7 +23,7 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "min_candles": 15,
-                "adx_threshold": 25,
+                "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.001,   # ~44pts at 44,000
                 "london_range_pct":   0.002,   # ~88pts at 44,000
@@ -44,7 +44,7 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "min_candles": 15,
-                "adx_threshold": 25,
+                "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.0008,  # Asian: ~26pt box max
                 "london_range_pct":   0.001,    # London: ~42pt box max
@@ -65,7 +65,7 @@ PAIRS = {
                 "timeframe": "1m",
                 "lookback": 40,
                 "min_candles": 15,
-                "adx_threshold": 25,
+                "adx_threshold": 20,
                 "threshold_pct": 0.002,
                 "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
                 "london_range_pct":   0.002,   # London: ~$6 box max
