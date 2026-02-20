@@ -188,10 +188,15 @@ class PairServer:
                     if zone_start != already_alerted:
                         self.last_alerted[name] = zone_start
                         self._save_alerted()
-                        self.last_active_zone[name] = None
+                        # Mark as confirmed so the chart still shows the box
+                        # while the screenshot is taken, then clear it after.
+                        confirmed_zone = dict(prev)
+                        confirmed_zone["status"] = "confirmed"
+                        confirmed_zone["is_active"] = True
+                        self.last_active_zone[name] = confirmed_zone
                         threading.Thread(
                             target=self._send_discord_alert,
-                            args=(prev,),
+                            args=(confirmed_zone,),
                             daemon=True,
                         ).start()
 
@@ -267,8 +272,14 @@ class PairServer:
             chart_interval = request.args.get("interval", self.interval)
             cache = {}
 
-            # Run detectors fresh for the browser response
-            detector_results = self._run_detectors(cache)
+            # If a confirmed zone is pending (waiting for screenshot), serve it
+            # so the box stays visible on the chart during Playwright capture.
+            confirmed = self.last_active_zone.get("accumulation")
+            if confirmed and isinstance(confirmed, dict) and confirmed.get("status") == "confirmed":
+                detector_results = {"accumulation": confirmed}
+            else:
+                # Run detectors fresh for the browser response
+                detector_results = self._run_detectors(cache)
 
             # Fetch chart candles at the requested interval
             df_chart = self._get_df(chart_interval, cache)
@@ -355,6 +366,10 @@ class PairServer:
         finally:
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
+            # Clear confirmed zone now that screenshot is done
+            if self.last_active_zone.get("accumulation", {}).get("status") == "confirmed":
+                self.last_active_zone["accumulation"] = None
+                print(f"[{self.pair_id}] Cleared confirmed accumulation zone.")
 
     # ------------------------------------------------------------------ #
     # Start
