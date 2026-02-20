@@ -21,7 +21,8 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 40,
+                "lookback": 100,
+                "min_candles": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.001,   # ~44pts at 44,000
                 "london_range_pct":   0.002,   # ~88pts at 44,000
@@ -40,7 +41,8 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 40,
+                "lookback": 100,
+                "min_candles": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.0008,  # Asian: ~26pt box max
                 "london_range_pct":   0.001,    # London: ~42pt box max
@@ -59,7 +61,8 @@ PAIRS = {
         "detector_params": {
             "accumulation": {
                 "timeframe": "1m",
-                "lookback": 40,
+                "lookback": 100,
+                "min_candles": 20,
                 "threshold_pct": 0.002,
                 "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
                 "london_range_pct":   0.002,   # London: ~$6 box max
