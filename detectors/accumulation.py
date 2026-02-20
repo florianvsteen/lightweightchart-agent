@@ -6,35 +6,37 @@ Detects SIDEWAYS accumulation based purely on DIRECTIONLESSNESS.
 Rules:
   - Only scans the most recent 60 candles (hard cap)
   - Window size capped at 60
-  - max_range_pct can vary per session (asian/london/new_york)
+  - max_range_pct varies per session (asian/london/new_york)
   - SLOPE must be near flat (linear regression)
   - CHOPPINESS must be high (price reverses up/down frequently)
+
+Session hours match index.html exactly (CET local time):
+  Asian:    02:00 – 08:00 CET
+  London:   09:00 – 13:00 CET
+  New York: 15:00 – 20:00 CET
+  Outside:  treated as asian (quiet/off-hours)
 """
 
 import numpy as np
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime
 
-
-# ── Session definitions (UTC hours) ────────────────────────────────────
-SESSIONS = {
-    "asian":    (1,  7),   # 00:00 – 09:00 UTC
-    "london":   (8,  12),  # 07:00 – 16:00 UTC
-    "new_york": (14, 18),  # 13:00 – 22:00 UTC
-}
 
 def get_current_session() -> str:
-    """Return the dominant session for the current UTC time."""
-    hour = datetime.now(timezone.utc).hour
-    # Priority: New York > London > Asian (most active wins during overlaps)
-    if SESSIONS["new_york"][0] <= hour < SESSIONS["new_york"][1]:
+    """
+    Return the current session based on CET local time.
+    Reads system local time — container must have TZ=Europe/Brussels set.
+    Matches the session windows defined in index.html exactly.
+    """
+    hour = datetime.now().hour  # system local time (CET via TZ env var)
+    if 15 <= hour < 20:
         return "new_york"
-    elif SESSIONS["london"][0] <= hour < SESSIONS["london"][1]:
+    elif 9 <= hour < 13:
         return "london"
-    elif SESSIONS["asian"][0] <= hour < SESSIONS["asian"][1]:
+    elif 2 <= hour < 8:
         return "asian"
     else:
-        return "asian"  # off-hours treated as asian (quiet)
+        return None  # out of session — no detection
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
@@ -55,7 +57,6 @@ def detect(
     lookback: int = 40,
     threshold_pct: float = 0.003,
     max_range_pct: float = None,
-    # Per-session max_range_pct overrides — if set, replaces max_range_pct for that session
     asian_range_pct: float = None,
     london_range_pct: float = None,
     new_york_range_pct: float = None,
@@ -64,10 +65,10 @@ def detect(
     Args:
         lookback:           Window size in candles. Hard capped at 60.
         threshold_pct:      Slope scaling factor per instrument.
-        max_range_pct:      Default max box height as fraction of avg price.
-        asian_range_pct:    Override max_range_pct during Asian session.
-        london_range_pct:   Override max_range_pct during London session.
-        new_york_range_pct: Override max_range_pct during New York session.
+        max_range_pct:      Fallback max box height if no session override set.
+        asian_range_pct:    Max box height during Asian session (02-08 CET).
+        london_range_pct:   Max box height during London session (09-13 CET).
+        new_york_range_pct: Max box height during New York session (15-20 CET).
     """
     try:
         lookback = min(lookback, 60)
@@ -83,8 +84,12 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        # Pick the right max_range_pct for current session
+        # Don't run detection outside of trading sessions
         session = get_current_session()
+        if session is None:
+            return None
+
+        # Pick the right max_range_pct for current session
         session_range = {
             "asian":    asian_range_pct,
             "london":   london_range_pct,
