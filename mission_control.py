@@ -44,9 +44,12 @@ def proxy_chart(pair_id):
     try:
         r = requests.get(f"http://127.0.0.1:{cfg['port']}/", timeout=5)
         html = r.text
-        # Rewrite API calls inside the chart to go through our proxy
-        html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_id.upper()}/api/data")
-        html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_id.upper()}/api/data')
+        # Rewrite ALL /api/data fetch patterns to go through our proxy.
+        # Covers single quotes, double quotes, and template literals.
+        pair_upper = pair_id.upper()
+        html = html.replace("fetch(`/api/data", f"fetch(`/proxy/{pair_upper}/api/data")
+        html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_upper}/api/data")
+        html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_upper}/api/data')
         return html, r.status_code, {"Content-Type": "text/html"}
     except Exception as e:
         return f"Chart unavailable: {e}", 502
