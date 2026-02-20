@@ -350,7 +350,7 @@
         const activeSeries = {};
 
         function renderAccumulation(chart, zone) {
-            const isFound   = zone.status === 'found';
+            const isFound   = zone.status === 'found' || zone.status === 'confirmed';
             const lineAlpha = isFound ? 0.55 : 0.28;
             const fillAlpha = isFound ? 0.08 : 0.03;
             const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
@@ -511,7 +511,9 @@
                                 // accumulation returns {status:"looking"} when in-session but nothing found
                                 // and null when truly out of session
                                 const s = result.status;
-                                if (s === 'found' || s === 'potential') {
+                                if (s === 'confirmed') {
+                                    setStatus(name, 'found'); // show as found while screenshot taken
+                                } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
                                 } else {
                                     setStatus(name, 'looking');
