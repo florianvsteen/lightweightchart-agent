@@ -15,8 +15,9 @@ from config import PAIRS
 from server import PairServer
 
 
-def launch_pair(pair_id: str, config: dict):
+def launch_pair(pair_id: str, config: dict, stagger: int = 0):
     server = PairServer(pair_id, config)
+    server._stagger_seconds = stagger
     server.run()
 
 
@@ -41,10 +42,11 @@ def main():
     print("=" * 50)
 
     threads = []
-    for pair_id, cfg in pairs_to_run.items():
+    for i, (pair_id, cfg) in enumerate(pairs_to_run.items()):
+        stagger = i * 10  # stagger each pair by 10s to avoid yfinance collisions
         t = threading.Thread(
             target=launch_pair,
-            args=(pair_id, cfg),
+            args=(pair_id, cfg, stagger),
             daemon=True,
             name=f"server-{pair_id}",
         )
