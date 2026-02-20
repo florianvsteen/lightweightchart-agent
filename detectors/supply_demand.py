@@ -22,7 +22,7 @@ ZONE DETECTION:
 Session windows (UTC):
   Asian:    01:00 – 07:00 UTC
   London:   08:00 – 12:00 UTC
-  New York: 14:00 – 19:00 UTC
+  New York: 13:00 – 19:00 UTC
 
 NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
       the `yf_lock` parameter to avoid concurrent download collisions.
@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 SESSION_WINDOWS = {
     "asian":    (1,  7),
     "london":   (8,  12),
-    "new_york": (14, 19),
+    "new_york": (13, 19),
 }
 
 # One candle before session open is also valid as the indecision candle
