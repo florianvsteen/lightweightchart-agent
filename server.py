@@ -308,14 +308,20 @@ async function fetchReplay(idx) {
   btn.disabled = true;
   try {
     const res = await fetch(`/debug/replay?idx=${idx}`, { signal: replayFetchController.signal });
-    replayData = await res.json();
+    const data = await res.json();
+    if (data.error) {
+      console.error('Replay error from server:', data.error, data.trace || '');
+      document.getElementById('tag-session').textContent = 'ERROR — see console';
+      return;
+    }
+    replayData = data;
     renderSummary(replayData);
-    renderWindowList(replayData.windows);
+    renderWindowList(replayData.windows || []);
     updateTopbar(replayData, true);
     if (selectedWindow == null && replayData.best_zone) {
       drawWindowOverlay(replayData.best_zone);
     } else if (selectedWindow != null) {
-      const w = replayData.windows.find(x => x.window === selectedWindow);
+      const w = (replayData.windows || []).find(x => x.window === selectedWindow);
       drawWindowOverlay(w || null);
     } else {
       drawWindowOverlay(null);
@@ -1060,7 +1066,6 @@ class PairServer:
     def _debug_replay(self):
         """
         Run the accumulation detector against only the first `idx` candles.
-        Returns the same shape as /debug/data but computed against the slice.
         Query param: idx=N (1-based candle index to replay up to)
         """
         try:
@@ -1069,8 +1074,18 @@ class PairServer:
             from datetime import timezone
             from detectors.accumulation import _slope_pct, _choppiness, _is_v_shape, _adx
 
-            cache = {}
-            full_df = self._get_df("1m", cache)
+            # Use a non-blocking fetch — if yfinance lock is busy (background loop running)
+            # wait up to 10s rather than blocking the full request duration
+            acquired = _YF_LOCK.acquire(timeout=10)
+            try:
+                full_df = yf.download(self.ticker, period=self.period, interval="1m", progress=False)
+            finally:
+                if acquired:
+                    _YF_LOCK.release()
+
+            if isinstance(full_df.columns, pd.MultiIndex):
+                full_df.columns = full_df.columns.get_level_values(0)
+            full_df = full_df.dropna()
 
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
