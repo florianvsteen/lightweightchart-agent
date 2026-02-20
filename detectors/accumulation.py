@@ -57,8 +57,15 @@ def _choppiness(closes: np.ndarray) -> float:
     return sign_changes / (len(diffs) - 1)
 
 
-def _std_pct(closes: np.ndarray, avg_p: float) -> float:
-    return float(np.std(closes)) / avg_p
+def _is_v_shape(closes: np.ndarray) -> bool:
+    n = len(closes)
+    if n < 6:
+        return False
+    peak_i  = int(np.argmax(closes))
+    trough_i = int(np.argmin(closes))
+    third = n // 3
+    # V or inverted-V: extreme (peak or trough) sits in the middle third
+    return (third <= peak_i < 2 * third) or (third <= trough_i < 2 * third)
 
 
 def detect(
@@ -146,12 +153,9 @@ def detect(
             if slope >= slope_limit:
                 continue
 
-            # Reject windows with high price dispersion — catches V-shapes and
-            # trending moves whose up+down legs cancel out in linear regression.
-            # std > 35% of the allowed range means price swung too wildly.
-            std = _std_pct(closes, avg_p)
-            std_limit = (effective_range_pct if effective_range_pct else slope_limit * lookback / 0.15) * 0.35
-            if std > std_limit:
+            # Reject V-shapes and inverted-V shapes — trending up then down
+            # (or down then up) has a flat slope but is not accumulation.
+            if _is_v_shape(closes):
                 continue
 
             chop  = _choppiness(closes)
