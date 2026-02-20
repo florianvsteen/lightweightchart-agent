@@ -140,6 +140,9 @@ class PairServer:
                 results[name] = None
             else:
                 try:
+                    # Pass yf_lock to detectors that do their own downloads (supply_demand)
+                    if name == "supply_demand":
+                        params["yf_lock"] = _YF_LOCK
                     results[name] = fn(df, **params)
                 except Exception as e:
                     print(f"[ERROR] Detector '{name}' failed: {e}")
@@ -148,22 +151,63 @@ class PairServer:
 
     def _process_alerts(self, detector_results: dict):
         """Check results and fire Discord alerts on breakout."""
-        for name, zone in detector_results.items():
-            prev = self.last_active_zone.get(name)
+        for name, result in detector_results.items():
 
-            if zone and not isinstance(zone, list) and zone.get("is_active") and zone.get("status") == "found":
-                self.last_active_zone[name] = zone
+            # ── Accumulation ──────────────────────────────────────────
+            if name == "accumulation":
+                prev = self.last_active_zone.get(name)
+                zone = result if (result and isinstance(result, dict)) else None
+                is_active_found = (
+                    zone is not None
+                    and zone.get("is_active")
+                    and zone.get("status") == "found"
+                )
 
-            elif prev is not None and (zone is None or (not isinstance(zone, list) and not zone.get("is_active"))):
-                already_alerted = self.last_alerted.get(name, 0)
-                if prev["start"] > already_alerted:
-                    self.last_alerted[name] = prev["start"]
-                    self.last_active_zone[name] = None
-                    threading.Thread(
-                        target=self._send_discord_alert,
-                        args=(prev,),
-                        daemon=True,
-                    ).start()
+                if is_active_found:
+                    zone_start = zone["start"]
+                    # Only update tracking if this is a NEW zone (different start time)
+                    # Prevents re-alerting on the same zone across detection cycles
+                    if zone_start != self.last_active_zone.get(name, {}).get("start"):
+                        self.last_active_zone[name] = zone
+                    else:
+                        # Same zone — just update end time, don't reset
+                        self.last_active_zone[name] = zone
+
+                elif prev is not None and prev.get("status") == "found":
+                    # Had an active found zone — now it's gone = breakout
+                    zone_start = prev["start"]
+                    already_alerted = self.last_alerted.get(name, 0)
+                    if zone_start != already_alerted:
+                        self.last_alerted[name] = zone_start
+                        self.last_active_zone[name] = None
+                        threading.Thread(
+                            target=self._send_discord_alert,
+                            args=(prev,),
+                            daemon=True,
+                        ).start()
+
+            # ── Supply & Demand ───────────────────────────────────────
+            elif name == "supply_demand":
+                if not result or not isinstance(result, dict):
+                    continue
+                zones = result.get("zones", [])
+                # Alert when an active zone we were tracking is no longer active
+                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
+                curr_active = {z["start"] for z in zones if z.get("is_active")}
+
+                broken_out = prev_starts - curr_active
+                for start_ts in broken_out:
+                    already_alerted = self.last_alerted.get(f"{name}_{start_ts}", 0)
+                    if not already_alerted:
+                        self.last_alerted[f"{name}_{start_ts}"] = 1
+                        fake_zone = {"detector": "supply_demand", "start": start_ts, "end": start_ts}
+                        threading.Thread(
+                            target=self._send_discord_alert,
+                            args=(fake_zone,),
+                            daemon=True,
+                        ).start()
+
+                self.last_active_zone[name + "_starts"] = list(curr_active)
 
     # ------------------------------------------------------------------ #
     # Background detection loop — runs regardless of browser
