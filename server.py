@@ -1068,14 +1068,18 @@ class PairServer:
         Run the accumulation detector against only the first `idx` candles.
         Query param: idx=N (1-based candle index to replay up to)
         """
+        # Read query param immediately while Flask request context is guaranteed active
+        try:
+            raw_idx = int(request.args.get("idx", -1))
+        except Exception:
+            raw_idx = -1
+
         try:
             import numpy as np
             import pandas as pd
             from datetime import timezone
             from detectors.accumulation import _slope_pct, _choppiness, _is_v_shape, _adx
 
-            # Use a non-blocking fetch — if yfinance lock is busy (background loop running)
-            # wait up to 10s rather than blocking the full request duration
             acquired = _YF_LOCK.acquire(timeout=10)
             try:
                 full_df = yf.download(self.ticker, period=self.period, interval="1m", progress=False)
@@ -1095,8 +1099,8 @@ class PairServer:
             threshold_pct = params.get("threshold_pct", 0.003)
 
             total = len(full_df)
-            idx = int(request.args.get("idx", total))
-            idx = max(min_candles + 3, min(idx, total))  # clamp — need at least min_candles + a few
+            idx = raw_idx if raw_idx > 0 else total
+            idx = max(min_candles + 3, min(idx, total))
 
             # Slice the dataframe — this is what the detector would have seen at candle N
             df = full_df.iloc[:idx].copy()
@@ -1312,5 +1316,6 @@ class PairServer:
         t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
         t.start()
 
-        # Start Flask (blocks this thread)
-        self.app.run(host="0.0.0.0", port=self.port, use_reloader=False)
+        # Start Flask (blocks this thread) — threaded so slow /debug/replay
+        # requests don't block concurrent requests for the HTML page or chart data
+        self.app.run(host="0.0.0.0", port=self.port, use_reloader=False, threaded=True)
