@@ -17,12 +17,12 @@ from config import PAIRS
 
 app = Flask(__name__)
 
-MISSION_PORT = 5010
+MISSION_PORT = 6767
 
 # ── Proxy ──────────────────────────────────────────────────────────────────
 
 @app.route('/proxy/<pair_id>/api/data')
-def proxy(pair_id):
+def proxy_api(pair_id):
     cfg = PAIRS.get(pair_id.upper())
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
@@ -33,6 +33,23 @@ def proxy(pair_id):
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
+
+@app.route('/chart/<pair_id>')
+@app.route('/chart/<pair_id>/')
+def proxy_chart(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return "Unknown pair", 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/", timeout=5)
+        html = r.text
+        # Rewrite API calls inside the chart to go through our proxy
+        html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_id.upper()}/api/data")
+        html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_id.upper()}/api/data')
+        return html, r.status_code, {"Content-Type": "text/html"}
+    except Exception as e:
+        return f"Chart unavailable: {e}", 502
 
 
 # ── Dashboard ──────────────────────────────────────────────────────────────
@@ -327,7 +344,7 @@ function buildGrid() {
     const card = document.createElement('a');
     card.className = 'card';
     card.id = `card-${pair.id}`;
-    card.href = `http://localhost:${pair.port}`;
+    card.href = `/chart/${pair.id}`;
     card.target = '_blank';
     card.innerHTML = `
       <div class="card-header">
@@ -528,7 +545,7 @@ def index():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("Mission Control — http://0.0.0.0:5010")
+    print("Mission Control — http://0.0.0.0:6767")
     print("=" * 50)
     for pair_id, cfg in PAIRS.items():
         print(f"  {pair_id:10s} → proxied from port {cfg['port']}")
