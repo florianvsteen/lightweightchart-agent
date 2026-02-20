@@ -315,6 +315,7 @@
             looking:        { label: 'Looking for accumulation',      css: 'state-looking'   },
             potential:      { label: 'Potential accumulation forming', css: 'state-potential' },
             found:          { label: 'Accumulation found',             css: 'state-found'     },
+            confirmed:      { label: 'Accumulation confirmed — alerting', css: 'state-found'  },
             out_of_session: { label: 'Out of session',                 css: 'state-offline'   },
             // supply_demand
             sd_found:       { label: 'Supply/Demand zones found',        css: 'state-found'    },
@@ -351,6 +352,8 @@
 
         function renderAccumulation(chart, zone) {
             const isFound   = zone.status === 'found' || zone.status === 'confirmed';
+            // Don't render if status is looking/potential without valid zone coords
+            if (!zone.top || !zone.bottom || !zone.start) return [];
             const lineAlpha = isFound ? 0.55 : 0.28;
             const fillAlpha = isFound ? 0.08 : 0.03;
             const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
@@ -508,11 +511,9 @@
                                     setStatus(name, 'sd_none');
                                 }
                             } else if (name === 'accumulation') {
-                                // accumulation returns {status:"looking"} when in-session but nothing found
-                                // and null when truly out of session
                                 const s = result.status;
                                 if (s === 'confirmed') {
-                                    setStatus(name, 'found'); // show as found while screenshot taken
+                                    setStatus(name, 'confirmed');
                                 } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
                                 } else {
