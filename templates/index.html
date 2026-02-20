@@ -183,8 +183,8 @@
 
         function getCurrentSession() {
             const hour = new Date().getUTCHours();
-            if (hour >= 13 && hour < 22) return 'new_york';
-            if (hour >= 7  && hour < 16) return 'london';
+            if (hour >= 15 && hour < 20) return 'new_york';
+            if (hour >= 9  && hour < 14) return 'london';
             return 'asian';
         }
 
