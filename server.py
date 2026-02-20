@@ -303,7 +303,7 @@ class PairServer:
                     browser.close()
 
             duration_min = (zone["end"] - zone["start"]) // 60
-            content = f"🚀 **{self.pair_id} — {detector_name} Confirmed ({duration_min}m)**"
+            content = f"🚀 **{self.pair_id} — {detector_name} Confirmed**"
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
             if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
