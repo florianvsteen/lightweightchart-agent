@@ -10,6 +10,7 @@ The Flask routes only serve chart data to the browser when it's open.
 """
 
 import os
+import json
 import time
 import threading
 import pandas as pd
@@ -62,8 +63,12 @@ class PairServer:
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
 
-        # Alert dedup
-        self.last_alerted: dict[str, int] = {}
+        # Alert dedup — persisted to disk so restarts don't re-fire old alerts
+        self._alerted_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f".alerted_{pair_id}.json"
+        )
+        self.last_alerted: dict[str, int] = self._load_alerted()
         self.last_active_zone: dict[str, dict] = {}
 
         # Per-request DataFrame cache (cleared each cycle)
@@ -179,6 +184,7 @@ class PairServer:
                     already_alerted = self.last_alerted.get(name, 0)
                     if zone_start != already_alerted:
                         self.last_alerted[name] = zone_start
+                        self._save_alerted()
                         self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
@@ -191,28 +197,31 @@ class PairServer:
                 if not result or not isinstance(result, dict):
                     continue
                 zones = result.get("zones", [])
+                curr_active = {z["start"] for z in zones if z.get("is_active")}
+                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                # Alert only once per zone (keyed by start timestamp).
-                # last_alerted persists across detection cycles so restarts
-                # don't cause duplicate alerts.
+                # Alert only when a NEW zone appears for the first time
                 for z in zones:
                     if not z.get("is_active"):
                         continue
                     start_ts = z["start"]
-                    alert_key = f"{name}_{start_ts}"
-                    if self.last_alerted.get(alert_key):
-                        continue  # already alerted for this zone
-                    self.last_alerted[alert_key] = 1
-                    alert_zone = {
-                        "detector": z.get("type", "supply_demand"),
-                        "start":    start_ts,
-                        "end":      z["end"],
-                    }
-                    threading.Thread(
-                        target=self._send_discord_alert,
-                        args=(alert_zone,),
-                        daemon=True,
-                    ).start()
+                    if start_ts in prev_starts:
+                        continue  # already knew about this zone
+                    already_alerted = self.last_alerted.get(f"{name}_{start_ts}", 0)
+                    if not already_alerted:
+                        self.last_alerted[f"{name}_{start_ts}"] = 1
+                        alert_zone = {
+                            "detector": z.get("type", "supply_demand"),
+                            "start":    start_ts,
+                            "end":      z["end"],
+                        }
+                        threading.Thread(
+                            target=self._send_discord_alert,
+                            args=(alert_zone,),
+                            daemon=True,
+                        ).start()
+
+                self.last_active_zone[name + "_starts"] = list(curr_active)
 
     # ------------------------------------------------------------------ #
     # Background detection loop — runs regardless of browser
@@ -327,6 +336,22 @@ class PairServer:
     # ------------------------------------------------------------------ #
     # Start
     # ------------------------------------------------------------------ #
+
+    def _load_alerted(self) -> dict:
+        try:
+            if os.path.exists(self._alerted_file):
+                with open(self._alerted_file, 'r') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_alerted(self):
+        try:
+            with open(self._alerted_file, 'w') as f:
+                json.dump(self.last_alerted, f)
+        except Exception as e:
+            print(f"[{self.pair_id}] Failed to save alerted state: {e}")
 
     def run(self):
         print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
