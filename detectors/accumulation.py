@@ -13,7 +13,7 @@ Rules:
 Session hours match index.html exactly (CET local time):
   Asian:    02:00 – 08:00 CET
   London:   09:00 – 13:00 CET
-  New York: 14:00 – 20:00 CET
+  New York: 15:00 – 20:00 CET
   Outside:  treated as asian (quiet/off-hours)
 """
 
@@ -25,11 +25,11 @@ from datetime import datetime, timezone
 # Session windows in UTC — same for everyone worldwide.
 # Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
 # London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
-# New York: 13:00 – 19:00 UTC  (15:00 – 20:00 CET)
+# New York: 14:00 – 19:00 UTC  (15:00 – 20:00 CET)
 SESSION_WINDOWS = {
     "asian":    (1,  7),
     "london":   (8,  12),
-    "new_york": (13, 19),
+    "new_york": (14, 19),
 }
 
 def get_current_session():
@@ -142,8 +142,13 @@ def detect(
             if avg_p == 0:
                 continue
 
-            h_max = float(highs.max())
-            l_min = float(lows.min())
+            # Use body range (max of opens/closes) to avoid wicks pushing box too wide
+            body_highs = np.maximum(window['Open'].values.flatten().astype(float),
+                                    window['Close'].values.flatten().astype(float))
+            body_lows  = np.minimum(window['Open'].values.flatten().astype(float),
+                                    window['Close'].values.flatten().astype(float))
+            h_max = float(body_highs.max())
+            l_min = float(body_lows.min())
 
             if effective_range_pct is not None:
                 if (h_max - l_min) / avg_p > effective_range_pct:
