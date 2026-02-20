@@ -63,12 +63,8 @@ class PairServer:
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
 
-        # Alert dedup — persisted to disk so restarts don't re-fire old alerts
-        self._alerted_file = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            f".alerted_{pair_id}.json"
-        )
-        self.last_alerted: dict[str, int] = self._load_alerted()
+        # Alert dedup
+        self.last_alerted: dict[str, int] = {}
         self.last_active_zone: dict[str, dict] = {}
 
         # Per-request DataFrame cache (cleared each cycle)
@@ -160,6 +156,14 @@ class PairServer:
 
             # ── Accumulation ──────────────────────────────────────────
             if name == "accumulation":
+                # Clean up alerted timestamps older than 4 hours (beyond lookback range)
+                cutoff = int(time.time()) - (4 * 3600)
+                old_keys = [k for k, v in self.last_alerted.items()
+                            if k == name and isinstance(v, int) and v < cutoff]
+                if old_keys:
+                    for k in old_keys:
+                        del self.last_alerted[k]
+                    self._save_alerted()
                 prev = self.last_active_zone.get(name)
                 zone = result if (result and isinstance(result, dict)) else None
                 is_active_found = (
@@ -184,7 +188,6 @@ class PairServer:
                     already_alerted = self.last_alerted.get(name, 0)
                     if zone_start != already_alerted:
                         self.last_alerted[name] = zone_start
-                        self._save_alerted()
                         self.last_active_zone[name] = None
                         threading.Thread(
                             target=self._send_discord_alert,
@@ -200,26 +203,38 @@ class PairServer:
                 curr_active = {z["start"] for z in zones if z.get("is_active")}
                 prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                # Alert only when a NEW zone appears for the first time
+                # Remove invalidated zones from last_alerted (zone disappeared from chart)
+                invalidated = prev_starts - curr_active
+                changed = False
+                for start_ts in invalidated:
+                    key = f"{name}_{start_ts}"
+                    if key in self.last_alerted:
+                        del self.last_alerted[key]
+                        changed = True
+                        print(f"[{self.pair_id}] Removed invalidated zone {key} from alerted state")
+                if changed:
+                    self._save_alerted()
+
+                # Alert only once per zone (keyed by start timestamp)
                 for z in zones:
                     if not z.get("is_active"):
                         continue
                     start_ts = z["start"]
-                    if start_ts in prev_starts:
-                        continue  # already knew about this zone
-                    already_alerted = self.last_alerted.get(f"{name}_{start_ts}", 0)
-                    if not already_alerted:
-                        self.last_alerted[f"{name}_{start_ts}"] = 1
-                        alert_zone = {
-                            "detector": z.get("type", "supply_demand"),
-                            "start":    start_ts,
-                            "end":      z["end"],
-                        }
-                        threading.Thread(
-                            target=self._send_discord_alert,
-                            args=(alert_zone,),
-                            daemon=True,
-                        ).start()
+                    alert_key = f"{name}_{start_ts}"
+                    if self.last_alerted.get(alert_key):
+                        continue  # already alerted for this zone
+                    self.last_alerted[alert_key] = 1
+                    self._save_alerted()
+                    alert_zone = {
+                        "detector": z.get("type", "supply_demand"),
+                        "start":    start_ts,
+                        "end":      z["end"],
+                    }
+                    threading.Thread(
+                        target=self._send_discord_alert,
+                        args=(alert_zone,),
+                        daemon=True,
+                    ).start()
 
                 self.last_active_zone[name + "_starts"] = list(curr_active)
 
