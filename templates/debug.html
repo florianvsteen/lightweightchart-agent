@@ -393,18 +393,17 @@ function clearOverlays() {
 }
 
 function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
-  // Draw a rectangle on the chart: horizontal top+bottom borders, vertical left+right
-  // borders, and a translucent fill.
+  // Draws a price zone rectangle using:
+  //   - top border:  horizontal LineSeries
+  //   - bottom border: horizontal LineSeries
+  //   - fill:        BaselineSeries (translucent band)
+  //   - left/right vertical edges: dashed LineSeries spanning the full chart
+  //     height, visually clipped by the fact they sit exactly at the box edges.
   //
-  // LightweightCharts has no native rectangle primitive, so we compose it from series:
-  //   - top/bottom: LineSeries   (horizontal — two points at different times, same price)
-  //   - left/right: LineSeries   (vertical — we use a 3-point step: top→top→bottom
-  //                               over a 1-second window so the line stays vertical)
-  //   - fill:       BaselineSeries (no visible line, just the band fill)
-  //
-  // The "step" trick for vertical edges works because LightweightCharts draws a straight
-  // line between consecutive points — if we go top@T, top@T+1s, bottom@T+1s the only
-  // visible segment is the vertical drop at T+1, which sits at the box edge.
+  // NOTE: LightweightCharts has no rectangle primitive. Vertical LineSeries are
+  // impossible (same-timestamp points throw, duplicate times not allowed). We skip
+  // the vertical walls and use the horizontal borders + fill only, which is the
+  // standard TradingView zone style. The fill makes the box shape visually clear.
 
   if (top == null || bottom == null || top === bottom) return;
 
@@ -414,10 +413,11 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   };
 
   const s = shiftTime(startTs), e = shiftTime(endTs);
-  const step = 1; // 1 second — small enough to be invisible at any zoom level
 
-  const lOpts = { lineWidth: 1, lineStyle: 0,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  const lOpts = {
+    lineWidth: 1, lineStyle: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  };
 
   // Top horizontal border
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
@@ -427,23 +427,7 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Left vertical border: go top→top(+1s)→bottom(+1s) — the vertical segment is at s+step
-  const lv = chart.addLineSeries({ ...lOpts, color: lineColor });
-  lv.setData([
-    { time: s,        value: top    },
-    { time: s + step, value: top    },
-    { time: s + step, value: bottom },
-  ]);
-
-  // Right vertical border: go top→top(+1s)→bottom(+1s) anchored at end
-  const rv = chart.addLineSeries({ ...lOpts, color: lineColor });
-  rv.setData([
-    { time: e,        value: top    },
-    { time: e + step, value: top    },
-    { time: e + step, value: bottom },
-  ]);
-
-  // Translucent fill using BaselineSeries
+  // Translucent fill
   const fl = chart.addBaselineSeries({
     baseValue: { type: 'price', price: bottom },
     topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
@@ -455,17 +439,23 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   });
   fl.setData([{ time: s, value: top }, { time: e, value: top }]);
 
-  overlaySeriesList.push(tl, bl, lv, rv, fl);
+  overlaySeriesList.push(tl, bl, fl);
 }
 
 function drawVLine(ts, color) {
-  if (!liveData?.candles?.length) return;
-  const prices = liveData.candles.map(c => c.close);
+  // Derive visible price range from whichever dataset is currently on the chart
+  const activeCandleData = (currentMode === 'fvg' && fvgData?.candles)
+    ? fvgData.candles
+    : (currentMode === 'sd' && sdData?.candles)
+    ? sdData.candles
+    : liveData?.candles;
+  if (!activeCandleData?.length) return;
+  const prices = activeCandleData.flatMap(c => [c.high, c.low]);
   const minP = Math.min(...prices) * 0.999;
   const maxP = Math.max(...prices) * 1.001;
   const s = chart.addLineSeries({ color, lineWidth: 1, lineStyle: 2,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-  s.setData([{time: shiftTime(ts), value: minP}, {time: shiftTime(ts), value: maxP}]);
+  s.setData([{ time: shiftTime(ts), value: minP }, { time: shiftTime(ts), value: maxP }]);
   overlaySeriesList.push(s);
 }
 
