@@ -1019,23 +1019,31 @@ function renderFVG(data) {
   document.getElementById('fvg-loading').style.display = 'none';
   document.getElementById('fvg-content').style.display = '';
 
-  document.getElementById('tag-session').textContent = 'FVG ANALYSIS';
-  const total = data.candidates?.length || 0;
-  const passed = (data.candidates || []).filter(c => c.has_fvg).length;
-  document.getElementById('tag-info').textContent = `${passed} FVGs / ${total} candidates`;
+  const minGapPct     = data.min_gap_pct      || 0.0001;
+  const impulseBody   = data.impulse_body_pct || 0.60;
 
-  // Stats mini-grid
-  document.getElementById('fvg-stats').innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">
-      ${[
-        {l:'Scanned',  v: total,         c: 'neutral'},
-        {l:'FVG ✓',    v: passed,        c: passed > 0 ? 'green' : 'red'},
-        {l:'Bullish',  v: (data.candidates||[]).filter(c=>c.fvg_type==='bullish').length, c:'neutral'},
-        {l:'Bearish',  v: (data.candidates||[]).filter(c=>c.fvg_type==='bearish').length, c:'neutral'},
-      ].map(s=>`<div class="stat-card"><div class="stat-label">${s.l}</div><div class="stat-val ${s.c}" style="font-size:14px">${s.v}</div></div>`).join('')}
-    </div>`;
+  document.getElementById('tag-session').textContent = 'FVG ANALYSIS';
+  document.getElementById('tag-info').textContent =
+    `${data.passed || 0} FVGs / ${data.total || 0} scanned · gap≥${(minGapPct*100).toFixed(3)}% · body≥${(impulseBody*100).toFixed(0)}%`;
 
   const candidates = data.candidates || [];
+
+  // Stats
+  document.getElementById('fvg-stats').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px">
+      ${[
+        {l:'Scanned',  v: data.total   || 0, c: 'neutral'},
+        {l:'FVG ✓',    v: data.passed  || 0, c: (data.passed||0) > 0 ? 'green' : 'red'},
+        {l:'Bullish',  v: data.bullish || 0, c: 'neutral'},
+        {l:'Bearish',  v: data.bearish || 0, c: 'neutral'},
+      ].map(s=>\`<div class="stat-card"><div class="stat-label">\${s.l}</div><div class="stat-val \${s.c}" style="font-size:14px">\${s.v}</div></div>\`).join('')}
+    </div>
+    <div style="font-size:9px;color:var(--muted);padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:3px">
+      Filters: min gap <strong style="color:var(--orange)">${(minGapPct*100).toFixed(3)}%</strong>
+      &nbsp;·&nbsp; impulse body <strong style="color:var(--orange)">${(impulseBody*100).toFixed(0)}%</strong>
+      &nbsp;·&nbsp; direction must match
+    </div>`;
+
   if (!candidates.length) {
     document.getElementById('fvg-list').innerHTML = '<div class="panel-empty">No candidates found</div>';
     return;
@@ -1045,42 +1053,51 @@ function renderFVG(data) {
   const withoutFvg = candidates.filter(c => !c.has_fvg);
 
   document.getElementById('fvg-list').innerHTML = `
-    <div class="section-header">
+    <div class="section-header" style="margin-top:10px">
       <span>FVG Confirmed</span><span class="section-count">${withFvg.length}</span>
     </div>
     ${withFvg.map((c,i) => renderFvgRow(c, i)).join('')}
     <div class="section-header" style="margin-top:12px">
-      <span>No FVG</span><span class="section-count">${withoutFvg.length}</span>
+      <span>Rejected</span><span class="section-count">${withoutFvg.length}</span>
     </div>
-    ${withoutFvg.map((c,i) => renderFvgRow(c, i + 1000)).join('')}
+    ${withoutFvg.slice(0, 30).map((c,i) => renderFvgRow(c, i + 1000)).join('')}
+    ${withoutFvg.length > 30 ? `<div class="panel-empty" style="font-size:9px">… ${withoutFvg.length - 30} more hidden</div>` : ''}
   `;
 
-  // Draw FVG candles on chart
+  // Draw all confirmed FVG GAP ZONES on chart (not candle range)
   clearOverlays();
   withFvg.forEach(c => {
-    const col = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.6)' : 'rgba(240,90,126,0.6)';
-    drawBox(c.candle2.time, c.candle2.time + 120, c.candle2.high, c.candle2.low, col, 0.08);
+    if (c.gap_top == null || c.gap_bottom == null) return;
+    const col = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.5)' : 'rgba(240,90,126,0.5)';
+    const spanStart = c.candle_nm1?.time || c.candle_n?.time;
+    const spanEnd   = c.candle_np1 ? c.candle_np1.time + 60 : c.candle_n?.time + 180;
+    if (spanStart && spanEnd)
+      drawBox(spanStart, spanEnd, c.gap_top, c.gap_bottom, col, 0.15);
   });
 }
 
 function renderFvgRow(c, idx) {
-  const hasFvg = c.has_fvg;
-  const rowCls  = hasFvg ? 'pass-fvg' : 'fail-fvg';
+  const hasFvg   = c.has_fvg;
+  const rowCls   = hasFvg ? 'pass-fvg' : 'fail-fvg';
   const badgeCls = c.fvg_type || 'no-fvg';
   const badgeTxt = hasFvg ? (c.fvg_type || 'FVG').toUpperCase() : 'NO FVG';
-  const timeStr  = c.candle2?.time ? fmtTime(c.candle2.time) : '—';
+  const timeStr  = c.candle_n?.time ? fmtTime(c.candle_n.time) : '—';
+  const impCol   = (c.body_ratio || 0) >= 0.6 ? 'var(--pass)' : 'var(--muted)';
 
   let gapHtml = '';
   if (hasFvg) {
-    const gapTop = c.fvg_type === 'bullish' ? c.candle3_low : c.candle1_high;
-    const gapBot = c.fvg_type === 'bullish' ? c.candle1_high : c.candle3_low;
     gapHtml = `<div class="fvg-gap-line gap-exists">
-      gap: ${fmtPrice(gapBot)} → ${fmtPrice(gapTop)}
-      &nbsp;(${fmtPrice(Math.abs(gapTop - gapBot))} pts)
+      gap zone: ${fmtPrice(c.gap_bottom)} → ${fmtPrice(c.gap_top)}
+      &nbsp;<span style="color:var(--muted)">(${(c.gap_pct*100).toFixed(4)}%)</span>
     </div>`;
   } else {
-    gapHtml = `<div class="fvg-gap-line gap-missing">no gap between wick[N-1] and wick[N+1]</div>`;
+    const reason = c.reject_reason || 'no gap';
+    gapHtml = `<div class="fvg-gap-line gap-missing">✗ ${reason}</div>`;
   }
+
+  const borderCol = hasFvg
+    ? (c.fvg_type==='bullish' ? 'rgba(90,158,240,0.4)' : 'rgba(240,90,126,0.4)')
+    : 'var(--border)';
 
   return `<div class="fvg-row ${rowCls}" id="fvg-row-${idx}" onclick="selectFvg(${idx})">
     <div class="fvg-top-row">
@@ -1090,19 +1107,20 @@ function renderFvgRow(c, idx) {
     ${gapHtml}
     <div class="fvg-detail-grid">
       <div class="fvg-candle-cell">
-        <div class="fvg-candle-label">Candle N-1</div>
-        <div class="fvg-candle-hl">H ${fmtPrice(c.candle1_high)}</div>
-        <div class="fvg-candle-hl">L ${fmtPrice(c.candle1_low)}</div>
+        <div class="fvg-candle-label">N-1 (prev)</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle_nm1?.high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle_nm1?.low)}</div>
       </div>
-      <div class="fvg-candle-cell" style="border-color:${hasFvg ? (c.fvg_type==='bullish'?'rgba(90,158,240,0.4)':'rgba(240,90,126,0.4)') : 'var(--border)'}">
-        <div class="fvg-candle-label">Breakout ←</div>
-        <div class="fvg-candle-hl">H ${fmtPrice(c.candle2?.high)}</div>
-        <div class="fvg-candle-hl">L ${fmtPrice(c.candle2?.low)}</div>
+      <div class="fvg-candle-cell" style="border-color:${borderCol}">
+        <div class="fvg-candle-label">N (impulse)</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle_n?.high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle_n?.low)}</div>
+        <div class="fvg-candle-hl" style="color:${impCol};font-size:8px">body ${((c.body_ratio||0)*100).toFixed(0)}%</div>
       </div>
       <div class="fvg-candle-cell">
-        <div class="fvg-candle-label">Candle N+1</div>
-        <div class="fvg-candle-hl">H ${fmtPrice(c.candle3_high)}</div>
-        <div class="fvg-candle-hl">L ${fmtPrice(c.candle3_low)}</div>
+        <div class="fvg-candle-label">N+1 (after)</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle_np1?.high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle_np1?.low)}</div>
       </div>
     </div>
   </div>`;
@@ -1118,39 +1136,39 @@ function selectFvg(idx) {
   const withFvg    = candidates.filter(c => c.has_fvg);
   const withoutFvg = candidates.filter(c => !c.has_fvg);
   const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
-  if (!c) return;
+  if (!c || !c.candle_n) return;
 
   clearOverlays();
 
-  // Draw all FVG zones dimmed
-  candidates.filter(x => x.has_fvg).forEach(x => {
-    const col = x.fvg_type === 'bullish' ? 'rgba(90,158,240,0.2)' : 'rgba(240,90,126,0.2)';
-    drawBox(x.candle2.time, x.candle2.time + 120, x.candle2.high, x.candle2.low, col, 0.03);
+  // All confirmed FVG GAP ZONES dimmed
+  candidates.filter(x => x.has_fvg && x.gap_top != null).forEach(x => {
+    const col = x.fvg_type === 'bullish' ? 'rgba(90,158,240,0.15)' : 'rgba(240,90,126,0.15)';
+    const ss = x.candle_nm1?.time || x.candle_n.time;
+    const se = x.candle_np1 ? x.candle_np1.time + 60 : x.candle_n.time + 180;
+    drawBox(ss, se, x.gap_top, x.gap_bottom, col, 0.04);
   });
 
-  if (!c.candle2) return;
-  const t2 = c.candle2.time;
+  const tn  = c.candle_n.time;
+  const tnm1 = c.candle_nm1?.time;
+  const tnp1 = c.candle_np1?.time;
 
-  // Highlight the 3-candle window
-  const colBright = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' :
-                    c.fvg_type === 'bearish' ? 'rgba(240,90,126,0.9)' : 'rgba(200,200,200,0.5)';
+  // Mark the 3 candles with vertical lines
+  if (tnm1) drawVerticalLine(tnm1, 'rgba(255,220,80,0.3)');
+  drawVerticalLine(tn, 'rgba(255,220,80,0.6)');
+  if (tnp1) drawVerticalLine(tnp1, 'rgba(255,220,80,0.3)');
 
-  // Candle N-1 marker
-  if (c.candle1_time) drawVerticalLine(c.candle1_time, 'rgba(255,220,80,0.4)');
-  // Candle N (breakout) — full box highlight
-  drawBox(t2, t2 + 60, c.candle2.high, c.candle2.low, colBright, 0.15);
-  // Candle N+1 marker
-  if (c.candle3_time) drawVerticalLine(c.candle3_time, 'rgba(255,220,80,0.4)');
+  // Highlight impulse candle body range
+  const colBright = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.8)'
+                  : c.fvg_type === 'bearish' ? 'rgba(240,90,126,0.8)'
+                  : 'rgba(180,180,180,0.6)';
+  drawBox(tn, tn + 60, c.candle_n.high, c.candle_n.low, colBright, 0.12);
 
-  // If FVG exists, draw the gap as a translucent box
-  if (c.has_fvg) {
-    const gapTop = c.fvg_type === 'bullish' ? c.candle3_low : c.candle1_high;
-    const gapBot = c.fvg_type === 'bullish' ? c.candle1_high : c.candle3_low;
-    const gapCol = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.5)' : 'rgba(240,90,126,0.5)';
-    // Draw gap spanning from N-1 to N+1
-    const spanStart = c.candle1_time || t2 - 120;
-    const spanEnd   = c.candle3_time ? c.candle3_time + 60 : t2 + 180;
-    drawBox(spanStart, spanEnd, gapTop, gapBot, gapCol, 0.2);
+  // Draw the FVG gap zone prominently (spans from N-1 through N+1)
+  if (c.has_fvg && c.gap_top != null) {
+    const gapCol  = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
+    const spanS   = tnm1 || tn - 60;
+    const spanE   = tnp1 ? tnp1 + 60 : tn + 180;
+    drawBox(spanS, spanE, c.gap_top, c.gap_bottom, gapCol, 0.25);
   }
 }
 
@@ -1909,64 +1927,92 @@ class PairServer:
 
     def _debug_fvg(self):
         """
-        Scan recent candles for Fair Value Gap patterns.
-        For each candidate candle (potential breakout), checks FVG conditions
-        between candle[N-1], candle[N], candle[N+1].
-        Returns all candidates with pass/fail and candle details.
+        Run the standalone FVG detector and return full candidate details.
+        Uses fvg.detect() which applies min_gap_pct and impulse_body_pct filters.
         """
         try:
             import pandas as pd
-            import numpy as np
-            from detectors.accumulation import _check_fvg
+            from detectors.fvg import detect as fvg_detect, _check_fvg, DEFAULT_MIN_GAP_PCT, DEFAULT_IMPULSE_BODY_PCT
 
             interval = request.args.get("interval", None)
             cache = {}
             det_interval = interval or self.detector_params.get("accumulation", {}).get("timeframe", "1m")
             df = self._get_df(det_interval, cache)
-            if isinstance(df.columns, pd.MultiIndex):
+
+            if isinstance(df.columns, __import__("pandas").MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             df = df.loc[:, ~df.columns.duplicated()].copy()
-            for col in ['Open','High','Low','Close']:
-                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
-            df = df.dropna(subset=['Open','High','Low','Close'])
+            for col in ["Open","High","Low","Close"]:
+                df[col] = __import__("pandas").to_numeric(df[col].squeeze(), errors="coerce")
+            df = df.dropna(subset=["Open","High","Low","Close"])
 
-            opens  = df['Open'].values.flatten().astype(float)
-            highs  = df['High'].values.flatten().astype(float)
-            lows   = df['Low'].values.flatten().astype(float)
-            closes = df['Close'].values.flatten().astype(float)
+            min_gap_pct      = self.detector_params.get("fvg", {}).get("min_gap_pct",      DEFAULT_MIN_GAP_PCT)
+            impulse_body_pct = self.detector_params.get("fvg", {}).get("impulse_body_pct", DEFAULT_IMPULSE_BODY_PCT)
+            lookback         = self.detector_params.get("fvg", {}).get("lookback",         80)
 
-            # Scan the last 80 candles (leave room for N-1 and N+1)
-            scan_start = max(1, len(df) - 82)
-            scan_end   = len(df) - 2   # stop at last closed so N+1 is also closed
+            result = fvg_detect(df, lookback=lookback, min_gap_pct=min_gap_pct,
+                                impulse_body_pct=impulse_body_pct)
 
-            candidates = []
+            scan_end   = len(df) - 2
+            scan_start = max(1, scan_end - lookback)
+            all_candidates = []
             for i in range(scan_end, scan_start, -1):
-                fvg = _check_fvg(df, i)
-                h1, l1 = highs[i-1], lows[i-1]
-                h3, l3 = highs[i+1], lows[i+1]
-                bullish_fvg = l3 > h1
-                bearish_fvg = h3 < l1
+                fvg = _check_fvg(df, i, min_gap_pct, impulse_body_pct)
+                c_prev = df.iloc[i - 1]
+                c_now  = df.iloc[i]
+                c_next = df.iloc[i + 1]
+                h_prev, l_prev = float(c_prev["High"]), float(c_prev["Low"])
+                h_next, l_next = float(c_next["High"]), float(c_next["Low"])
+                o_now  = float(c_now["Open"])
+                h_now  = float(c_now["High"])
+                l_now  = float(c_now["Low"])
+                c_now_ = float(c_now["Close"])
+                body       = abs(c_now_ - o_now)
+                crange     = h_now - l_now
+                body_ratio = body / crange if crange > 0 else 0
+                avg_p      = (h_now + l_now) / 2.0
+                raw_bull   = l_next - h_prev
+                raw_bear   = l_prev - h_next
+                has_raw_gap = raw_bull > 0 or raw_bear > 0
+                fvg_type_raw = "bullish" if raw_bull > 0 else ("bearish" if raw_bear > 0 else None)
+                gap_size_raw = max(raw_bull, raw_bear)
+                gap_pct_raw  = gap_size_raw / avg_p if avg_p > 0 else 0
 
-                candidates.append({
-                    "candle_idx":   i,
-                    "has_fvg":      fvg is not None,
-                    "fvg_type":     fvg["fvg_type"] if fvg else None,
-                    "candle1_time": int(df.index[i-1].timestamp()),
-                    "candle1_high": float(h1),
-                    "candle1_low":  float(l1),
-                    "candle2": {
+                reject_reason = None
+                if not has_raw_gap:
+                    reject_reason = "no gap (wicks overlap)"
+                elif gap_pct_raw < min_gap_pct:
+                    reject_reason = f"gap too small ({gap_pct_raw*100:.4f}% < min {min_gap_pct*100:.4f}%)"
+                elif fvg_type_raw == "bullish" and c_now_ <= o_now:
+                    reject_reason = "gap bullish but candle N is bearish"
+                elif fvg_type_raw == "bearish" and c_now_ >= o_now:
+                    reject_reason = "gap bearish but candle N is bullish"
+                elif body_ratio < impulse_body_pct:
+                    reject_reason = f"impulse body {body_ratio*100:.1f}% < {impulse_body_pct*100:.0f}%"
+
+                all_candidates.append({
+                    "candle_idx":    i,
+                    "has_fvg":       fvg is not None,
+                    "fvg_type":      fvg["fvg_type"] if fvg else fvg_type_raw,
+                    "reject_reason": reject_reason,
+                    "gap_top":       fvg["top"]     if fvg else None,
+                    "gap_bottom":    fvg["bottom"]  if fvg else None,
+                    "gap_pct":       fvg["gap_pct"] if fvg else round(gap_pct_raw, 8),
+                    "raw_bull_gap":  round(raw_bull, 6),
+                    "raw_bear_gap":  round(raw_bear, 6),
+                    "body_ratio":    round(body_ratio, 3),
+                    "candle_n": {
                         "time":  int(df.index[i].timestamp()),
-                        "open":  float(opens[i]),
-                        "high":  float(highs[i]),
-                        "low":   float(lows[i]),
-                        "close": float(closes[i]),
+                        "open":  o_now, "high": h_now,
+                        "low":   l_now, "close": c_now_,
                     },
-                    "candle3_time": int(df.index[i+1].timestamp()),
-                    "candle3_high": float(h3),
-                    "candle3_low":  float(l3),
-                    "gap_check": {
-                        "bullish_condition": f"low[N+1] {l3:.5f} > high[N-1] {h1:.5f} = {bullish_fvg}",
-                        "bearish_condition": f"high[N+1] {h3:.5f} < low[N-1] {l1:.5f} = {bearish_fvg}",
+                    "candle_nm1": {
+                        "time": int(df.index[i-1].timestamp()),
+                        "high": h_prev, "low": l_prev,
+                    },
+                    "candle_np1": {
+                        "time": int(df.index[i+1].timestamp()),
+                        "high": h_next, "low": l_next,
                     },
                 })
 
@@ -1976,14 +2022,17 @@ class PairServer:
                 for idx, r in df.iterrows()
             ]
 
-            total  = len(candidates)
-            passed = sum(1 for c in candidates if c["has_fvg"])
             return jsonify({
-                "pair":       self.pair_id,
-                "total":      total,
-                "passed":     passed,
-                "candidates": candidates,
-                "candles":    candles_out,
+                "pair":             self.pair_id,
+                "interval":         det_interval,
+                "min_gap_pct":      min_gap_pct,
+                "impulse_body_pct": impulse_body_pct,
+                "total":            result["total"],
+                "passed":           result["found"],
+                "bullish":          result["bullish"],
+                "bearish":          result["bearish"],
+                "candidates":       all_candidates,
+                "candles":          candles_out,
             })
         except Exception as e:
             import traceback
