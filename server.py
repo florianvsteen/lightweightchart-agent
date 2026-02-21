@@ -889,6 +889,13 @@ class PairServer:
         print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
         while True:
             try:
+                # ── Weekend halt: Fri 23:00 – Mon 01:00 UTC ───────────────
+                from detectors.accumulation import is_weekend_halt
+                if is_weekend_halt():
+                    print(f"[{self.pair_id}] Weekend halt — skipping detection")
+                    time.sleep(DETECTION_INTERVAL)
+                    continue
+
                 with self._detection_lock:
                     cache = {}
                     results = self._run_detectors(cache)
