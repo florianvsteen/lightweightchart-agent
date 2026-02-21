@@ -10,14 +10,30 @@ Rules:
   - SLOPE must be near flat (linear regression on closes)
   - CHOPPINESS must be high (price reverses up/down frequently)
   - ADX must be below adx_threshold (default 25) — no directional strength
-  - V-SHAPE check rejects windows where extreme is in inner 40-60%
   - Box boundaries use candle BODIES (open/close), not wicks
-  - Prefers TIGHTER boxes (smaller range) over larger ones
+
+Selection priority (among all passing zones):
+  1. Zones with ADX < 10 are preferred (ultra-low directional strength)
+  2. Among equal ADX tiers, LOWEST SLOPE wins
+  (previously: tightest range_pct won — replaced by slope-first selection)
+
+Breakout validation — FAIR VALUE GAP:
+  When price breaks out of the box, the system checks for an FVG
+  (Fair Value Gap) on the breakout candle. An FVG exists when there
+  is an open gap between:
+    - The wick of the candle BEFORE the breakout (candle[-3])
+    - The wick of the candle AFTER the breakout  (candle[-1], forming)
+  If no FVG exists, the zone is considered invalid on breakout.
+  The breakout candle itself (candle[-2]) is returned as fvg_candle
+  for rendering as a filled zone on the chart.
 
 Session hours in UTC:
   Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
   London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
   New York: 13:00 – 19:00 UTC  (14:00 – 20:00 CET)
+
+Weekend halt:
+  Friday  23:00 UTC → Sunday 01:00 UTC  — returns None (no detection)
 """
 
 import numpy as np
@@ -32,7 +48,23 @@ SESSION_WINDOWS = {
 }
 
 
+def is_weekend_halt() -> bool:
+    """Return True if we are in the Fri 23:00 – Mon 01:00 UTC weekend halt window."""
+    now  = datetime.now(timezone.utc)
+    dow  = now.weekday()   # 0=Mon … 4=Fri … 5=Sat … 6=Sun
+    hour = now.hour
+    if dow == 4 and hour >= 23:   # Friday ≥ 23:00
+        return True
+    if dow == 5:                   # All of Saturday
+        return True
+    if dow == 6 and hour < 1:     # Sunday before 01:00
+        return True
+    return False
+
+
 def get_current_session():
+    if is_weekend_halt():
+        return None
     hour = datetime.now(timezone.utc).hour
     if SESSION_WINDOWS["new_york"][0] <= hour < SESSION_WINDOWS["new_york"][1]:
         return "new_york"
@@ -70,7 +102,6 @@ def _is_v_shape(closes: np.ndarray) -> bool:
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
     """Calculate ADX. Auto-reduces period for short windows. Returns float or None."""
     n = len(closes)
-    # Auto-reduce period so short windows still get an ADX value
     while period > 5 and n < period * 2 + 1:
         period = max(5, period - 2)
     if n < period * 2 + 1:
@@ -118,6 +149,57 @@ def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 
     return float(adx_arr[-1])
 
 
+def _check_fvg(df, breakout_idx: int) -> dict | None:
+    """
+    Check for a Fair Value Gap around the breakout candle.
+
+    Candles involved (using df index):
+      candle_before  = df.iloc[breakout_idx - 1]   (candle 1)
+      breakout_candle = df.iloc[breakout_idx]        (candle 2 — the breakout)
+      candle_after   = df.iloc[breakout_idx + 1]    (candle 3)
+
+    FVG = open gap between wick of candle 1 and wick of candle 3.
+    Bullish FVG: low of candle 3 > high of candle 1  (gap above)
+    Bearish FVG: high of candle 3 < low of candle 1  (gap below)
+
+    Returns candle data dict for fvg_candle if FVG exists, else None.
+    """
+    try:
+        n = len(df)
+        if breakout_idx < 1 or breakout_idx + 1 >= n:
+            return None
+
+        c1 = df.iloc[breakout_idx - 1]
+        c2 = df.iloc[breakout_idx]
+        c3 = df.iloc[breakout_idx + 1]
+
+        h1 = float(c1['High'])
+        l1 = float(c1['Low'])
+        h3 = float(c3['High'])
+        l3 = float(c3['Low'])
+
+        bullish_fvg = l3 > h1   # gap above
+        bearish_fvg = h3 < l1   # gap below
+
+        if not bullish_fvg and not bearish_fvg:
+            return None
+
+        # Return the breakout candle as the FVG zone candle
+        return {
+            "fvg_type":   "bullish" if bullish_fvg else "bearish",
+            "open":  float(c2['Open']),
+            "high":  float(c2['High']),
+            "low":   float(c2['Low']),
+            "close": float(c2['Close']),
+            "time":  int(df.index[breakout_idx].timestamp()),
+            # Zone bounds = full candle range (high to low) for rendering
+            "top":    float(c2['High']),
+            "bottom": float(c2['Low']),
+        }
+    except Exception:
+        return None
+
+
 def detect(
     df,
     lookback: int = 40,
@@ -141,6 +223,9 @@ def detect(
         new_york_range_pct: Max box height during New York session.
     """
     try:
+        if is_weekend_halt():
+            return {"detector": "accumulation", "status": "weekend", "is_active": False}
+
         if len(df) < min_candles + 5:
             return None
 
@@ -172,19 +257,15 @@ def detect(
         last_body_low     = min(last_closed_open, last_closed_close)
 
         scan_start = max(0, len(df) - lookback)
-
-        best_found     = None   # tightest found zone
-        best_potential = None   # tightest potential zone
-
-        # Try all window sizes from min_candles up to lookback.
-        # Window MUST end at the last closed candle — no historical zones.
-        # As price stays in the box the window grows each cycle.
-        # Prefer SMALLER windows with tighter ranges over larger ones.
         last_closed_idx = len(df) - 2
+
+        # Collect all candidate zones with their slope for best-selection
+        found_candidates     = []
+        potential_candidates = []
+
         for window_size in range(min_candles, lookback + 1):
             slope_limit = (threshold_pct * 0.10) / window_size
 
-            # Start index so that window ends exactly at last closed candle
             i = last_closed_idx - window_size + 1
             if i < 0 or i < scan_start:
                 continue
@@ -202,7 +283,6 @@ def detect(
             if avg_p == 0:
                 continue
 
-            # Body boundaries — wicks excluded
             body_highs = np.maximum(opens, closes)
             body_lows  = np.minimum(opens, closes)
             h_max = float(body_highs.max())
@@ -217,13 +297,12 @@ def detect(
             if slope >= slope_limit:
                 continue
 
-            # ADX filter — reject if market has directional strength
             adx_val = _adx(highs, lows, closes)
             if adx_val is not None and adx_val > adx_threshold:
                 continue
 
-            chop  = _choppiness(closes)
-            end_i = i + window_size - 1
+            chop      = _choppiness(closes)
+            end_i     = i + window_size - 1
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
             zone = {
@@ -235,32 +314,55 @@ def detect(
                 "bottom":    l_min,
                 "is_active": is_active,
                 "range_pct": round(range_pct, 6),
+                "slope":     round(slope, 8),
                 "adx":       round(adx_val, 2) if adx_val is not None else None,
+                "_window_start_idx": i,
             }
 
             if chop >= CHOP_FOUND:
                 zone["status"] = "found"
-                # Keep tightest (smallest range) found zone
-                if best_found is None or range_pct < best_found["range_pct"]:
-                    best_found = zone
-
+                found_candidates.append(zone)
             elif chop >= CHOP_POTENTIAL:
                 zone["status"] = "potential"
-                if best_potential is None or range_pct < best_potential["range_pct"]:
-                    best_potential = zone
+                potential_candidates.append(zone)
 
-        if best_found is not None:
-            # If price already broke out, clear the zone and start looking again
-            if not best_found["is_active"]:
-                return {"detector": "accumulation", "status": "looking", "is_active": False}
-            return best_found
+        def _best(candidates):
+            """Select best zone: ADX<10 preferred, then lowest slope."""
+            if not candidates:
+                return None
+            low_adx = [z for z in candidates if z["adx"] is not None and z["adx"] < 10]
+            pool = low_adx if low_adx else candidates
+            return min(pool, key=lambda z: z["slope"])
 
-        if best_potential is not None:
-            if not best_potential["is_active"]:
-                return {"detector": "accumulation", "status": "looking", "is_active": False}
-            return best_potential
+        best_found     = _best(found_candidates)
+        best_potential = _best(potential_candidates)
 
-        return {"detector": "accumulation", "status": "looking", "is_active": False}
+        # ── Determine which zone to return ────────────────────────────────
+        candidate = best_found if best_found is not None else best_potential
+        if candidate is None:
+            return {"detector": "accumulation", "status": "looking", "is_active": False}
+
+        # Active zone — price still inside box
+        if candidate["is_active"]:
+            # Remove internal bookkeeping key before returning
+            candidate.pop("_window_start_idx", None)
+            return candidate
+
+        # Price broke out — validate with FVG
+        # The breakout candle is the last closed candle (index len(df)-2)
+        # candle_before = len(df)-3, candle_after = len(df)-1 (forming, still valid for wick)
+        breakout_idx = len(df) - 2
+        fvg = _check_fvg(df, breakout_idx)
+
+        if fvg is None:
+            # No FVG → zone is invalid, start looking again
+            return {"detector": "accumulation", "status": "looking", "is_active": False}
+
+        # FVG confirmed — return zone with fvg_candle attached
+        candidate.pop("_window_start_idx", None)
+        candidate["is_active"] = False
+        candidate["fvg_candle"] = fvg
+        return candidate
 
     except Exception as e:
         print(f"[accumulation] Detection error: {e}")
