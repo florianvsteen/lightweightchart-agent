@@ -573,11 +573,11 @@ async function fetchReplay(idx) {
     renderSummary(replayData);
     renderWindowList(replayData.windows || []);
     updateTopbarAccum(replayData, true);
-    if (selectedWindow == null && replayData.best_zone) drawWindowOverlay(replayData.best_zone);
+    if (selectedWindow == null && replayData.best_zone) drawWindowOverlay(replayData.best_zone, replayData);
     else if (selectedWindow != null) {
       const w = (replayData.windows || []).find(x => x.window === selectedWindow);
-      drawWindowOverlay(w || null);
-    } else drawWindowOverlay(null);
+      drawWindowOverlay(w || null, replayData);
+    } else drawWindowOverlay(null, replayData);
   } catch(e) {
     if (e.name !== 'AbortError') console.error('Replay fetch:', e);
   } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
@@ -612,22 +612,67 @@ function renderSummary(d) {
     '<div class="stat-val ' + s.cls + '">' + s.val + '</div></div>'
   ).join('');
 
-  const reasons  = d.rejection_summary || {};
-  const sorted   = Object.entries(reasons).sort((a,b) => b[1]-a[1]);
-  const maxCnt   = sorted.length ? sorted[0][1] : 1;
-  const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', v_shape:'#666' };
-  document.getElementById('reject-list').innerHTML =
-    '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">Rejection Reasons</div>' +
-    sorted.map(([key, cnt]) =>
-      '<div class="reject-row ' + key + '">' +
-        '<div style="display:flex;justify-content:space-between">' +
-          '<span class="reject-label">' + key + '</span>' +
-          '<span class="reject-count">' + cnt + '</span>' +
+  // ── Breakout candle block ──────────────────────────────────────────────────
+  const bo = d.breakout_candle;
+  const cf = d.confirm_candle;
+  const ac = d.accum_last_candle;
+  const bHtml = bo ? (() => {
+    const isBull = bo.close > bo.open;
+    const bCol   = isBull ? 'var(--pass)' : 'var(--red)';
+    const bDir   = isBull ? '▲ BULL' : '▼ BEAR';
+
+    // FVG check summary across all passing windows
+    const passingWindows = (d.windows || []).filter(w => w.pass);
+    const fvgPassing = passingWindows.filter(w => w.fvg_valid);
+    const fvgStatus  = passingWindows.length === 0 ? 'no passing windows'
+                     : fvgPassing.length > 0 ? fvgPassing.length + ' / ' + passingWindows.length + ' windows confirmed FVG'
+                     : '✗ 0 / ' + passingWindows.length + ' windows — no FVG';
+    const fvgCol = fvgPassing.length > 0 ? 'var(--pass)' : 'var(--red)';
+
+    return '<div style="margin:10px 0;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
+      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-3])</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:6px">' +
+        '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:5px 6px">' +
+          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N-1 (accum last)</div>' +
+          '<div style="font-size:10px">H ' + (ac ? fmtPrice(ac.high) : '—') + '</div>' +
+          '<div style="font-size:10px">L ' + (ac ? fmtPrice(ac.low)  : '—') + '</div>' +
         '</div>' +
-        '<div class="reject-bar"><div class="reject-bar-fill" style="width:' +
-          Math.round(cnt/maxCnt*100) + '%;background:' + (colorMap[key]||'#666') + '"></div></div>' +
-      '</div>'
-    ).join('');
+        '<div style="background:var(--bg);border:1px solid ' + bCol + ';border-radius:3px;padding:5px 6px">' +
+          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N breakout</div>' +
+          '<div style="font-size:10px;color:' + bCol + ';font-weight:700">' + bDir + '</div>' +
+          '<div style="font-size:10px">O ' + fmtPrice(bo.open)  + '</div>' +
+          '<div style="font-size:10px">C ' + fmtPrice(bo.close) + '</div>' +
+          '<div style="font-size:10px">H ' + fmtPrice(bo.high)  + ' L ' + fmtPrice(bo.low) + '</div>' +
+        '</div>' +
+        '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:5px 6px">' +
+          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N+1 confirm (df[-2])</div>' +
+          '<div style="font-size:10px">H ' + (cf ? fmtPrice(cf.high) : '—') + '</div>' +
+          '<div style="font-size:10px">L ' + (cf ? fmtPrice(cf.low)  : '—') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:' + fvgCol + '">' + fvgStatus + '</div>' +
+    '</div>';
+  })() : '';
+
+  document.getElementById('reject-list').innerHTML =
+    bHtml +
+    '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;margin-top:10px">Rejection Reasons</div>' +
+    (() => {
+      const reasons  = d.rejection_summary || {};
+      const sorted   = Object.entries(reasons).sort((a,b) => b[1]-a[1]);
+      const maxCnt   = sorted.length ? sorted[0][1] : 1;
+      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', v_shape:'#666' };
+      return sorted.map(([key, cnt]) =>
+        '<div class="reject-row ' + key + '">' +
+          '<div style="display:flex;justify-content:space-between">' +
+            '<span class="reject-label">' + key + '</span>' +
+            '<span class="reject-count">' + cnt + '</span>' +
+          '</div>' +
+          '<div class="reject-bar"><div class="reject-bar-fill" style="width:' +
+            Math.round(cnt/maxCnt*100) + '%;background:' + (colorMap[key]||'#666') + '"></div></div>' +
+        '</div>'
+      ).join('');
+    })();
 }
 
 function getActiveWindows() {
@@ -640,18 +685,35 @@ function renderWindowList(windows, filter) {
     if (!filter) return true;
     if (filter === 'pass') return w.pass;
     if (filter === 'fail') return !w.pass;
+    if (filter === 'fvg')  return w.fvg_valid;
+    if (filter === 'breakout') return w.broke_out;
+    if (filter === 'active')   return w.is_active;
     return (w.reject || '').toLowerCase().includes(filter);
   });
   document.getElementById('window-list').innerHTML = filtered.map(w => {
     const cls   = w.pass ? 'pass-row' : 'fail-row';
     const stCls = w.pass ? 'pass' : 'fail';
     const label = w.pass ? '✓ pass' : (w.reject||'?').split(' ')[0];
-    const slp   = w.slope != null ? 'slp ' + (w.slope.toFixed ? w.slope.toFixed(6) : w.slope) : '';
+
+    // Breakout + FVG indicator
+    let boTag = '';
+    if (w.pass) {
+      if (w.is_active) {
+        boTag = '<span style="font-size:9px;color:var(--yellow);margin-left:4px">● active</span>';
+      } else if (w.broke_out) {
+        const fvgCol = w.fvg_valid ? 'var(--pass)' : 'var(--red)';
+        const fvgTxt = w.fvg_valid ? '✓ FVG' : '✗ FVG';
+        const dir    = w.broke_up ? '↑' : '↓';
+        boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
+                '<span style="font-size:9px;color:' + fvgCol + ';margin-left:4px">' + fvgTxt + '</span>';
+      }
+    }
+
     return '<div class="win-row ' + cls + '" data-win="' + w.window + '" onclick="selectWindow(' + w.window + ')">' +
       '<span class="win-num">' + w.window + '</span>' +
       '<span class="win-status ' + stCls + '">' + label + '</span>' +
-      '<span class="win-extra">' + slp + '</span>' +
-      '<span class="win-chop">chop ' + w.chop + '</span>' +
+      boTag +
+      '<span class="win-chop" style="margin-left:auto">chop ' + w.chop + '</span>' +
       '</div>';
   }).join('');
   if (selectedWindow != null) {
@@ -704,15 +766,40 @@ function selectWindow(windowSize) {
         (r.limit?'<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: '+r.limit+'</div>':'');
   }).join('');
 
-  drawWindowOverlay(w);
+  drawWindowOverlay(w, replayMode ? replayData : liveData);
 }
 
-function drawWindowOverlay(w) {
+function drawWindowOverlay(w, liveOrReplayData) {
   clearOverlays();
   if (!w?.start_ts) return;
   const col  = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
   const fill = w.pass ? 0.06 : 0.04;
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
+
+  // If the window has a breakout with FVG data, draw those candles too
+  const d = liveOrReplayData || (replayMode ? replayData : liveData);
+  if (!d) return;
+  const bo = d.breakout_candle;
+  const cf = d.confirm_candle;
+  const ac = d.accum_last_candle;
+  if (!bo) return;
+
+  // Vertical markers for the 3 FVG candles
+  if (ac) drawVLine(ac.time, 'rgba(240,196,90,0.25)');
+  drawVLine(bo.time, 'rgba(240,196,90,0.7)');
+  if (cf) drawVLine(cf.time, 'rgba(240,196,90,0.35)');
+
+  // Breakout candle body highlight
+  const bCol = bo.close > bo.open ? 'rgba(90,158,240,0.8)' : 'rgba(240,90,126,0.8)';
+  drawBox(bo.time, bo.time + 60, bo.high, bo.low, bCol, 0.12);
+
+  // FVG gap zone if confirmed
+  if (w.fvg?.top != null) {
+    const gCol = w.fvg.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
+    const spanS = ac?.time ?? bo.time - 60;
+    const spanE = cf ? cf.time + 60 : bo.time + 180;
+    drawBox(spanS, spanE, w.fvg.top, w.fvg.bottom, gCol, 0.30);
+  }
 }
 
 // Replay
@@ -893,16 +980,42 @@ function renderZoneRow(z, idx, isActive) {
   '</div>';
 }
 
+function scrollToTime(ts) {
+  // Scroll the chart so the given timestamp is centred in view.
+  // LightweightCharts v4 exposes setVisibleRange on the time scale.
+  if (!ts) return;
+  const t = shiftTime(ts);
+  // Show a window of ±40 candles worth of seconds around the target.
+  // We derive the candle interval from the active dataset.
+  const src = (currentMode === 'sd' && sdData?.candles)   ? sdData.candles
+            : (currentMode === 'fvg' && fvgData?.candles) ? fvgData.candles
+            : liveData?.candles;
+  let intervalSecs = 60; // default 1m
+  if (src && src.length > 1) {
+    intervalSecs = src[1].time - src[0].time;
+  }
+  const window = intervalSecs * 40;
+  try {
+    chart.timeScale().setVisibleRange({ from: t - window, to: t + window });
+  } catch(e) { /* ignore if chart not ready */ }
+}
+
 function selectZone(idx, isActive) {
   document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
   const el = document.getElementById('zone-row-' + idx);
-  if (el) el.classList.add('selected-zone');
+  if (el) {
+    el.classList.add('selected-zone');
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
   if (!sdData?.candidates) return;
   const active   = sdData.candidates.filter(c => c.is_active);
   const rejected = sdData.candidates.filter(c => !c.is_active);
   const z = idx < 1000 ? active[idx] : rejected[idx - 1000];
   if (!z) return;
+
+  // Scroll chart to the zone's candle
+  scrollToTime(z.start);
 
   clearOverlays();
 
@@ -919,7 +1032,7 @@ function selectZone(idx, isActive) {
   const endTs = z.end || (z.start + 3600);
   drawBox(z.start, endTs, z.top, z.bottom, selCol, 0.15);
 
-  // Yellow line on the indecision candle timestamp
+  // Yellow vertical marker on the indecision candle
   if (z.start) drawVLine(z.start, 'rgba(240,196,90,0.6)');
 }
 
@@ -1059,7 +1172,8 @@ function selectFvg(idx) {
   const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
   if (!c?.candle_n) return;
 
-  clearOverlays();
+  // Scroll chart to the FVG impulse candle
+  scrollToTime(c.candle_n.time);
 
   // All confirmed FVG gap zones dimmed
   withFvg.forEach(x => {
