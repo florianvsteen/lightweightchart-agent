@@ -394,30 +394,50 @@ function clearOverlays() {
 
 function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   if (top == null || bottom == null || top === bottom) return;
-  const fillColor = lineColor.replace(/rgba?\(([^)]+)\)/, (_, g) => {
-    const parts = g.split(',').map(x => x.trim());
-    return `rgba(${parts[0]},${parts[1]},${parts[2]},${fillAlpha})`;
+
+  const toRgba = (color, alpha) => color.replace(/rgba?\(([^)]+)\)/, (_, g) => {
+    const p = g.split(',').map(x => x.trim());
+    return 'rgba(' + p[0] + ',' + p[1] + ',' + p[2] + ',' + alpha + ')';
   });
-  const opts = { color: lineColor, lineWidth: 1, lineStyle: 0,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
   const s = shiftTime(startTs), e = shiftTime(endTs);
-  const tl = chart.addLineSeries(opts);
-  const bl = chart.addLineSeries(opts);
-  const ll = chart.addLineSeries(opts);
-  const rl = chart.addLineSeries(opts);
+
+  const lineOpts = { lineWidth: 1, lineStyle: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
+  // Top & bottom horizontal borders
+  const tl = chart.addLineSeries({ ...lineOpts, color: lineColor });
+  tl.setData([{ time: s, value: top }, { time: e, value: top }]);
+
+  const bl = chart.addLineSeries({ ...lineOpts, color: lineColor });
+  bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
+
+  // Left & right vertical borders using histogram series.
+  // A histogram bar is drawn as a vertical bar from 0 to value — we use
+  // base=bottom and value=top so it spans exactly the box height.
+  const histOpts = {
+    base: bottom,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    color: lineColor,
+  };
+  const lh = chart.addHistogramSeries({ ...histOpts });
+  lh.setData([{ time: s, value: top }]);
+
+  const rh = chart.addHistogramSeries({ ...histOpts });
+  rh.setData([{ time: e, value: top }]);
+
+  // Fill band using baseline series
   const fl = chart.addBaselineSeries({
     baseValue: { type: 'price', price: bottom },
-    topFillColor1: fillColor, topFillColor2: fillColor, topLineColor: 'rgba(0,0,0,0)',
+    topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
+    topLineColor: 'rgba(0,0,0,0)',
     bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
     bottomLineColor: 'rgba(0,0,0,0)', lineWidth: 0,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
-  tl.setData([{time:s,value:top},    {time:e,value:top}]);
-  bl.setData([{time:s,value:bottom}, {time:e,value:bottom}]);
-  ll.setData([{time:s,value:top},    {time:s,value:bottom}]);
-  rl.setData([{time:e,value:top},    {time:e,value:bottom}]);
-  fl.setData([{time:s,value:top},    {time:e,value:top}]);
-  overlaySeriesList.push(tl, bl, ll, rl, fl);
+  fl.setData([{ time: s, value: top }, { time: e, value: top }]);
+
+  overlaySeriesList.push(tl, bl, lh, rh, fl);
 }
 
 function drawVLine(ts, color) {
