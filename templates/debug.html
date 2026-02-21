@@ -381,9 +381,69 @@ window.addEventListener('resize', () => chart.applyOptions({
   width: chartContainer.clientWidth, height: chartContainer.clientHeight,
 }));
 chart.subscribeClick(param => {
-  if (!replayMode || !param.time || !liveData || currentMode !== 'accum') return;
-  const idx = liveData.candles.findIndex(c => c.time === param.time);
-  if (idx >= 0) seekTo(idx + 1);
+  if (!param.time) return;
+
+  if (replayMode && liveData && currentMode === 'accum') {
+    // Accumulation replay: click candle to seek
+    const idx = liveData.candles.findIndex(c => c.time === param.time);
+    if (idx >= 0) seekTo(idx + 1);
+    return;
+  }
+
+  if (currentMode === 'sd' && sdData?.candidates) {
+    // SD mode: click a candle → find the zone whose start timestamp is closest
+    // to the clicked time and select it in the panel.
+    const clickedTs = param.time - TZ_OFFSET; // undo the shiftTime applied to chart
+    const candidates = sdData.candidates;
+    let bestIdx  = -1;
+    let bestIsActive = false;
+    let bestDist = Infinity;
+
+    const active   = candidates.filter(c => c.is_active);
+    const rejected = candidates.filter(c => !c.is_active);
+
+    active.forEach((z, i) => {
+      const dist = Math.abs((z.start || 0) - clickedTs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; bestIsActive = true; }
+    });
+    rejected.forEach((z, i) => {
+      const dist = Math.abs((z.start || 0) - clickedTs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i + 1000; bestIsActive = false; }
+    });
+
+    // Only select if click was within ~5 candle-widths of a zone start
+    const src = sdData.candles;
+    const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 1800;
+    if (bestIdx >= 0 && bestDist < intervalSecs * 5) {
+      selectZone(bestIdx, bestIsActive);
+    }
+    return;
+  }
+
+  if (currentMode === 'fvg' && fvgData?.candidates) {
+    // FVG mode: click a candle → find the FVG whose impulse candle is closest
+    const clickedTs = param.time - TZ_OFFSET;
+    const withFvg    = fvgData.candidates.filter(c => c.has_fvg);
+    const withoutFvg = fvgData.candidates.filter(c => !c.has_fvg);
+    let bestIdx  = -1;
+    let bestDist = Infinity;
+
+    withFvg.forEach((c, i) => {
+      const dist = Math.abs((c.candle_n?.time || 0) - clickedTs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    });
+    withoutFvg.forEach((c, i) => {
+      const dist = Math.abs((c.candle_n?.time || 0) - clickedTs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i + 1000; }
+    });
+
+    const src = fvgData.candles;
+    const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
+    if (bestIdx >= 0 && bestDist < intervalSecs * 5) {
+      selectFvg(bestIdx);
+    }
+    return;
+  }
 });
 
 // ── Overlay helpers ───────────────────────────────────────────────────────────
@@ -1014,9 +1074,6 @@ function selectZone(idx, isActive) {
   const z = idx < 1000 ? active[idx] : rejected[idx - 1000];
   if (!z) return;
 
-  // Scroll chart to the zone's candle
-  scrollToTime(z.start);
-
   clearOverlays();
 
   // Redraw all active zones dimmed
@@ -1164,16 +1221,16 @@ function renderFvgRow(c, idx) {
 function selectFvg(idx) {
   document.querySelectorAll('.fvg-row').forEach(r => r.classList.remove('selected-fvg'));
   const el = document.getElementById('fvg-row-' + idx);
-  if (el) el.classList.add('selected-fvg');
+  if (el) {
+    el.classList.add('selected-fvg');
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
   if (!fvgData?.candidates) return;
   const withFvg    = fvgData.candidates.filter(c => c.has_fvg);
   const withoutFvg = fvgData.candidates.filter(c => !c.has_fvg);
   const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
   if (!c?.candle_n) return;
-
-  // Scroll chart to the FVG impulse candle
-  scrollToTime(c.candle_n.time);
 
   // All confirmed FVG gap zones dimmed
   withFvg.forEach(x => {
