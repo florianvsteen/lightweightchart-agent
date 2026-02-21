@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 
 # ── Tuneable defaults ─────────────────────────────────────────────────────────
-DEFAULT_MIN_GAP_PCT      = 0.0001   # 0.01% of price — minimum meaningful gap
+DEFAULT_MIN_GAP_PCT      = 0.0005   # 0.05% of price ≈ 5 pips on GBPUSD — minimum meaningful gap
 DEFAULT_IMPULSE_BODY_PCT = 0.60     # impulse candle body must be ≥ 60% of its range
 DEFAULT_LOOKBACK         = 80       # how many closed candles to scan
 
