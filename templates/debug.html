@@ -463,15 +463,13 @@ function switchMode(mode) {
   } else if (mode === 'sd') {
     document.getElementById('tag-session').textContent = 'S/D MODE';
     document.getElementById('tag-info').textContent = currentTF + ' · supply & demand';
-    if (sdData) renderSD(sdData);
-    else { showLoading('sd'); }
-    if (liveData) renderChart(liveData.candles);
+    if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); }
+    else showLoading('sd');
   } else if (mode === 'fvg') {
     document.getElementById('tag-session').textContent = 'FVG MODE';
     document.getElementById('tag-info').textContent = currentTF + ' · fair value gap';
-    if (fvgData) renderFVG(fvgData);
-    else { showLoading('fvg'); }
-    if (liveData) renderChart(liveData.candles);
+    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles); renderFVG(fvgData); }
+    else showLoading('fvg');
   }
 }
 
@@ -782,6 +780,7 @@ async function loadSD() {
       document.getElementById('sd-loading').textContent = '✗ Error: ' + sdData.error;
       return;
     }
+    if (sdData.candles?.length) renderChart(sdData.candles);
     renderSD(sdData);
   } catch(e) {
     document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
@@ -911,6 +910,7 @@ async function loadFVG() {
       document.getElementById('fvg-loading').textContent = '✗ Error: ' + fvgData.error;
       return;
     }
+    if (fvgData.candles?.length) renderChart(fvgData.candles);
     renderFVG(fvgData);
   } catch(e) {
     document.getElementById('fvg-loading').textContent = '✗ Fetch failed: ' + e.message;
