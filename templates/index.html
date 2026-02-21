@@ -74,7 +74,41 @@
         .detector-status.state-offline .indicator { background: #333; }
         .detector-status.state-offline .label-text { color: #444; font-style: italic; }
 
-        /* ── Interval buttons ── */
+        /* ── Weekend closed overlay ── */
+        #weekend-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 10, 12, 0.88);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+        }
+        #weekend-overlay.visible { display: flex; }
+        #weekend-overlay .wk-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #e0e0e0;
+            letter-spacing: 0.08em;
+        }
+        #weekend-overlay .wk-sub {
+            font-size: 0.8rem;
+            color: #555;
+        }
+        #weekend-overlay .wk-countdown {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #3a3a5a;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.05em;
+        }
+        #weekend-overlay .wk-hint {
+            font-size: 0.68rem;
+            color: #333;
+        }
         #interval-bar {
             display: flex;
             gap: 4px;
@@ -179,6 +213,14 @@
 
     <div id="chart-container">
         <div id="chart"></div>
+    </div>
+
+    <!-- Weekend closed overlay -->
+    <div id="weekend-overlay">
+        <div class="wk-title">⛔ Market Closed</div>
+        <div class="wk-sub">Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC</div>
+        <div class="wk-countdown" id="wk-countdown">00:00:00</div>
+        <div class="wk-hint">Resumes Monday 01:00 UTC (Asian session open)</div>
     </div>
 
     <script>
@@ -312,18 +354,49 @@
 
         const STATUS_CONFIG = {
             // accumulation
-            looking:        { label: 'Looking for accumulation',      css: 'state-looking'   },
-            potential:      { label: 'Potential accumulation forming', css: 'state-potential' },
-            found:          { label: 'Accumulation found',             css: 'state-found'     },
-            confirmed:      { label: 'Accumulation confirmed — alerting', css: 'state-found'  },
-            out_of_session: { label: 'Out of session',                 css: 'state-offline'   },
+            looking:         { label: 'Looking for accumulation',         css: 'state-looking'   },
+            potential:       { label: 'Potential accumulation forming',    css: 'state-potential' },
+            found:           { label: 'Accumulation found',                css: 'state-found'     },
+            confirmed:       { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
+            out_of_session:  { label: 'Out of session',                    css: 'state-offline'   },
+            weekend_closed:  { label: 'Market closed — weekend',           css: 'state-offline'   },
             // supply_demand
-            sd_found:       { label: 'Supply/Demand zones found',        css: 'state-found'    },
-            sd_none:        { label: 'No S/D zones found',               css: 'state-looking'  },
-            sd_misaligned:  { label: 'Bias misaligned — not looking',    css: 'state-offline'  },
-            sd_bullish:     { label: 'Bias bullish — seeking demand',    css: 'state-found'    },
-            sd_bearish:     { label: 'Bias bearish — seeking supply',    css: 'state-found'    },
+            sd_found:        { label: 'Supply/Demand zones found',         css: 'state-found'    },
+            sd_none:         { label: 'No S/D zones found',                css: 'state-looking'  },
+            sd_misaligned:   { label: 'Bias misaligned — not looking',     css: 'state-offline'  },
+            sd_bullish:      { label: 'Bias bullish — seeking demand',     css: 'state-found'    },
+            sd_bearish:      { label: 'Bias bearish — seeking supply',     css: 'state-found'    },
+            sd_weekend:      { label: 'Market closed — weekend',           css: 'state-offline'  },
         };
+
+        // ── Weekend check (client-side) ───────────────────────────────
+        function isWeekendHalt() {
+            const now = new Date();
+            const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Sat,6=Sun
+            const hour = now.getUTCHours();
+            if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
+            if (dow === 6) return true;                  // All Saturday
+            if (dow === 0 && hour < 1) return true;      // Sun < 01:00
+            return false;
+        }
+
+        function getWeekendCountdown() {
+            // Returns countdown string to Monday 01:00 UTC
+            const now = new Date();
+            const target = new Date(now);
+            // Find next Monday 01:00 UTC
+            const dow = now.getUTCDay();
+            let daysUntilMon = (1 - dow + 7) % 7;
+            if (daysUntilMon === 0) daysUntilMon = 7; // already Monday but halt still active before 01:00
+            target.setUTCDate(target.getUTCDate() + daysUntilMon);
+            target.setUTCHours(1, 0, 0, 0);
+            const diff = target - now;
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
 
         function ensureStatusEl(detectorName) {
             if (statusEls[detectorName]) return statusEls[detectorName];
@@ -351,61 +424,77 @@
         const activeSeries = {};
 
         function renderAccumulation(chart, zone) {
-            const isFound   = zone.status === 'found' || zone.status === 'confirmed';
+            const isFound = zone.status === 'found' || zone.status === 'confirmed';
             // Don't render if status is looking/potential without valid zone coords
             if (!zone.top || !zone.bottom || !zone.start) return [];
+
+            const allSeries = [];
+
+            // ── Accumulation box: grey OUTLINE only (no fill) ────────────────
             const lineAlpha = isFound ? 0.55 : 0.28;
-            const fillAlpha = isFound ? 0.08 : 0.03;
             const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
-            const fillColor = `rgba(200, 200, 200, ${fillAlpha})`;
             const lineStyle = isFound ? 0 : 2;
             const seriesOpts = { color: lineColor, lineWidth: 1, lineStyle,
                 priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-            // Top horizontal line
             const topLine = chart.addLineSeries(seriesOpts);
             topLine.setData([
                 { time: shiftTime(zone.start), value: zone.top },
                 { time: shiftTime(zone.end),   value: zone.top },
             ]);
-
-            // Bottom horizontal line
             const bottomLine = chart.addLineSeries(seriesOpts);
             bottomLine.setData([
                 { time: shiftTime(zone.start), value: zone.bottom },
                 { time: shiftTime(zone.end),   value: zone.bottom },
             ]);
-
-            // Left vertical line
             const leftLine = chart.addLineSeries(seriesOpts);
             leftLine.setData([
                 { time: shiftTime(zone.start), value: zone.top },
                 { time: shiftTime(zone.start), value: zone.bottom },
             ]);
-
-            // Right vertical line
             const rightLine = chart.addLineSeries(seriesOpts);
             rightLine.setData([
                 { time: shiftTime(zone.end), value: zone.top },
                 { time: shiftTime(zone.end), value: zone.bottom },
             ]);
+            allSeries.push(topLine, bottomLine, leftLine, rightLine);
 
-            // Fill
-            const fill = chart.addBaselineSeries({
-                baseValue: { type: 'price', price: zone.bottom },
-                topFillColor1: fillColor, topFillColor2: fillColor,
-                topLineColor: 'rgba(0,0,0,0)',
-                bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
-                bottomLineColor: 'rgba(0,0,0,0)',
-                lineWidth: 0,
-                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-            });
-            fill.setData([
-                { time: shiftTime(zone.start), value: zone.top },
-                { time: shiftTime(zone.end),   value: zone.top },
-            ]);
+            // ── FVG breakout candle zone: filled box (like supply/demand) ───
+            const fvg = zone.fvg_candle;
+            if (fvg && fvg.top != null && fvg.bottom != null && fvg.time != null) {
+                const isBullish = fvg.fvg_type === 'bullish';
+                // Use same colors as supply/demand zones
+                const fvgColor = isBullish ? 'rgba(70, 130, 220, 0.55)' : 'rgba(220, 100, 50, 0.55)';
+                const fvgFill  = isBullish ? 'rgba(70, 130, 220, 0.12)' : 'rgba(220, 100, 50, 0.12)';
+                const fvgOpts = { color: fvgColor, lineWidth: 1, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-            return [topLine, bottomLine, leftLine, rightLine, fill];
+                // Use zone.end as the right edge (current candle) so the box stays visible
+                const fvgEnd = shiftTime(zone.end);
+                const fvgStart = shiftTime(fvg.time);
+
+                const fTop = chart.addLineSeries(fvgOpts);
+                fTop.setData([{ time: fvgStart, value: fvg.top }, { time: fvgEnd, value: fvg.top }]);
+                const fBot = chart.addLineSeries(fvgOpts);
+                fBot.setData([{ time: fvgStart, value: fvg.bottom }, { time: fvgEnd, value: fvg.bottom }]);
+                const fLeft = chart.addLineSeries(fvgOpts);
+                fLeft.setData([{ time: fvgStart, value: fvg.top }, { time: fvgStart, value: fvg.bottom }]);
+                const fRight = chart.addLineSeries(fvgOpts);
+                fRight.setData([{ time: fvgEnd, value: fvg.top }, { time: fvgEnd, value: fvg.bottom }]);
+                const fFill = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: fvg.bottom },
+                    topFillColor1: fvgFill, topFillColor2: fvgFill,
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                fFill.setData([{ time: fvgStart, value: fvg.top }, { time: fvgEnd, value: fvg.top }]);
+                allSeries.push(fTop, fBot, fLeft, fRight, fFill);
+            }
+
+            return allSeries;
         }
 
         function updateBiasBadge(bias) {
@@ -475,7 +564,20 @@
         }
 
         // ── Data Loop ─────────────────────────────────────────────────
+        function checkWeekendOverlay() {
+            const overlay = document.getElementById('weekend-overlay');
+            if (isWeekendHalt()) {
+                overlay.classList.add('visible');
+                document.getElementById('wk-countdown').textContent = getWeekendCountdown();
+                return true;
+            } else {
+                overlay.classList.remove('visible');
+                return false;
+            }
+        }
+
         function loadData() {
+            if (checkWeekendOverlay()) return;  // skip fetch during weekend
             fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.json())
                 .then(data => {
@@ -512,7 +614,9 @@
                                 }
                             } else if (name === 'accumulation') {
                                 const s = result.status;
-                                if (s === 'confirmed') {
+                                if (s === 'weekend') {
+                                    setStatus(name, 'weekend_closed');
+                                } else if (s === 'confirmed') {
                                     setStatus(name, 'confirmed');
                                 } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
@@ -537,8 +641,12 @@
                 .catch(err => console.error('Fetch error:', err));
         }
 
-        setInterval(loadData, 2000);
-        loadData();
+        setInterval(() => {
+            checkWeekendOverlay();
+            if (!isWeekendHalt()) loadData();
+        }, 2000);
+        checkWeekendOverlay();
+        if (!isWeekendHalt()) loadData();
 
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
     </script>
