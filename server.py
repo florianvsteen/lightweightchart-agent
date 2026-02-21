@@ -1036,7 +1036,7 @@ function renderFVG(data) {
         {l:'FVG ✓',    v: data.passed  || 0, c: (data.passed||0) > 0 ? 'green' : 'red'},
         {l:'Bullish',  v: data.bullish || 0, c: 'neutral'},
         {l:'Bearish',  v: data.bearish || 0, c: 'neutral'},
-      ].map(s=>\`<div class="stat-card"><div class="stat-label">\${s.l}</div><div class="stat-val \${s.c}" style="font-size:14px">\${s.v}</div></div>\`).join('')}
+      ].map(s=>\`<div class="stat-card"><div class="stat-label">\${s.l}</div><div class="stat-val \${s.c}" style="font-size:14px">\${s.v}</div></div>`).join('')}
     </div>
     <div style="font-size:9px;color:var(--muted);padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:3px">
       Filters: min gap <strong style="color:var(--orange)">${(minGapPct*100).toFixed(3)}%</strong>
