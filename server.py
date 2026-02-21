@@ -52,24 +52,47 @@ DEBUG_HTML = r"""<!DOCTYPE html>
     --red:     #f05a7e;
     --yellow:  #f0c45a;
     --blue:    #5a9ef0;
+    --orange:  #f0904a;
     --pass:    #5af0c4;
+    --purple:  #a070f0;
   }
   html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
     font-family: 'Space Mono', 'Menlo', monospace; font-size: 12px; }
   #layout { display: flex; height: 100vh; flex-direction: column; }
   #main   { display: flex; flex: 1; min-height: 0; }
 
+  /* ── Mode switcher bar ── */
+  #modebar {
+    display: flex; align-items: center; gap: 0; padding: 0 14px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg);
+  }
+  #modebar h1 { font-size: 12px; color: #fff; margin-right: 18px; white-space: nowrap; letter-spacing: 0.04em; }
+  .mode-btn {
+    padding: 10px 16px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
+    transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none;
+    font-family: inherit; white-space: nowrap;
+  }
+  .mode-btn:hover  { color: var(--text); }
+  .mode-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .mode-btn.sd-btn.active   { color: var(--blue);   border-bottom-color: var(--blue); }
+  .mode-btn.fvg-btn.active  { color: var(--orange); border-bottom-color: var(--orange); }
+  .mode-spacer { flex: 1; }
+  #tag-mode { font-size: 9px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
+    color: var(--muted); white-space: nowrap; letter-spacing: 0.08em; text-transform: uppercase; }
+
   /* ── Left: chart ── */
   #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  #topbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  #topbar { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
     border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
-  #topbar h1 { font-size: 13px; color: #fff; white-space: nowrap; margin-right: 4px; }
   .tag { font-size: 10px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
     color: var(--muted); white-space: nowrap; }
   .tag.session { border-color: #5a9ef0; color: #5a9ef0; }
   .tag.passed  { border-color: var(--pass); color: var(--pass); }
   .tag.range   { border-color: var(--yellow); color: var(--yellow); }
   .tag.replay  { border-color: var(--red); color: var(--red); }
+  .tag.sd-tag  { border-color: var(--blue); color: var(--blue); }
+  .tag.fvg-tag { border-color: var(--orange); color: var(--orange); }
   #btn-group { display: flex; gap: 6px; margin-left: auto; }
   .rbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
     color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit;
@@ -80,16 +103,10 @@ DEBUG_HTML = r"""<!DOCTYPE html>
 
   #chart-wrap { flex: 1; position: relative; min-height: 0; }
   #chart { width: 100%; height: 100%; }
-
-  /* ── Replay cursor line ── */
   #cursor-line {
     position: absolute; top: 0; bottom: 0; width: 1px;
-    background: rgba(240, 90, 126, 0.6);
-    pointer-events: none; display: none;
-    z-index: 10;
+    background: rgba(240, 90, 126, 0.6); pointer-events: none; display: none; z-index: 10;
   }
-
-  /* ── Scrubber bar ── */
   #scrubber-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
     border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
   #scrubber { flex: 1; accent-color: var(--accent); cursor: pointer; height: 4px; }
@@ -100,17 +117,17 @@ DEBUG_HTML = r"""<!DOCTYPE html>
     padding: 2px 5px; font-family: inherit; }
 
   /* ── Right panel ── */
-  #right { width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+  #right { width: 360px; flex-shrink: 0; display: flex; flex-direction: column;
     border-left: 1px solid var(--border); overflow: hidden; }
   #right-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .rtab { flex: 1; padding: 8px 4px; text-align: center; font-size: 10px; letter-spacing: 0.08em;
     text-transform: uppercase; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
     transition: all 0.15s; }
   .rtab.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .rtab-panel { display: none; flex: 1; overflow-y: auto; padding: 10px; }
+  .rtab-panel { display: none; flex: 1; overflow-y: auto; padding: 10px; height: 100%; }
   .rtab-panel.active { display: block; }
 
-  /* Summary */
+  /* ── Accum: Summary ── */
   .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
   .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; }
   .stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3px; }
@@ -131,7 +148,7 @@ DEBUG_HTML = r"""<!DOCTYPE html>
   .reject-bar  { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
   .reject-bar-fill { height: 100%; border-radius: 2px; }
 
-  /* Windows */
+  /* ── Accum: Windows ── */
   #window-search { width: 100%; background: var(--surface); border: 1px solid var(--border);
     border-radius: 3px; color: var(--text); padding: 5px 8px; font-family: inherit;
     font-size: 11px; margin-bottom: 8px; }
@@ -147,8 +164,9 @@ DEBUG_HTML = r"""<!DOCTYPE html>
   .win-status.pass { color: var(--pass); }
   .win-status.fail { color: var(--muted); }
   .win-chop   { font-size: 10px; color: var(--muted); width: 42px; text-align: right; flex-shrink: 0; }
+  .win-extra  { font-size: 9px; color: var(--muted); width: 54px; text-align: right; flex-shrink: 0; }
 
-  /* Detail */
+  /* ── Accum: Detail ── */
   #detail-title { font-size: 11px; color: var(--accent); margin-bottom: 10px; padding-bottom: 6px;
     border-bottom: 1px solid var(--border); }
   .detail-row { display: flex; justify-content: space-between; padding: 4px 0;
@@ -161,10 +179,92 @@ DEBUG_HTML = r"""<!DOCTYPE html>
   .bar-track { height: 3px; background: var(--border); border-radius: 2px; flex: 1; margin-left: 10px; }
   .bar-fill  { height: 100%; border-radius: 2px; max-width: 100%; }
 
-  /* Replay status banner */
+  /* ── Replay banner ── */
   #replay-banner { display: none; padding: 4px 14px; font-size: 10px; color: var(--red);
     background: rgba(240,90,126,0.07); border-bottom: 1px solid rgba(240,90,126,0.2);
     letter-spacing: 0.06em; }
+
+  /* ── S&D panel ── */
+  .sd-section-title {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--muted); margin: 12px 0 6px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .bias-block {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;
+  }
+  .bias-cell {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px;
+  }
+  .bias-cell-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .bias-cell-val { font-size: 13px; font-weight: 700; margin-top: 2px; }
+  .bias-cell-val.bullish { color: var(--pass); }
+  .bias-cell-val.bearish { color: var(--red); }
+  .bias-cell-val.misaligned { color: var(--muted); }
+  .zone-row {
+    padding: 7px 10px; border-radius: 3px; margin-bottom: 4px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); transition: all 0.1s;
+  }
+  .zone-row:hover { border-color: var(--blue); }
+  .zone-row.selected-zone { border-color: var(--blue); background: rgba(90,158,240,0.06); }
+  .zone-row.demand-row { border-left: 3px solid var(--blue); }
+  .zone-row.supply-row { border-left: 3px solid var(--red); }
+  .zone-row.rejected-row { border-left: 3px solid #2a2a3a; opacity: 0.6; cursor: default; }
+  .zone-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .zone-type-badge {
+    font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 2px; border: 1px solid;
+  }
+  .zone-type-badge.demand { border-color: rgba(90,158,240,0.5); color: var(--blue); }
+  .zone-type-badge.supply { border-color: rgba(240,90,126,0.5); color: var(--red); }
+  .zone-type-badge.reject { border-color: #333; color: var(--muted); }
+  .zone-time { font-size: 9px; color: var(--muted); }
+  .zone-range { font-size: 11px; color: var(--text); font-weight: 600; }
+  .zone-reject-reason { font-size: 9px; color: var(--muted); margin-top: 2px; font-style: italic; }
+
+  /* ── FVG panel ── */
+  .fvg-row {
+    padding: 7px 10px; border-radius: 3px; margin-bottom: 4px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); transition: all 0.1s;
+  }
+  .fvg-row:hover { border-color: var(--orange); }
+  .fvg-row.selected-fvg { border-color: var(--orange); background: rgba(240,144,74,0.05); }
+  .fvg-row.pass-fvg { border-left: 3px solid var(--orange); }
+  .fvg-row.fail-fvg { border-left: 3px solid #2a2a3a; opacity: 0.55; }
+  .fvg-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .fvg-badge {
+    font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 2px; border: 1px solid;
+  }
+  .fvg-badge.bullish { border-color: rgba(90,158,240,0.5); color: var(--blue); }
+  .fvg-badge.bearish { border-color: rgba(240,90,126,0.5); color: var(--red); }
+  .fvg-badge.no-fvg  { border-color: #333; color: var(--muted); }
+  .fvg-detail-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 6px;
+  }
+  .fvg-candle-cell {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 5px 6px;
+  }
+  .fvg-candle-label { font-size: 8px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 2px; }
+  .fvg-candle-hl { font-size: 10px; color: var(--text); }
+  .fvg-candle-hl.bull { color: var(--pass); }
+  .fvg-candle-hl.bear { color: var(--red); }
+  .fvg-gap-line {
+    margin: 6px 0; padding: 4px 8px; font-size: 10px; border-radius: 2px;
+    border: 1px dashed;
+  }
+  .fvg-gap-line.gap-exists  { border-color: var(--orange); color: var(--orange); }
+  .fvg-gap-line.gap-missing { border-color: #333; color: var(--muted); }
+
+  /* ── Shared helpers ── */
+  .panel-empty { padding: 20px 10px; text-align: center; color: var(--muted); font-size: 11px; }
+  .section-header {
+    font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;
+    margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .section-count { font-size: 10px; color: var(--text); font-weight: 700; }
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -173,16 +273,24 @@ DEBUG_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 <div id="layout">
-  <div id="main">
 
-    <!-- LEFT: Chart + scrubber -->
+  <!-- ── Mode switcher ── -->
+  <div id="modebar">
+    <h1>⚙ __LABEL__</h1>
+    <button class="mode-btn active"   id="mode-accum" onclick="switchMode('accum')">① Accumulation</button>
+    <button class="mode-btn sd-btn"   id="mode-sd"    onclick="switchMode('sd')">② Supply &amp; Demand</button>
+    <button class="mode-btn fvg-btn"  id="mode-fvg"   onclick="switchMode('fvg')">③ Fair Value Gap</button>
+    <span class="mode-spacer"></span>
+    <span id="tag-mode">accumulation</span>
+  </div>
+
+  <div id="main">
+    <!-- ── LEFT: Chart ── -->
     <div id="left">
       <div id="topbar">
-        <h1>⚙ DEBUG — __LABEL__</h1>
         <span class="tag session" id="tag-session">loading…</span>
-        <span class="tag passed"  id="tag-passed">…</span>
-        <span class="tag range"   id="tag-range">…</span>
-        <span class="tag replay"  id="tag-replay" style="display:none">⏮ REPLAY</span>
+        <span class="tag" id="tag-info">…</span>
+        <span class="tag replay" id="tag-replay" style="display:none">⏮ REPLAY</span>
         <div id="btn-group">
           <button class="rbtn active" id="btn-live">Live</button>
           <button class="rbtn" id="btn-replay">⏮ Replay</button>
@@ -195,6 +303,7 @@ DEBUG_HTML = r"""<!DOCTYPE html>
             <option value="150">2×</option>
             <option value="60">4×</option>
           </select>
+          <button class="rbtn" id="btn-refresh" onclick="refreshCurrentMode()">⟳ Refresh</button>
         </div>
       </div>
       <div id="replay-banner">⏮ REPLAY MODE — click any candle or drag the scrubber to seek</div>
@@ -210,27 +319,66 @@ DEBUG_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- RIGHT: Debug panel -->
+    <!-- ── RIGHT: Panel ── -->
     <div id="right">
-      <div id="right-tabs">
-        <div class="rtab active" data-tab="summary">Summary</div>
-        <div class="rtab" data-tab="windows">Windows</div>
-        <div class="rtab" data-tab="detail">Detail</div>
-      </div>
-      <div id="tab-summary" class="rtab-panel active">
-        <div class="stat-grid" id="stat-grid"></div>
-        <div class="reject-list" id="reject-list"></div>
-      </div>
-      <div id="tab-windows" class="rtab-panel">
-        <input id="window-search" placeholder="Filter: pass / fail / range / slope / adx…" />
-        <div id="window-list"></div>
-      </div>
-      <div id="tab-detail" class="rtab-panel">
-        <div id="detail-title">← click a window row</div>
-        <div id="detail-body"></div>
-      </div>
-    </div>
 
+      <!-- ①  ACCUMULATION panel -->
+      <div id="panel-accum" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+        <div id="right-tabs">
+          <div class="rtab active" data-tab="summary">Summary</div>
+          <div class="rtab" data-tab="windows">Windows</div>
+          <div class="rtab" data-tab="detail">Detail</div>
+        </div>
+        <div id="tab-summary" class="rtab-panel active">
+          <div class="stat-grid" id="stat-grid"></div>
+          <div class="reject-list" id="reject-list"></div>
+        </div>
+        <div id="tab-windows" class="rtab-panel">
+          <input id="window-search" placeholder="Filter: pass / fail / range / slope / adx…" />
+          <div id="window-list"></div>
+        </div>
+        <div id="tab-detail" class="rtab-panel">
+          <div id="detail-title">← click a window row</div>
+          <div id="detail-body"></div>
+        </div>
+      </div>
+
+      <!-- ②  SUPPLY & DEMAND panel -->
+      <div id="panel-sd" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+        <div style="padding:10px;overflow-y:auto;flex:1;">
+          <div id="sd-loading" class="panel-empty">Click ⟳ Refresh to load S&amp;D analysis</div>
+          <div id="sd-content" style="display:none">
+            <div class="sd-section-title">Bias Check (Daily + Weekly)</div>
+            <div class="bias-block" id="sd-bias-block"></div>
+            <div id="sd-bias-verdict"></div>
+
+            <div class="sd-section-title" style="margin-top:14px">Zone Candidates</div>
+            <div style="font-size:9px;color:var(--muted);margin-bottom:8px">
+              Candles scanned for indecision + impulse patterns.
+              Showing all candidates — active zones highlighted.
+            </div>
+            <div id="sd-zone-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ③  FVG panel -->
+      <div id="panel-fvg" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+        <div style="padding:10px;overflow-y:auto;flex:1;">
+          <div id="fvg-loading" class="panel-empty">Click ⟳ Refresh to run FVG analysis</div>
+          <div id="fvg-content" style="display:none">
+            <div class="sd-section-title">Fair Value Gap Scanner</div>
+            <div style="font-size:9px;color:var(--muted);margin-bottom:8px">
+              Scans recent candles for FVG patterns (gap between wick[N-1] and wick[N+1]).
+              Click any row to highlight the 3-candle window on the chart.
+            </div>
+            <div id="fvg-stats" style="margin-bottom:10px"></div>
+            <div id="fvg-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
 
@@ -238,7 +386,6 @@ DEBUG_HTML = r"""<!DOCTYPE html>
 const PAIR_ID  = "__PAIR_ID__";
 const TIMEZONE = "__TIMEZONE__";
 
-// ── Timezone offset (same logic as production chart) ─────────────────────
 function getTzOffsetSeconds(tz) {
   try {
     const now    = new Date();
@@ -249,15 +396,28 @@ function getTzOffsetSeconds(tz) {
 }
 const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
 function shiftTime(ts) { return ts + TZ_OFFSET; }
+function fmtTime(ts) {
+  const d = new Date((ts + TZ_OFFSET) * 1000);
+  return d.toISOString().replace('T',' ').slice(0,16);
+}
+function fmtPrice(v) {
+  if (v == null) return '—';
+  return v > 100 ? v.toFixed(2) : v.toFixed(5);
+}
 
 // ── State ─────────────────────────────────────────────────────────────────
-let liveData    = null;   // full /debug/data payload (never changes during session)
-let replayData  = null;   // current /debug/replay?idx=N payload
+let currentMode = 'accum';
+let liveData    = null;
+let replayData  = null;
 let replayMode  = false;
 let replayIdx   = 0;
 let replayTimer = null;
 let selectedWindow = null;
 let overlaySeriesList = [];
+let sdData = null;
+let fvgData = null;
+let selectedFvgIdx = null;
+let selectedZoneIdx = null;
 
 // ── Chart ─────────────────────────────────────────────────────────────────
 const container = document.getElementById('chart');
@@ -273,12 +433,11 @@ const candleSeries = chart.addCandlestickSeries({
   borderVisible: false,
 });
 
-// Click-to-seek: when in replay mode, clicking a candle seeks to that index
 chart.subscribeClick(param => {
-  if (!replayMode || !param.time || !liveData) return;
+  if (!replayMode || !param.time || !liveData || currentMode !== 'accum') return;
   const ts  = param.time;
   const idx = liveData.candles.findIndex(c => c.time === ts);
-  if (idx >= 0) seekTo(idx + 1);  // idx+1 = how many candles are visible (1-based)
+  if (idx >= 0) seekTo(idx + 1);
 });
 
 window.addEventListener('resize', () => chart.applyOptions({
@@ -286,77 +445,152 @@ window.addEventListener('resize', () => chart.applyOptions({
   height: container.clientHeight,
 }));
 
-// ── Tabs ──────────────────────────────────────────────────────────────────
-document.querySelectorAll('.rtab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+// ── Mode switching ─────────────────────────────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode;
+  ['accum','sd','fvg'].forEach(m => {
+    document.getElementById(`mode-${m}`).classList.toggle('active', m === mode);
+    document.getElementById(`panel-${m}`).style.display = m === mode ? 'flex' : 'none';
   });
-});
+  const labels = { accum: 'accumulation', sd: 'supply & demand', fvg: 'fair value gap' };
+  document.getElementById('tag-mode').textContent = labels[mode];
 
-// ── Load live data ────────────────────────────────────────────────────────
+  clearOverlays();
+
+  // Show/hide replay controls (only relevant for accumulation)
+  const replayBtns = ['btn-replay','btn-prev','btn-play','btn-next','replay-speed','btn-analyze'];
+  replayBtns.forEach(id => {
+    const el = document.getElementById(id);
+    if (mode !== 'accum') { el.style.display = 'none'; }
+    else { el.style.display = ''; }
+  });
+
+  if (mode === 'accum') {
+    if (replayMode) exitReplayMode();
+    if (liveData) { renderChart(liveData.candles); updateTopbarAccum(liveData, false); }
+    else loadLiveData();
+  } else if (mode === 'sd') {
+    document.getElementById('tag-session').textContent = 'S/D MODE';
+    document.getElementById('tag-info').textContent = 'supply & demand analysis';
+    if (sdData) renderSD(sdData);
+    else { document.getElementById('sd-loading').style.display = '';
+           document.getElementById('sd-content').style.display = 'none'; }
+    if (liveData) renderChart(liveData.candles);
+  } else if (mode === 'fvg') {
+    document.getElementById('tag-session').textContent = 'FVG MODE';
+    document.getElementById('tag-info').textContent = 'fair value gap scanner';
+    if (fvgData) renderFVG(fvgData);
+    else { document.getElementById('fvg-loading').style.display = '';
+           document.getElementById('fvg-content').style.display = 'none'; }
+    if (liveData) renderChart(liveData.candles);
+  }
+}
+
+function refreshCurrentMode() {
+  if (currentMode === 'accum') loadLiveData();
+  else if (currentMode === 'sd') loadSD();
+  else if (currentMode === 'fvg') loadFVG();
+}
+
+// ── Overlay helpers ────────────────────────────────────────────────────────
+function clearOverlays() {
+  overlaySeriesList.forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+  overlaySeriesList = [];
+}
+
+function drawBox(startTs, endTs, top, bottom, color, fillAlpha) {
+  const fill = color.replace(')',`,${fillAlpha})`).replace('rgb(','rgba(');
+  const opts = { color, lineWidth: 1, lineStyle: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  const s = shiftTime(startTs), e = shiftTime(endTs);
+  const tl = chart.addLineSeries(opts);
+  const bl = chart.addLineSeries(opts);
+  const ll = chart.addLineSeries(opts);
+  const rl = chart.addLineSeries(opts);
+  const fl = chart.addBaselineSeries({
+    baseValue: { type: 'price', price: bottom },
+    topFillColor1: fill, topFillColor2: fill, topLineColor: 'rgba(0,0,0,0)',
+    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+    bottomLineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  tl.setData([{time:s,value:top},{time:e,value:top}]);
+  bl.setData([{time:s,value:bottom},{time:e,value:bottom}]);
+  ll.setData([{time:s,value:top},{time:s,value:bottom}]);
+  rl.setData([{time:e,value:top},{time:e,value:bottom}]);
+  fl.setData([{time:s,value:top},{time:e,value:top}]);
+  overlaySeriesList.push(tl,bl,ll,rl,fl);
+}
+
+function drawVerticalLine(ts, color) {
+  if (!liveData || !liveData.candles.length) return;
+  const candles = liveData.candles;
+  const prices = candles.map(c => c.close);
+  const minP = Math.min(...prices) * 0.999;
+  const maxP = Math.max(...prices) * 1.001;
+  const opts = { color, lineWidth: 1, lineStyle: 2,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  const line = chart.addLineSeries(opts);
+  line.setData([{time: shiftTime(ts), value: minP}, {time: shiftTime(ts), value: maxP}]);
+  overlaySeriesList.push(line);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ① ACCUMULATION MODE
+// ══════════════════════════════════════════════════════════════════════════════
+
+function updateTopbarAccum(d, isReplay) {
+  document.getElementById('tag-session').textContent =
+    d.session ? d.session.replace('_',' ').toUpperCase() : 'OUT OF SESSION';
+  document.getElementById('tag-info').textContent =
+    `${d.passed} / ${d.windows_checked} passed`;
+  document.getElementById('tag-replay').style.display = isReplay ? '' : 'none';
+}
+
 async function loadLiveData() {
-  if (replayMode) return;   // don't clobber replay state
+  if (replayMode) return;
   const res = await fetch(`/debug/data`);
   liveData = await res.json();
   renderChart(liveData.candles);
   renderSummary(liveData);
   renderWindowList(liveData.windows);
-  updateTopbar(liveData, false);
+  if (currentMode === 'accum') updateTopbarAccum(liveData, false);
   const scrubber = document.getElementById('scrubber');
   scrubber.max   = liveData.candles.length - 1;
   scrubber.value = liveData.candles.length - 1;
 }
 
-// ── Replay fetch (real server-side analysis on sliced df) ────────────────
 let replayFetchController = null;
-
 async function fetchReplay(idx) {
   if (replayFetchController) replayFetchController.abort();
   replayFetchController = new AbortController();
   const btn = document.getElementById('btn-analyze');
-  btn.textContent = '⏳ Running…';
-  btn.disabled = true;
+  btn.textContent = '⏳ Running…'; btn.disabled = true;
   try {
     const res = await fetch(`/debug/replay?idx=${idx}`, { signal: replayFetchController.signal });
     const data = await res.json();
-    if (data.error) {
-      console.error('Replay error from server:', data.error, data.trace || '');
-      document.getElementById('tag-session').textContent = 'ERROR — see console';
-      return;
-    }
+    if (data.error) { document.getElementById('tag-session').textContent = 'ERROR'; return; }
     replayData = data;
     renderSummary(replayData);
     renderWindowList(replayData.windows || []);
-    updateTopbar(replayData, true);
-    if (selectedWindow == null && replayData.best_zone) {
-      drawWindowOverlay(replayData.best_zone);
-    } else if (selectedWindow != null) {
+    updateTopbarAccum(replayData, true);
+    if (selectedWindow == null && replayData.best_zone) drawWindowOverlay(replayData.best_zone);
+    else if (selectedWindow != null) {
       const w = (replayData.windows || []).find(x => x.window === selectedWindow);
       drawWindowOverlay(w || null);
-    } else {
-      drawWindowOverlay(null);
-    }
+    } else drawWindowOverlay(null);
   } catch(e) {
     if (e.name !== 'AbortError') console.error('Replay fetch error', e);
-  } finally {
-    btn.textContent = '▶ Run Detector';
-    btn.disabled = false;
-  }
+  } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
 }
 
-// ── Seek to candle index (chart only — analysis runs on button click) ────
 async function seekTo(idx) {
   const total = liveData.candles.length;
   idx = Math.max(18, Math.min(idx, total));
   replayIdx = idx;
-
   const slice = liveData.candles.slice(0, idx);
   candleSeries.setData(slice.map(c => ({ ...c, time: shiftTime(c.time) })));
   chart.timeScale().fitContent();
-
   const scrubber = document.getElementById('scrubber');
   scrubber.value = idx - 1;
   const lastCandle = slice[slice.length - 1];
@@ -366,26 +600,14 @@ async function seekTo(idx) {
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${total}`;
 }
 
-// ── Topbar update ─────────────────────────────────────────────────────────
-function updateTopbar(d, isReplay) {
-  document.getElementById('tag-session').textContent =
-    d.session ? d.session.replace('_',' ').toUpperCase() : 'OUT OF SESSION';
-  document.getElementById('tag-passed').textContent =
-    `${d.passed} / ${d.windows_checked} passed`;
-  document.getElementById('tag-range').textContent =
-    `range ${d.effective_range ? (d.effective_range * 100).toFixed(3) + '%' : '—'}`;
-  document.getElementById('tag-replay').style.display = isReplay ? '' : 'none';
-}
-
-// ── Summary tab ───────────────────────────────────────────────────────────
 function renderSummary(d) {
   const total    = d.windows_checked || 1;
   const passRate = Math.round((d.passed / total) * 100);
   const stats = [
-    { label: 'Candles',   val: d.idx || d.candles?.length || '—',  cls: 'neutral' },
-    { label: 'Windows',   val: d.windows_checked,                   cls: 'neutral' },
-    { label: 'Passed',    val: d.passed,                            cls: d.passed > 0 ? 'green' : 'red' },
-    { label: 'Pass Rate', val: passRate + '%',                      cls: passRate > 10 ? 'green' : 'yellow' },
+    { label: 'Candles',   val: d.idx || d.candles?.length || '—', cls: 'neutral' },
+    { label: 'Windows',   val: d.windows_checked,                  cls: 'neutral' },
+    { label: 'Passed',    val: d.passed,                           cls: d.passed > 0 ? 'green' : 'red' },
+    { label: 'Pass Rate', val: passRate + '%',                     cls: passRate > 10 ? 'green' : 'yellow' },
   ];
   document.getElementById('stat-grid').innerHTML = stats.map(s => `
     <div class="stat-card">
@@ -411,13 +633,12 @@ function renderSummary(d) {
       </div>`).join('')}`;
 }
 
-// ── Windows tab ───────────────────────────────────────────────────────────
 function getActiveWindows() {
   return replayMode && replayData ? replayData.windows : (liveData?.windows || []);
 }
 
 function renderWindowList(windows, filter = '') {
-  const lf       = filter.toLowerCase().trim();
+  const lf = filter.toLowerCase().trim();
   const filtered = windows.filter(w => {
     if (!lf) return true;
     if (lf === 'pass') return w.pass;
@@ -428,9 +649,11 @@ function renderWindowList(windows, filter = '') {
     const cls   = w.pass ? 'pass-row' : 'fail-row';
     const stCls = w.pass ? 'pass' : 'fail';
     const label = w.pass ? '✓ pass' : (w.reject || '?').split(' ')[0];
+    const slopeStr = w.slope != null ? `slp ${w.slope.toFixed ? w.slope.toFixed(6) : w.slope}` : '';
     return `<div class="win-row ${cls}" data-win="${w.window}" onclick="selectWindow(${w.window})">
       <span class="win-num">${w.window}</span>
       <span class="win-status ${stCls}">${label}</span>
+      <span class="win-extra">${slopeStr}</span>
       <span class="win-chop">chop ${w.chop}</span>
     </div>`;
   }).join('');
@@ -444,18 +667,15 @@ document.getElementById('window-search').addEventListener('input', e => {
   renderWindowList(getActiveWindows(), e.target.value);
 });
 
-// ── Detail tab ────────────────────────────────────────────────────────────
 function selectWindow(windowSize) {
   selectedWindow = windowSize;
   document.querySelectorAll('.win-row').forEach(el => el.classList.remove('selected'));
   const el = document.querySelector(`[data-win="${windowSize}"]`);
   if (el) el.classList.add('selected');
-
   const windows = getActiveWindows();
   const w = windows.find(x => x.window === windowSize);
   if (!w) return;
 
-  // Switch to detail tab
   document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-tab="detail"]').classList.add('active');
@@ -465,23 +685,24 @@ function selectWindow(windowSize) {
     `Window ${windowSize} — ${w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase()}`;
 
   const rows = [
-    { key: 'Range %',  val: (w.range_pct*100).toFixed(4)+'%',   limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max' : 'no session limit', pass: !w.range_limit || w.range_pct <= w.range_limit, ratio: w.range_limit ? w.range_pct/w.range_limit : 0.5 },
-    { key: 'Slope',    val: w.slope,                             limit: w.slope_limit,   pass: w.slope < w.slope_limit, ratio: w.slope / w.slope_limit },
-    { key: 'Chop',     val: w.chop,                              limit: '≥ 0.44 (found) / 0.36 (pot)', pass: w.chop >= 0.36, ratio: w.chop / 0.44 },
-    { key: 'ADX',      val: w.adx != null ? w.adx : 'N/A',      limit: '< ' + w.adx_limit, pass: w.adx == null || w.adx < w.adx_limit, ratio: w.adx != null ? w.adx / w.adx_limit : 0 },
-    { key: 'Top',      val: w.top,                               limit: '',               pass: null, ratio: 0 },
-    { key: 'Bottom',   val: w.bottom,                            limit: '',               pass: null, ratio: 0 },
-    { key: 'Active',   val: w.is_active ? 'YES' : 'no',         limit: '',               pass: null, ratio: 0 },
+    { key: 'Range %', val: (w.range_pct*100).toFixed(4)+'%', limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max' : 'no limit', pass: !w.range_limit || w.range_pct <= w.range_limit, ratio: w.range_limit ? w.range_pct/w.range_limit : 0.5 },
+    { key: 'Slope',   val: w.slope, limit: w.slope_limit, pass: w.slope < w.slope_limit, ratio: w.slope / w.slope_limit },
+    { key: 'Chop',    val: w.chop,  limit: '≥ 0.44 (found) / 0.36 (pot)', pass: w.chop >= 0.36, ratio: w.chop / 0.44 },
+    { key: 'ADX',     val: w.adx != null ? w.adx : 'N/A', limit: '< ' + w.adx_limit, pass: w.adx == null || w.adx < w.adx_limit, ratio: w.adx != null ? w.adx / w.adx_limit : 0 },
+    { key: 'ADX < 10',val: w.adx != null ? (w.adx < 10 ? '✓ YES — priority' : 'no') : 'N/A', limit: 'priority tier for selection', pass: w.adx != null && w.adx < 10, ratio: 0 },
+    { key: 'Top',     val: w.top,    limit: '', pass: null, ratio: 0 },
+    { key: 'Bottom',  val: w.bottom, limit: '', pass: null, ratio: 0 },
+    { key: 'Active',  val: w.is_active ? 'YES' : 'no', limit: '', pass: null, ratio: 0 },
   ];
 
   document.getElementById('detail-body').innerHTML = rows.map(r => {
-    const cls      = r.pass === null ? 'neutral' : r.pass ? 'pass' : 'fail';
-    const barW     = Math.min(100, Math.round((r.ratio || 0) * 100));
-    const barColor = r.pass === null ? '#444' : r.pass ? 'var(--pass)' : 'var(--red)';
+    const cls    = r.pass === null ? 'neutral' : r.pass ? 'pass' : 'fail';
+    const barW   = Math.min(100, Math.round((r.ratio || 0) * 100));
+    const barCol = r.pass === null ? '#444' : r.pass ? 'var(--pass)' : 'var(--red)';
     return `<div class="detail-row">
       <span class="detail-key">${r.key}</span>
       <div style="display:flex;align-items:center;flex:1;justify-content:flex-end;gap:6px">
-        ${r.ratio > 0 ? `<div class="bar-track"><div class="bar-fill" style="width:${barW}%;background:${barColor}"></div></div>` : ''}
+        ${r.ratio > 0 ? `<div class="bar-track"><div class="bar-fill" style="width:${barW}%;background:${barCol}"></div></div>` : ''}
         <span class="detail-val ${cls}">${r.val}</span>
       </div>
     </div>
@@ -491,93 +712,72 @@ function selectWindow(windowSize) {
   drawWindowOverlay(w);
 }
 
-// ── Overlay drawing ───────────────────────────────────────────────────────
 function drawWindowOverlay(w) {
-  overlaySeriesList.forEach(s => { try { chart.removeSeries(s); } catch(e){} });
-  overlaySeriesList = [];
+  clearOverlays();
   if (!w || !w.start_ts) return;
-
-  const color  = w.pass ? 'rgba(90,240,196,0.7)'  : 'rgba(240,90,126,0.55)';
-  const fill   = w.pass ? 'rgba(90,240,196,0.06)' : 'rgba(240,90,126,0.04)';
-  const opts   = { color, lineWidth: 1, lineStyle: 0,
+  const color = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
+  const opts  = { color, lineWidth: 1, lineStyle: 0,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
-
-  const top   = chart.addLineSeries(opts);
-  const bot   = chart.addLineSeries(opts);
-  const left  = chart.addLineSeries(opts);
-  const right = chart.addLineSeries(opts);
-  const fillS = chart.addBaselineSeries({
+  const fill = w.pass ? 'rgba(90,240,196,0.06)' : 'rgba(240,90,126,0.04)';
+  const s = shiftTime(w.start_ts), e = shiftTime(w.end_ts);
+  const tl = chart.addLineSeries(opts);
+  const bl = chart.addLineSeries(opts);
+  const ll = chart.addLineSeries(opts);
+  const rl = chart.addLineSeries(opts);
+  const fl = chart.addBaselineSeries({
     baseValue: { type: 'price', price: w.bottom },
     topFillColor1: fill, topFillColor2: fill, topLineColor: 'rgba(0,0,0,0)',
     bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
-    bottomLineColor: 'rgba(0,0,0,0)',
-    lineWidth: 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    bottomLineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
-
-  const s = shiftTime(w.start_ts);
-  const e = shiftTime(w.end_ts);
-  top.setData(  [{ time: s, value: w.top    }, { time: e, value: w.top    }]);
-  bot.setData(  [{ time: s, value: w.bottom }, { time: e, value: w.bottom }]);
-  left.setData( [{ time: s, value: w.top    }, { time: s, value: w.bottom }]);
-  right.setData([{ time: e, value: w.top    }, { time: e, value: w.bottom }]);
-  fillS.setData([{ time: s, value: w.top    }, { time: e, value: w.top    }]);
-
-  overlaySeriesList = [top, bot, left, right, fillS];
+  tl.setData([{time:s,value:w.top},{time:e,value:w.top}]);
+  bl.setData([{time:s,value:w.bottom},{time:e,value:w.bottom}]);
+  ll.setData([{time:s,value:w.top},{time:s,value:w.bottom}]);
+  rl.setData([{time:e,value:w.top},{time:e,value:w.bottom}]);
+  fl.setData([{time:s,value:w.top},{time:e,value:w.top}]);
+  overlaySeriesList = [tl,bl,ll,rl,fl];
 }
 
-// ── Chart render ──────────────────────────────────────────────────────────
 function renderChart(candles) {
   candleSeries.setData(candles.map(c => ({ ...c, time: shiftTime(c.time) })));
   chart.timeScale().fitContent();
 }
 
-// ── Replay controls ───────────────────────────────────────────────────────
+// Replay controls
 function enterReplayMode() {
-  replayMode = true;
-  selectedWindow = null;
+  replayMode = true; selectedWindow = null;
   const total = liveData.candles.length;
   replayIdx = Math.max(22, Math.floor(total * 0.6));
-
   document.getElementById('btn-live').classList.remove('active');
   document.getElementById('btn-replay').classList.add('active');
-  document.getElementById('btn-prev').disabled   = false;
-  document.getElementById('btn-play').disabled   = false;
-  document.getElementById('btn-next').disabled   = false;
+  ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = false);
   document.getElementById('replay-speed').disabled = false;
-  document.getElementById('scrubber').disabled   = false;
+  document.getElementById('scrubber').disabled = false;
   document.getElementById('btn-analyze').disabled = false;
-  document.getElementById('scrubber').max        = total - 1;
+  document.getElementById('scrubber').max = total - 1;
   document.getElementById('replay-banner').style.display = '';
-
   seekTo(replayIdx);
 }
 
 function exitReplayMode() {
-  stopPlay();
-  replayMode  = false;
-  replayData  = null;
-  selectedWindow = null;
-
+  stopPlay(); replayMode = false; replayData = null; selectedWindow = null;
   document.getElementById('btn-live').classList.add('active');
   document.getElementById('btn-replay').classList.remove('active');
-  document.getElementById('btn-prev').disabled   = true;
-  document.getElementById('btn-play').disabled   = true;
-  document.getElementById('btn-next').disabled   = true;
+  ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = true);
   document.getElementById('replay-speed').disabled = true;
-  document.getElementById('scrubber').disabled    = true;
+  document.getElementById('scrubber').disabled = true;
   document.getElementById('btn-analyze').disabled = true;
   document.getElementById('replay-banner').style.display = 'none';
-  document.getElementById('tag-replay').style.display    = 'none';
-
-  drawWindowOverlay(null);
+  document.getElementById('tag-replay').style.display = 'none';
+  clearOverlays();
   renderChart(liveData.candles);
-  renderSummary(liveData);
-  renderWindowList(liveData.windows);
-  updateTopbar(liveData, false);
+  renderSummary(liveData); renderWindowList(liveData.windows);
+  updateTopbarAccum(liveData, false);
   const sc = document.getElementById('scrubber');
   sc.value = liveData.candles.length - 1;
-  document.getElementById('scrub-label').textContent = `candle — / —`;
-  document.getElementById('scrub-ts').textContent    = '—';
+  document.getElementById('scrub-label').textContent = 'candle — / —';
+  document.getElementById('scrub-ts').textContent = '—';
 }
 
 function startPlay() {
@@ -589,27 +789,17 @@ function startPlay() {
     await seekTo(replayIdx);
   }, speed);
 }
-
 function stopPlay() {
   if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
   document.getElementById('btn-play').textContent = '▶';
 }
 
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
-document.getElementById('btn-replay').addEventListener('click', () => {
-  if (!replayMode) enterReplayMode();
-});
-document.getElementById('btn-play').addEventListener('click', () => {
-  replayTimer ? stopPlay() : startPlay();
-});
-document.getElementById('btn-prev').addEventListener('click', () => {
-  stopPlay(); seekTo(replayIdx - 1);
-});
-document.getElementById('btn-next').addEventListener('click', () => {
-  stopPlay(); seekTo(replayIdx + 1);
-});
+document.getElementById('btn-replay').addEventListener('click', () => { if (!replayMode) enterReplayMode(); });
+document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx - 1); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx + 1); });
 
-// Scrubber — moves chart only, no auto-fetch
 const scrubberEl = document.getElementById('scrubber');
 scrubberEl.addEventListener('input', () => {
   if (!replayMode) return;
@@ -623,18 +813,326 @@ scrubberEl.addEventListener('input', () => {
     dt ? dt.toISOString().replace('T',' ').slice(0,16) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = `candle ${idx} / ${liveData.candles.length}`;
   replayIdx = idx;
-  drawWindowOverlay(null);
+  clearOverlays();
 });
 
-// Run Detector button — runs analysis against current replay slice
 document.getElementById('btn-analyze').addEventListener('click', () => {
   if (!replayMode) return;
   fetchReplay(replayIdx);
 });
 
+document.querySelectorAll('.rtab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ② SUPPLY & DEMAND MODE
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadSD() {
+  document.getElementById('sd-loading').textContent = '⟳ Loading S&D analysis…';
+  document.getElementById('sd-loading').style.display = '';
+  document.getElementById('sd-content').style.display = 'none';
+  try {
+    const res = await fetch('/debug/sd');
+    sdData = await res.json();
+    if (sdData.error) {
+      document.getElementById('sd-loading').textContent = '✗ Error: ' + sdData.error;
+      return;
+    }
+    renderSD(sdData);
+  } catch(e) {
+    document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
+  }
+}
+
+function renderSD(data) {
+  document.getElementById('sd-loading').style.display = 'none';
+  document.getElementById('sd-content').style.display = '';
+
+  // Update topbar
+  document.getElementById('tag-session').textContent = 'S/D ANALYSIS';
+  const bias = data.bias || {};
+  document.getElementById('tag-info').textContent =
+    `bias: ${bias.bias || '—'} · ${data.candidates?.length || 0} candidates`;
+
+  // Bias block
+  const biasColor = b => b === 'bullish' ? 'bullish' : b === 'bearish' ? 'bearish' : 'misaligned';
+  const bIcon = b => b === 'bullish' ? '↑' : b === 'bearish' ? '↓' : '⚡';
+  document.getElementById('sd-bias-block').innerHTML = `
+    <div class="bias-cell">
+      <div class="bias-cell-label">Daily Candle</div>
+      <div class="bias-cell-val ${biasColor(bias.daily_bias)}">
+        ${bIcon(bias.daily_bias)} ${bias.daily_bias || '—'}
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:3px">
+        O ${fmtPrice(bias.daily_open)} → C ${fmtPrice(bias.daily_close)}
+      </div>
+    </div>
+    <div class="bias-cell">
+      <div class="bias-cell-label">Weekly Candle</div>
+      <div class="bias-cell-val ${biasColor(bias.weekly_bias)}">
+        ${bIcon(bias.weekly_bias)} ${bias.weekly_bias || '—'}
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:3px">
+        O ${fmtPrice(bias.weekly_open)} → C ${fmtPrice(bias.weekly_close)}
+      </div>
+    </div>`;
+
+  const verdictEl = document.getElementById('sd-bias-verdict');
+  if (bias.bias === 'misaligned') {
+    verdictEl.innerHTML = `<div style="padding:6px 10px;background:rgba(240,90,126,0.07);border:1px solid rgba(240,90,126,0.2);border-radius:3px;font-size:10px;color:var(--red);margin-bottom:8px">
+      ✗ Bias misaligned — daily and weekly candles disagree. No zones will be detected.
+    </div>`;
+  } else {
+    const lookFor = bias.bias === 'bullish' ? 'DEMAND' : 'SUPPLY';
+    const col = bias.bias === 'bullish' ? 'var(--pass)' : 'var(--red)';
+    verdictEl.innerHTML = `<div style="padding:6px 10px;background:rgba(90,240,196,0.05);border:1px solid rgba(90,240,196,0.15);border-radius:3px;font-size:10px;color:${col};margin-bottom:8px">
+      ✓ Aligned ${bias.bias} — scanning for <strong>${lookFor}</strong> zones only
+    </div>`;
+  }
+
+  // Zone candidates list
+  const candidates = data.candidates || [];
+  if (!candidates.length) {
+    document.getElementById('sd-zone-list').innerHTML =
+      '<div class="panel-empty">No candidates found in scan range</div>';
+    return;
+  }
+
+  const active   = candidates.filter(c => c.is_active);
+  const rejected = candidates.filter(c => !c.is_active);
+
+  document.getElementById('sd-zone-list').innerHTML = `
+    <div class="section-header">
+      <span>Active Zones</span><span class="section-count">${active.length}</span>
+    </div>
+    ${active.map((z,i) => renderZoneRow(z, i, true)).join('')}
+    <div class="section-header" style="margin-top:12px">
+      <span>Rejected Candidates</span><span class="section-count">${rejected.length}</span>
+    </div>
+    ${rejected.map((z,i) => renderZoneRow(z, i+1000, false)).join('')}
+  `;
+
+  // Draw active zones on chart
+  clearOverlays();
+  active.forEach(z => {
+    const col = z.type === 'demand' ? 'rgba(90,158,240,0.7)' : 'rgba(240,90,126,0.7)';
+    drawBox(z.start, z.end, z.top, z.bottom, col, 0.07);
+  });
+}
+
+function renderZoneRow(z, idx, isActive) {
+  const typeClass = isActive ? (z.type || 'reject') : 'reject';
+  const rowClass  = isActive ? `${z.type || ''}-row` : 'rejected-row';
+  const badgeCls  = isActive ? (z.type || 'reject') : 'reject';
+  const badgeTxt  = isActive ? (z.type || '?').toUpperCase() : 'REJECTED';
+  const timeStr   = z.start ? fmtTime(z.start) : '—';
+  return `<div class="zone-row ${rowClass}" id="zone-row-${idx}" onclick="selectZone(${idx})">
+    <div class="zone-top-row">
+      <span class="zone-type-badge ${badgeCls}">${badgeTxt}</span>
+      <span class="zone-time">${timeStr}</span>
+    </div>
+    <div class="zone-range">${fmtPrice(z.bottom)} – ${fmtPrice(z.top)}</div>
+    ${z.reject_reason ? `<div class="zone-reject-reason">✗ ${z.reject_reason}</div>` : ''}
+    ${z.session ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">session: ${z.session}</div>` : ''}
+  </div>`;
+}
+
+function selectZone(idx) {
+  document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
+  const el = document.getElementById(`zone-row-${idx}`);
+  if (el) el.classList.add('selected-zone');
+  selectedZoneIdx = idx;
+
+  if (!sdData || !sdData.candidates) return;
+  const allCandidates = sdData.candidates;
+  const active   = allCandidates.filter(c => c.is_active);
+  const rejected = allCandidates.filter(c => !c.is_active);
+  const z = idx < 1000 ? active[idx] : rejected[idx - 1000];
+  if (!z) return;
+
+  clearOverlays();
+  // Redraw all active zones dimmed
+  (sdData.candidates.filter(c => c.is_active)).forEach(az => {
+    const col = az.type === 'demand' ? 'rgba(90,158,240,0.3)' : 'rgba(240,90,126,0.3)';
+    drawBox(az.start, az.end, az.top, az.bottom, col, 0.03);
+  });
+  // Highlight selected
+  const selCol = z.type === 'demand' ? 'rgba(90,158,240,0.9)' : z.type === 'supply' ? 'rgba(240,90,126,0.9)' : 'rgba(200,200,200,0.5)';
+  drawBox(z.start, z.end || (z.start + 3600), z.top, z.bottom, selCol, 0.12);
+  // Mark the indecision candle with a vertical line
+  if (z.start) drawVerticalLine(z.start, 'rgba(255,220,100,0.5)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ③ FAIR VALUE GAP MODE
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadFVG() {
+  document.getElementById('fvg-loading').textContent = '⟳ Scanning for FVG patterns…';
+  document.getElementById('fvg-loading').style.display = '';
+  document.getElementById('fvg-content').style.display = 'none';
+  try {
+    const res = await fetch('/debug/fvg');
+    fvgData = await res.json();
+    if (fvgData.error) {
+      document.getElementById('fvg-loading').textContent = '✗ Error: ' + fvgData.error;
+      return;
+    }
+    renderFVG(fvgData);
+  } catch(e) {
+    document.getElementById('fvg-loading').textContent = '✗ Fetch failed: ' + e.message;
+  }
+}
+
+function renderFVG(data) {
+  document.getElementById('fvg-loading').style.display = 'none';
+  document.getElementById('fvg-content').style.display = '';
+
+  document.getElementById('tag-session').textContent = 'FVG ANALYSIS';
+  const total = data.candidates?.length || 0;
+  const passed = (data.candidates || []).filter(c => c.has_fvg).length;
+  document.getElementById('tag-info').textContent = `${passed} FVGs / ${total} candidates`;
+
+  // Stats mini-grid
+  document.getElementById('fvg-stats').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">
+      ${[
+        {l:'Scanned',  v: total,         c: 'neutral'},
+        {l:'FVG ✓',    v: passed,        c: passed > 0 ? 'green' : 'red'},
+        {l:'Bullish',  v: (data.candidates||[]).filter(c=>c.fvg_type==='bullish').length, c:'neutral'},
+        {l:'Bearish',  v: (data.candidates||[]).filter(c=>c.fvg_type==='bearish').length, c:'neutral'},
+      ].map(s=>`<div class="stat-card"><div class="stat-label">${s.l}</div><div class="stat-val ${s.c}" style="font-size:14px">${s.v}</div></div>`).join('')}
+    </div>`;
+
+  const candidates = data.candidates || [];
+  if (!candidates.length) {
+    document.getElementById('fvg-list').innerHTML = '<div class="panel-empty">No candidates found</div>';
+    return;
+  }
+
+  const withFvg    = candidates.filter(c => c.has_fvg);
+  const withoutFvg = candidates.filter(c => !c.has_fvg);
+
+  document.getElementById('fvg-list').innerHTML = `
+    <div class="section-header">
+      <span>FVG Confirmed</span><span class="section-count">${withFvg.length}</span>
+    </div>
+    ${withFvg.map((c,i) => renderFvgRow(c, i)).join('')}
+    <div class="section-header" style="margin-top:12px">
+      <span>No FVG</span><span class="section-count">${withoutFvg.length}</span>
+    </div>
+    ${withoutFvg.map((c,i) => renderFvgRow(c, i + 1000)).join('')}
+  `;
+
+  // Draw FVG candles on chart
+  clearOverlays();
+  withFvg.forEach(c => {
+    const col = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.6)' : 'rgba(240,90,126,0.6)';
+    drawBox(c.candle2.time, c.candle2.time + 120, c.candle2.high, c.candle2.low, col, 0.08);
+  });
+}
+
+function renderFvgRow(c, idx) {
+  const hasFvg = c.has_fvg;
+  const rowCls  = hasFvg ? 'pass-fvg' : 'fail-fvg';
+  const badgeCls = c.fvg_type || 'no-fvg';
+  const badgeTxt = hasFvg ? (c.fvg_type || 'FVG').toUpperCase() : 'NO FVG';
+  const timeStr  = c.candle2?.time ? fmtTime(c.candle2.time) : '—';
+
+  let gapHtml = '';
+  if (hasFvg) {
+    const gapTop = c.fvg_type === 'bullish' ? c.candle3_low : c.candle1_high;
+    const gapBot = c.fvg_type === 'bullish' ? c.candle1_high : c.candle3_low;
+    gapHtml = `<div class="fvg-gap-line gap-exists">
+      gap: ${fmtPrice(gapBot)} → ${fmtPrice(gapTop)}
+      &nbsp;(${fmtPrice(Math.abs(gapTop - gapBot))} pts)
+    </div>`;
+  } else {
+    gapHtml = `<div class="fvg-gap-line gap-missing">no gap between wick[N-1] and wick[N+1]</div>`;
+  }
+
+  return `<div class="fvg-row ${rowCls}" id="fvg-row-${idx}" onclick="selectFvg(${idx})">
+    <div class="fvg-top-row">
+      <span class="fvg-badge ${badgeCls}">${badgeTxt}</span>
+      <span class="zone-time">${timeStr}</span>
+    </div>
+    ${gapHtml}
+    <div class="fvg-detail-grid">
+      <div class="fvg-candle-cell">
+        <div class="fvg-candle-label">Candle N-1</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle1_high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle1_low)}</div>
+      </div>
+      <div class="fvg-candle-cell" style="border-color:${hasFvg ? (c.fvg_type==='bullish'?'rgba(90,158,240,0.4)':'rgba(240,90,126,0.4)') : 'var(--border)'}">
+        <div class="fvg-candle-label">Breakout ←</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle2?.high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle2?.low)}</div>
+      </div>
+      <div class="fvg-candle-cell">
+        <div class="fvg-candle-label">Candle N+1</div>
+        <div class="fvg-candle-hl">H ${fmtPrice(c.candle3_high)}</div>
+        <div class="fvg-candle-hl">L ${fmtPrice(c.candle3_low)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function selectFvg(idx) {
+  document.querySelectorAll('.fvg-row').forEach(r => r.classList.remove('selected-fvg'));
+  const el = document.getElementById(`fvg-row-${idx}`);
+  if (el) el.classList.add('selected-fvg');
+  selectedFvgIdx = idx;
+
+  const candidates = fvgData?.candidates || [];
+  const withFvg    = candidates.filter(c => c.has_fvg);
+  const withoutFvg = candidates.filter(c => !c.has_fvg);
+  const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
+  if (!c) return;
+
+  clearOverlays();
+
+  // Draw all FVG zones dimmed
+  candidates.filter(x => x.has_fvg).forEach(x => {
+    const col = x.fvg_type === 'bullish' ? 'rgba(90,158,240,0.2)' : 'rgba(240,90,126,0.2)';
+    drawBox(x.candle2.time, x.candle2.time + 120, x.candle2.high, x.candle2.low, col, 0.03);
+  });
+
+  if (!c.candle2) return;
+  const t2 = c.candle2.time;
+
+  // Highlight the 3-candle window
+  const colBright = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' :
+                    c.fvg_type === 'bearish' ? 'rgba(240,90,126,0.9)' : 'rgba(200,200,200,0.5)';
+
+  // Candle N-1 marker
+  if (c.candle1_time) drawVerticalLine(c.candle1_time, 'rgba(255,220,80,0.4)');
+  // Candle N (breakout) — full box highlight
+  drawBox(t2, t2 + 60, c.candle2.high, c.candle2.low, colBright, 0.15);
+  // Candle N+1 marker
+  if (c.candle3_time) drawVerticalLine(c.candle3_time, 'rgba(255,220,80,0.4)');
+
+  // If FVG exists, draw the gap as a translucent box
+  if (c.has_fvg) {
+    const gapTop = c.fvg_type === 'bullish' ? c.candle3_low : c.candle1_high;
+    const gapBot = c.fvg_type === 'bullish' ? c.candle1_high : c.candle3_low;
+    const gapCol = c.fvg_type === 'bullish' ? 'rgba(90,158,240,0.5)' : 'rgba(240,90,126,0.5)';
+    // Draw gap spanning from N-1 to N+1
+    const spanStart = c.candle1_time || t2 - 120;
+    const spanEnd   = c.candle3_time ? c.candle3_time + 60 : t2 + 180;
+    drawBox(spanStart, spanEnd, gapTop, gapBot, gapCol, 0.2);
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 loadLiveData();
-setInterval(() => { if (!replayMode) loadLiveData(); }, 30000);
+setInterval(() => { if (!replayMode && currentMode === 'accum') loadLiveData(); }, 30000);
 </script>
 </body>
 </html>"""
@@ -730,6 +1228,16 @@ class PairServer:
             return self._debug_replay()
         _debug_replay.__name__ = f"debug_replay_{pair_id}"
         app.route("/debug/replay")(_debug_replay)
+
+        def _debug_sd():
+            return self._debug_sd()
+        _debug_sd.__name__ = f"debug_sd_{pair_id}"
+        app.route("/debug/sd")(_debug_sd)
+
+        def _debug_fvg():
+            return self._debug_fvg()
+        _debug_fvg.__name__ = f"debug_fvg_{pair_id}"
+        app.route("/debug/fvg")(_debug_fvg)
 
     # ------------------------------------------------------------------ #
     # Data fetching
@@ -889,13 +1397,6 @@ class PairServer:
         print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
         while True:
             try:
-                # ── Weekend halt: Fri 23:00 – Mon 01:00 UTC ───────────────
-                from detectors.accumulation import is_weekend_halt
-                if is_weekend_halt():
-                    print(f"[{self.pair_id}] Weekend halt — skipping detection")
-                    time.sleep(DETECTION_INTERVAL)
-                    continue
-
                 with self._detection_lock:
                     cache = {}
                     results = self._run_detectors(cache)
@@ -1238,6 +1739,225 @@ class PairServer:
                 "rejection_summary": reasons,
                 "windows":           windows,
                 "best_zone":         best_zone,
+            })
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+    def _debug_sd(self):
+        """Return detailed Supply & Demand analysis JSON for the debug page."""
+        try:
+            import yfinance as yf
+            import pandas as pd
+            import numpy as np
+            from detectors.supply_demand import (
+                _get_bias, _is_indecision, _in_session, _candle_session_or_pre
+            )
+
+            cache = {}
+            params = dict(self.detector_params.get("supply_demand", {}))
+            params.pop("timeframe", None)
+            ticker           = params.get("ticker", self.ticker)
+            impulse_mult     = params.get("impulse_multiplier", 1.8)
+            wick_ratio       = params.get("wick_ratio", 0.6)
+            max_zones        = params.get("max_zones", 5)
+            max_age_days     = params.get("max_age_days", 3)
+            valid_sessions   = params.get("valid_sessions", ["london", "new_york"])
+
+            # Get bias
+            bias_info = _get_bias(ticker, _YF_LOCK)
+
+            # Fetch chart data
+            detector_interval = self.detector_params.get("supply_demand", {}).get("timeframe", "30m")
+            df = self._get_df(detector_interval, cache)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            for col in ['Open','High','Low','Close']:
+                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
+            df = df.dropna(subset=['Open','High','Low','Close'])
+
+            opens  = df['Open'].values.flatten().astype(float)
+            highs  = df['High'].values.flatten().astype(float)
+            lows   = df['Low'].values.flatten().astype(float)
+            closes = df['Close'].values.flatten().astype(float)
+            bodies = np.abs(closes - opens)
+            avg_body = float(np.mean(bodies))
+
+            from datetime import datetime, timezone
+            now_ts = datetime.now(timezone.utc).timestamp()
+            cutoff_ts = now_ts - (max_age_days * 86400)
+
+            last_close = closes[-2]
+            last_high  = highs[-2]
+            last_low   = lows[-2]
+
+            look_for = None
+            if bias_info["bias"] != "misaligned":
+                look_for = "demand" if bias_info["bias"] == "bullish" else "supply"
+
+            candidates = []
+
+            for i in range(len(df) - 3, 0, -1):
+                candle_ts = int(df.index[i].timestamp())
+                if candle_ts < cutoff_ts:
+                    break
+
+                o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                session = _candle_session_or_pre(candle_ts)
+
+                reject_reason = None
+
+                # Session check
+                if not _in_session(candle_ts, valid_sessions):
+                    reject_reason = f"session '{session}' not in {valid_sessions}"
+
+                # Indecision check
+                if not reject_reason and not _is_indecision(o, h, l, c, wick_ratio):
+                    body = abs(c - o)
+                    total_range = h - l
+                    wick_frac = round((total_range - body) / total_range, 3) if total_range else 0
+                    reject_reason = f"not indecision (wicks {wick_frac*100:.1f}% < {wick_ratio*100:.0f}%)"
+
+                # Impulse body check
+                if not reject_reason:
+                    imp_body  = abs(closes[i+1] - opens[i+1])
+                    imp_range = highs[i+1] - lows[i+1]
+                    if imp_body < avg_body * impulse_mult:
+                        reject_reason = f"impulse body {imp_body:.5f} < avg×{impulse_mult} ({avg_body*impulse_mult:.5f})"
+                    elif imp_range > 0 and (imp_body / imp_range) < 0.60:
+                        reject_reason = f"impulse wicks too large (body {imp_body/imp_range*100:.1f}% of range)"
+
+                # Direction vs bias
+                impulse_bullish = closes[i+1] > opens[i+1]
+                zone_type = "demand" if impulse_bullish else "supply"
+                if not reject_reason and look_for and zone_type != look_for:
+                    reject_reason = f"wrong direction ({zone_type}) — bias requires {look_for}"
+
+                # Bias misaligned
+                if not reject_reason and not look_for:
+                    reject_reason = "bias misaligned — detection skipped"
+
+                # Touch check
+                if not reject_reason:
+                    if zone_type == "demand" and last_low <= h:
+                        reject_reason = f"demand zone touched/crossed (low {last_low:.5f} ≤ zone top {h:.5f})"
+                    elif zone_type == "supply" and last_high >= l:
+                        reject_reason = f"supply zone touched/crossed (high {last_high:.5f} ≥ zone bot {l:.5f})"
+
+                is_active = reject_reason is None
+
+                # Calculate impulse metrics for display
+                imp_body_val  = round(abs(closes[i+1] - opens[i+1]), 6) if i+1 < len(df) else None
+                imp_mult_used = round(imp_body_val / avg_body, 2) if imp_body_val and avg_body else None
+                body_size     = round(abs(c - o), 6)
+                total_range   = round(h - l, 6)
+                wick_pct      = round((total_range - body_size) / total_range * 100, 1) if total_range else 0
+
+                candidates.append({
+                    "start":         candle_ts,
+                    "end":           int(df.index[-1].timestamp()),
+                    "top":           float(h),
+                    "bottom":        float(l),
+                    "type":          zone_type,
+                    "session":       session,
+                    "is_active":     is_active,
+                    "reject_reason": reject_reason,
+                    "wick_pct":      wick_pct,
+                    "body_size":     body_size,
+                    "impulse_body":  imp_body_val,
+                    "impulse_mult":  imp_mult_used,
+                    "avg_body":      round(avg_body, 6),
+                })
+
+            return jsonify({
+                "pair":       self.pair_id,
+                "bias":       bias_info,
+                "look_for":   look_for,
+                "avg_body":   round(avg_body, 6),
+                "candidates": candidates,
+            })
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+    def _debug_fvg(self):
+        """
+        Scan recent candles for Fair Value Gap patterns.
+        For each candidate candle (potential breakout), checks FVG conditions
+        between candle[N-1], candle[N], candle[N+1].
+        Returns all candidates with pass/fail and candle details.
+        """
+        try:
+            import pandas as pd
+            import numpy as np
+            from detectors.accumulation import _check_fvg
+
+            cache = {}
+            # Use the detector's configured timeframe
+            det_interval = self.detector_params.get("accumulation", {}).get("timeframe", "1m")
+            df = self._get_df(det_interval, cache)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            for col in ['Open','High','Low','Close']:
+                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
+            df = df.dropna(subset=['Open','High','Low','Close'])
+
+            opens  = df['Open'].values.flatten().astype(float)
+            highs  = df['High'].values.flatten().astype(float)
+            lows   = df['Low'].values.flatten().astype(float)
+            closes = df['Close'].values.flatten().astype(float)
+
+            # Scan the last 80 candles (leave room for N-1 and N+1)
+            scan_start = max(1, len(df) - 82)
+            scan_end   = len(df) - 2   # stop at last closed so N+1 is also closed
+
+            candidates = []
+            for i in range(scan_end, scan_start, -1):
+                fvg = _check_fvg(df, i)
+                h1, l1 = highs[i-1], lows[i-1]
+                h3, l3 = highs[i+1], lows[i+1]
+                bullish_fvg = l3 > h1
+                bearish_fvg = h3 < l1
+
+                candidates.append({
+                    "candle_idx":   i,
+                    "has_fvg":      fvg is not None,
+                    "fvg_type":     fvg["fvg_type"] if fvg else None,
+                    "candle1_time": int(df.index[i-1].timestamp()),
+                    "candle1_high": float(h1),
+                    "candle1_low":  float(l1),
+                    "candle2": {
+                        "time":  int(df.index[i].timestamp()),
+                        "open":  float(opens[i]),
+                        "high":  float(highs[i]),
+                        "low":   float(lows[i]),
+                        "close": float(closes[i]),
+                    },
+                    "candle3_time": int(df.index[i+1].timestamp()),
+                    "candle3_high": float(h3),
+                    "candle3_low":  float(l3),
+                    "gap_check": {
+                        "bullish_condition": f"low[N+1] {l3:.5f} > high[N-1] {h1:.5f} = {bullish_fvg}",
+                        "bearish_condition": f"high[N+1] {h3:.5f} < low[N-1] {l1:.5f} = {bearish_fvg}",
+                    },
+                })
+
+            candles_out = [
+                {"time": int(idx.timestamp()), "open": float(r["Open"]),
+                 "high": float(r["High"]), "low": float(r["Low"]), "close": float(r["Close"])}
+                for idx, r in df.iterrows()
+            ]
+
+            total  = len(candidates)
+            passed = sum(1 for c in candidates if c["has_fvg"])
+            return jsonify({
+                "pair":       self.pair_id,
+                "total":      total,
+                "passed":     passed,
+                "candidates": candidates,
+                "candles":    candles_out,
             })
         except Exception as e:
             import traceback
