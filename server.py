@@ -834,7 +834,16 @@ class PairServer:
                 gap_pct_raw  = gap_size_raw / avg_p if avg_p > 0 else 0
 
                 reject_reason = None
-                if not has_raw_gap:
+                # Zero-range candle guards (same as fvg.py)
+                if h_prev <= 0 or l_prev <= 0 or h_next <= 0 or l_next <= 0:
+                    reject_reason = "zero/negative price in N-1 or N+1"
+                elif h_prev == l_prev:
+                    reject_reason = "zero-range candle N-1 (no wick data)"
+                elif h_next == l_next:
+                    reject_reason = "zero-range candle N+1 (no wick data)"
+                elif crange == 0:
+                    reject_reason = "zero-range impulse candle N"
+                elif not has_raw_gap:
                     reject_reason = "no gap (wicks overlap)"
                 elif gap_pct_raw < min_gap_pct:
                     reject_reason = f"gap too small ({gap_pct_raw*100:.4f}% < min {min_gap_pct*100:.4f}%)"
