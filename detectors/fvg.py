@@ -86,6 +86,19 @@ def _check_fvg(
         if avg_p == 0:
             return None
 
+        # ── Sanity: reject zero-range / bad-data candles ──────────────────
+        # A candle with High == Low has no wick information — using it as a
+        # gap boundary produces meaningless results.
+        if h_prev <= 0 or l_prev <= 0 or h_next <= 0 or l_next <= 0:
+            return None
+        if h_prev == l_prev:   # zero-range N-1
+            return None
+        if h_next == l_next:   # zero-range N+1
+            return None
+        candle_range = h_now - l_now
+        if candle_range == 0:  # zero-range impulse candle — skip body check below
+            return None
+
         # ── Gap condition ─────────────────────────────────────────────────
         raw_bullish = l_next > h_prev   # gap above: space between h[N-1] and l[N+1]
         raw_bearish = h_next < l_prev   # gap below: space between h[N+1] and l[N-1]
@@ -116,12 +129,11 @@ def _check_fvg(
             return None
 
         # ── Impulse body size ─────────────────────────────────────────────
-        candle_range = h_now - l_now
-        if candle_range > 0:
-            body = abs(c_now_ - o_now)
-            body_ratio = body / candle_range
-            if body_ratio < impulse_body_pct:
-                return None                     # doji / spinning top — not a true impulse
+        # candle_range > 0 is guaranteed by the zero-range check above
+        body       = abs(c_now_ - o_now)
+        body_ratio = body / candle_range
+        if body_ratio < impulse_body_pct:
+            return None                     # doji / spinning top — not a true impulse
 
         return {
             "fvg_type":  fvg_type,
@@ -150,7 +162,7 @@ def _check_fvg(
                 ),
                 "gap_size_pct": f"{gap_pct*100:.4f}%",
                 "min_required": f"{min_gap_pct*100:.4f}%",
-                "impulse_body_ratio": f"{body_ratio*100:.1f}%" if candle_range > 0 else "N/A",
+                "impulse_body_ratio": f"{body_ratio*100:.1f}%",
             },
         }
     except Exception:
