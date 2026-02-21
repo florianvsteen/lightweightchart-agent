@@ -15,17 +15,12 @@ Rules:
 Selection priority (among all passing zones):
   1. Zones with ADX < 10 are preferred (ultra-low directional strength)
   2. Among equal ADX tiers, LOWEST SLOPE wins
-  (previously: tightest range_pct won — replaced by slope-first selection)
 
 Breakout validation — FAIR VALUE GAP:
-  When price breaks out of the box, the system checks for an FVG
-  (Fair Value Gap) on the breakout candle. An FVG exists when there
-  is an open gap between:
-    - The wick of the candle BEFORE the breakout (candle[-3])
-    - The wick of the candle AFTER the breakout  (candle[-1], forming)
-  If no FVG exists, the zone is considered invalid on breakout.
-  The breakout candle itself (candle[-2]) is returned as fvg_candle
-  for rendering as a filled zone on the chart.
+  When price breaks OUT of the box (last closed body is above or below the
+  box boundaries), the breakout candle is validated using the FVG detector.
+  The FVG gap zone (not the candle range) is returned as fvg_candle for
+  rendering. If no valid FVG exists, the zone resets to "looking".
 
 Session hours in UTC:
   Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
@@ -39,6 +34,7 @@ Weekend halt:
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
+from detectors.fvg import _check_fvg
 
 
 SESSION_WINDOWS = {
@@ -147,57 +143,6 @@ def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 
         adx_arr[i] = (adx_arr[i-1] * (period - 1) + dx[i]) / period
 
     return float(adx_arr[-1])
-
-
-def _check_fvg(df, breakout_idx: int) -> dict | None:
-    """
-    Check for a Fair Value Gap around the breakout candle.
-
-    Candles involved (using df index):
-      candle_before  = df.iloc[breakout_idx - 1]   (candle 1)
-      breakout_candle = df.iloc[breakout_idx]        (candle 2 — the breakout)
-      candle_after   = df.iloc[breakout_idx + 1]    (candle 3)
-
-    FVG = open gap between wick of candle 1 and wick of candle 3.
-    Bullish FVG: low of candle 3 > high of candle 1  (gap above)
-    Bearish FVG: high of candle 3 < low of candle 1  (gap below)
-
-    Returns candle data dict for fvg_candle if FVG exists, else None.
-    """
-    try:
-        n = len(df)
-        if breakout_idx < 1 or breakout_idx + 1 >= n:
-            return None
-
-        c1 = df.iloc[breakout_idx - 1]
-        c2 = df.iloc[breakout_idx]
-        c3 = df.iloc[breakout_idx + 1]
-
-        h1 = float(c1['High'])
-        l1 = float(c1['Low'])
-        h3 = float(c3['High'])
-        l3 = float(c3['Low'])
-
-        bullish_fvg = l3 > h1   # gap above
-        bearish_fvg = h3 < l1   # gap below
-
-        if not bullish_fvg and not bearish_fvg:
-            return None
-
-        # Return the breakout candle as the FVG zone candle
-        return {
-            "fvg_type":   "bullish" if bullish_fvg else "bearish",
-            "open":  float(c2['Open']),
-            "high":  float(c2['High']),
-            "low":   float(c2['Low']),
-            "close": float(c2['Close']),
-            "time":  int(df.index[breakout_idx].timestamp()),
-            # Zone bounds = full candle range (high to low) for rendering
-            "top":    float(c2['High']),
-            "bottom": float(c2['Low']),
-        }
-    except Exception:
-        return None
 
 
 def detect(
@@ -344,24 +289,52 @@ def detect(
 
         # Active zone — price still inside box
         if candidate["is_active"]:
-            # Remove internal bookkeeping key before returning
             candidate.pop("_window_start_idx", None)
             return candidate
 
-        # Price broke out — validate with FVG
-        # The breakout candle is the last closed candle (index len(df)-2)
-        # candle_before = len(df)-3, candle_after = len(df)-1 (forming, still valid for wick)
-        breakout_idx = len(df) - 2
-        fvg = _check_fvg(df, breakout_idx)
+        # ── Price broke out — find the breakout candle and validate FVG ───
+        #
+        # The breakout candle is the most recent closed candle whose BODY
+        # moved outside the accumulation box. We scan back up to 5 candles
+        # so we catch fresh breakouts even if one or two inside-box candles
+        # followed before the current bar.
+        #
+        # We need candle[N+1] to be closed too, so the scan window is:
+        #   last_closed_idx - 1  down to  last_closed_idx - 5
+        # (last_closed_idx = len(df) - 2, its N+1 = len(df)-1 which is the
+        #  forming candle — its wick is valid to read even while forming)
+
+        box_top    = candidate["top"]
+        box_bottom = candidate["bottom"]
+
+        fvg        = None
+        search_end = last_closed_idx          # = len(df) - 2
+        # N+1 must exist: candle_n_idx + 1 < len(df)  → candle_n_idx ≤ len(df)-2
+        # N-1 must exist: candle_n_idx - 1 ≥ 0        → candle_n_idx ≥ 1
+        for bo_idx in range(search_end, max(1, search_end - 5), -1):
+            bo_open  = float(df['Open'].iloc[bo_idx])
+            bo_close = float(df['Close'].iloc[bo_idx])
+            bo_body_high = max(bo_open, bo_close)
+            bo_body_low  = min(bo_open, bo_close)
+
+            broke_up   = bo_body_high > box_top     # bullish breakout
+            broke_down = bo_body_low  < box_bottom  # bearish breakout
+
+            if not broke_up and not broke_down:
+                continue   # still inside box
+
+            # This candle broke out — check FVG at it
+            fvg = _check_fvg(df, bo_idx)
+            break   # only validate the first (most recent) breakout candle
 
         if fvg is None:
-            # No FVG → zone is invalid, start looking again
+            # No valid FVG on breakout → treat as still looking
             return {"detector": "accumulation", "status": "looking", "is_active": False}
 
-        # FVG confirmed — return zone with fvg_candle attached
+        # FVG confirmed — attach the gap zone (not the candle range) as fvg_candle
         candidate.pop("_window_start_idx", None)
-        candidate["is_active"] = False
-        candidate["fvg_candle"] = fvg
+        candidate["is_active"]  = False
+        candidate["fvg_candle"] = fvg   # top/bottom = actual gap bounds from fvg.py
         return candidate
 
     except Exception as e:
