@@ -48,10 +48,9 @@ def proxy_debug(pair_id):
         html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
         html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
         html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
-        html = html.replace("fetch('/debug/sd')", f"fetch('/proxy/{pair_upper}/debug/sd')")
-        html = html.replace('fetch("/debug/sd")', f'fetch("/proxy/{pair_upper}/debug/sd")')
-        html = html.replace("fetch('/debug/fvg')", f"fetch('/proxy/{pair_upper}/debug/fvg')")
-        html = html.replace('fetch("/debug/fvg")', f'fetch("/proxy/{pair_upper}/debug/fvg")')
+        html = html.replace("fetch(`/debug/data?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/data?interval=${{currentTF}}`)")
+        html = html.replace("fetch(`/debug/sd?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/sd?interval=${{currentTF}}`)")
+        html = html.replace("fetch(`/debug/fvg?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/fvg?interval=${{currentTF}}`)")
         # Match the replay fetch regardless of what options follow the URL
         import re
         html = re.sub(
@@ -72,7 +71,11 @@ def proxy_debug_data(pair_id):
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/data", timeout=30)
+        interval = request.args.get("interval", "")
+        url = f"http://127.0.0.1:{cfg['port']}/debug/data"
+        if interval:
+            url += f"?interval={interval}"
+        r = requests.get(url, timeout=30)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -100,7 +103,11 @@ def proxy_debug_sd(pair_id):
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/sd", timeout=30)
+        interval = request.args.get("interval", "")
+        url = f"http://127.0.0.1:{cfg['port']}/debug/sd"
+        if interval:
+            url += f"?interval={interval}"
+        r = requests.get(url, timeout=30)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -112,7 +119,11 @@ def proxy_debug_fvg(pair_id):
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/fvg", timeout=30)
+        interval = request.args.get("interval", "")
+        url = f"http://127.0.0.1:{cfg['port']}/debug/fvg"
+        if interval:
+            url += f"?interval={interval}"
+        r = requests.get(url, timeout=30)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
