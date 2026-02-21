@@ -799,21 +799,24 @@ function selectWindow(windowSize) {
   document.querySelector('[data-tab="detail"]').classList.add('active');
   document.getElementById('tab-detail').classList.add('active');
 
-  document.getElementById('detail-title').textContent =
-    'Window ' + windowSize + ' — ' + (w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase());
+  // Title: show pass/fail reason + breakout/FVG outcome
+  let titleSuffix = w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase();
+  if (w.pass && w.broke_out) titleSuffix += w.fvg_valid ? ' · ✓ FVG' : ' · ✗ NO FVG';
+  else if (w.pass && w.is_active) titleSuffix += ' · ● ACTIVE';
+  document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
+  // Accumulation quality rows
   const rows = [
-    { key:'Range %',  val:(w.range_pct*100).toFixed(4)+'%',   limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max':'no limit', pass:!w.range_limit||w.range_pct<=w.range_limit, ratio:w.range_limit?w.range_pct/w.range_limit:0.5 },
-    { key:'Slope',    val:w.slope,    limit:w.slope_limit,     pass:w.slope<w.slope_limit,    ratio:w.slope/w.slope_limit },
-    { key:'Chop',     val:w.chop,     limit:'≥0.44/0.36',      pass:w.chop>=0.36,             ratio:w.chop/0.44 },
-    { key:'ADX',      val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit, ratio:w.adx!=null?w.adx/w.adx_limit:0 },
-    { key:'ADX<10',   val:w.adx!=null?(w.adx<10?'✓ priority':'no'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
-    { key:'Top',      val:w.top,      limit:'', pass:null, ratio:0 },
-    { key:'Bottom',   val:w.bottom,   limit:'', pass:null, ratio:0 },
-    { key:'Active',   val:w.is_active?'YES':'no', limit:'', pass:null, ratio:0 },
+    { key:'Range %',  val:(w.range_pct*100).toFixed(4)+'%', limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max':'no limit', pass:!w.range_limit||w.range_pct<=w.range_limit, ratio:w.range_limit?w.range_pct/w.range_limit:0.5 },
+    { key:'Slope',    val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,                      ratio:w.slope/w.slope_limit },
+    { key:'Chop',     val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                               ratio:w.chop/0.44 },
+    { key:'ADX',      val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit,            ratio:w.adx!=null?w.adx/w.adx_limit:0 },
+    { key:'ADX<10',   val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
+    { key:'Top',      val:w.top,        limit:'', pass:null, ratio:0 },
+    { key:'Bottom',   val:w.bottom,     limit:'', pass:null, ratio:0 },
   ];
 
-  document.getElementById('detail-body').innerHTML = rows.map(r => {
+  const accumHtml = rows.map(r => {
     const cls    = r.pass===null?'neutral':r.pass?'pass':'fail';
     const barW   = Math.min(100, Math.round((r.ratio||0)*100));
     const barCol = r.pass===null?'#444':r.pass?'var(--pass)':'var(--red)';
@@ -826,23 +829,88 @@ function selectWindow(windowSize) {
         (r.limit?'<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: '+r.limit+'</div>':'');
   }).join('');
 
-  drawWindowOverlay(w, replayMode ? replayData : liveData);
+  // Breakout + FVG section (only for passing windows)
+  let breakoutHtml = '';
+  if (w.pass) {
+    const activeData = replayMode ? replayData : liveData;
+    const bo = activeData?.breakout_candle;
+    const cf = activeData?.confirm_candle;
+    const ac = activeData?.accum_last_candle;
+
+    if (w.is_active) {
+      breakoutHtml =
+        '<div style="margin-top:10px;padding:8px 10px;background:rgba(240,196,90,0.05);border:1px solid rgba(240,196,90,0.2);border-radius:4px">' +
+          '<div style="font-size:9px;color:var(--yellow);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">● Zone Active</div>' +
+          '<div style="font-size:10px;color:var(--muted)">Breakout candle (df[-3]) is still inside the box.</div>' +
+        '</div>';
+    } else if (w.broke_out) {
+      const dir    = w.broke_up ? '↑ BULLISH BREAKOUT' : '↓ BEARISH BREAKOUT';
+      const dirCol = w.broke_up ? 'var(--pass)' : 'var(--red)';
+      const fvgCol = w.fvg_valid ? 'var(--pass)' : 'var(--red)';
+      const fvgTxt = w.fvg_valid ? '✓ FVG CONFIRMED' : '✗ NO VALID FVG';
+      const fvgSub = w.fvg_valid
+        ? 'gap: ' + fmtPrice(w.fvg?.bottom) + ' → ' + fmtPrice(w.fvg?.top) + ' (' + w.fvg?.fvg_type + ')'
+        : 'Breakout had no valid 3-candle fair value gap — window rejected';
+
+      breakoutHtml =
+        '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
+          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-3])</div>' +
+          '<div style="font-size:10px;color:' + dirCol + ';font-weight:700;margin-bottom:6px">' + dir + '</div>' +
+          // 3-candle mini grid
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:8px">' +
+            '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:4px 5px">' +
+              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N-1 (last accum)</div>' +
+              '<div style="font-size:9px">H ' + (ac ? fmtPrice(ac.high) : '—') + '</div>' +
+              '<div style="font-size:9px">L ' + (ac ? fmtPrice(ac.low)  : '—') + '</div>' +
+            '</div>' +
+            '<div style="background:var(--bg);border:1px solid ' + dirCol + ';border-radius:3px;padding:4px 5px">' +
+              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N (breakout)</div>' +
+              '<div style="font-size:9px">O ' + (bo ? fmtPrice(bo.open)  : '—') + '</div>' +
+              '<div style="font-size:9px">C ' + (bo ? fmtPrice(bo.close) : '—') + '</div>' +
+              '<div style="font-size:9px">H ' + (bo ? fmtPrice(bo.high)  : '—') + ' L ' + (bo ? fmtPrice(bo.low) : '—') + '</div>' +
+            '</div>' +
+            '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:4px 5px">' +
+              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N+1 (confirm)</div>' +
+              '<div style="font-size:9px">H ' + (cf ? fmtPrice(cf.high) : '—') + '</div>' +
+              '<div style="font-size:9px">L ' + (cf ? fmtPrice(cf.low)  : '—') + '</div>' +
+            '</div>' +
+          '</div>' +
+          // FVG verdict
+          '<div style="padding:5px 8px;border-radius:3px;border:1px solid ' + fvgCol + ';background:rgba(0,0,0,0.2)">' +
+            '<div style="font-size:10px;color:' + fvgCol + ';font-weight:700;margin-bottom:2px">' + fvgTxt + '</div>' +
+            '<div style="font-size:9px;color:var(--muted)">' + fvgSub + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+
+  document.getElementById('detail-body').innerHTML = accumHtml + breakoutHtml;
+
+  // Use the data object that matches the current mode (live vs replay)
+  const activeData = replayMode ? replayData : liveData;
+  drawWindowOverlay(w, activeData);
 }
 
-function drawWindowOverlay(w, liveOrReplayData) {
+function drawWindowOverlay(w, data) {
   clearOverlays();
   if (!w?.start_ts) return;
+
+  // Accumulation box
   const col  = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
   const fill = w.pass ? 0.06 : 0.04;
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
 
-  // If the window has a breakout with FVG data, draw those candles too
-  const d = liveOrReplayData || (replayMode ? replayData : liveData);
-  if (!d) return;
-  const bo = d.breakout_candle;
-  const cf = d.confirm_candle;
-  const ac = d.accum_last_candle;
+  // Only show breakout overlay if this window actually broke out
+  if (!w.broke_out || !data) return;
+
+  const bo = data.breakout_candle;
+  const cf = data.confirm_candle;
+  const ac = data.accum_last_candle;
   if (!bo) return;
+
+  // Detect candle interval in seconds from the candle series
+  const src = data.candles;
+  const intervalSecs = (src?.length > 1) ? (src[1].time - src[0].time) : 60;
 
   // Vertical markers for the 3 FVG candles
   if (ac) drawVLine(ac.time, 'rgba(240,196,90,0.25)');
@@ -851,13 +919,13 @@ function drawWindowOverlay(w, liveOrReplayData) {
 
   // Breakout candle body highlight
   const bCol = bo.close > bo.open ? 'rgba(90,158,240,0.8)' : 'rgba(240,90,126,0.8)';
-  drawBox(bo.time, bo.time + 60, bo.high, bo.low, bCol, 0.12);
+  drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.12);
 
-  // FVG gap zone if confirmed
+  // FVG gap zone if confirmed on this window
   if (w.fvg?.top != null) {
-    const gCol = w.fvg.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-    const spanS = ac?.time ?? bo.time - 60;
-    const spanE = cf ? cf.time + 60 : bo.time + 180;
+    const gCol  = w.fvg.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
+    const spanS = ac?.time  ?? (bo.time - intervalSecs);
+    const spanE = cf?.time  ? (cf.time + intervalSecs) : (bo.time + intervalSecs * 2);
     drawBox(spanS, spanE, w.fvg.top, w.fvg.bottom, gCol, 0.30);
   }
 }
