@@ -16,11 +16,17 @@ Selection priority (among all passing zones):
   1. Zones with ADX < 10 are preferred (ultra-low directional strength)
   2. Among equal ADX tiers, LOWEST SLOPE wins
 
-Breakout validation — FAIR VALUE GAP:
+Breakout validation — IMPULSIVE CANDLE:
   When price breaks OUT of the box (last closed body is above or below the
-  box boundaries), the breakout candle is validated using the FVG detector.
-  The FVG gap zone (not the candle range) is returned as fvg_candle for
-  rendering. If no valid FVG exists, the zone resets to "looking".
+  box boundaries), the breakout is validated by checking that the breakout
+  candle's body is LARGER than the average body of candles inside the window.
+  This confirms the move is impulsive and not just noise. If not impulsive,
+  the zone resets to "looking".
+
+  States:
+    looking   — no valid zone found
+    active    — valid zone, breakout candle still inside the box
+    confirmed — valid zone + impulsive breakout outside the box
 
 Session hours in UTC:
   Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
@@ -34,7 +40,6 @@ Weekend halt:
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
-from detectors.fvg import _check_fvg
 
 
 SESSION_WINDOWS = {
@@ -198,22 +203,28 @@ def detect(
 
         # Candle layout (newest → oldest):
         #   df[-1]  forming candle          — never touched
-        #   df[-2]  confirmation candle     — FVG N+1 (fully closed)
-        #   df[-3]  breakout candle         — FVG N   (the impulse, fully closed)
-        #   df[-4]  last accumulation candle— FVG N-1, windows end here
-        #   df[-N…] accumulation window
+        #   df[-2]  breakout/impulse candle — last fully closed candle
+        #   df[-3…] accumulation window     — windows end at df[-2] exclusive
         #
-        # Using df[-2] as N+1 (not the forming candle) means the FVG check
-        # uses three fully-closed candles — no half-formed wicks.
+        # A confirmed accumulation requires:
+        #   1. A valid sideways window (slope/chop/adx/range checks pass)
+        #   2. df[-2] body is OUTSIDE the box (broke up or down)
+        #   3. df[-2] body range > avg body range of candles inside the window (impulsive)
+        #
+        # If the last candle is still inside the box → status = "active"
+        # If broke out AND impulsive              → status = "confirmed"
+        # Otherwise                               → status = "looking"
 
-        breakout_idx   = len(df) - 3          # FVG candle N
-        confirm_idx    = len(df) - 2          # FVG candle N+1 (fully closed)
-        last_accum_idx = len(df) - 4          # last candle inside accumulation window
+        breakout_idx   = len(df) - 2          # last fully closed candle
+        last_accum_idx = len(df) - 3          # windows end here (inclusive)
         scan_start     = max(0, len(df) - lookback)
 
-        # is_active check uses the breakout candle's body
+        # Breakout candle body
         bo_open_raw  = float(df['Open'].iloc[breakout_idx])
         bo_close_raw = float(df['Close'].iloc[breakout_idx])
+        bo_high_raw  = float(df['High'].iloc[breakout_idx])
+        bo_low_raw   = float(df['Low'].iloc[breakout_idx])
+        bo_body_size = abs(bo_close_raw - bo_open_raw)
         last_body_high = max(bo_open_raw, bo_close_raw)
         last_body_low  = min(bo_open_raw, bo_close_raw)
 
@@ -261,8 +272,12 @@ def detect(
 
             chop   = _choppiness(closes)
             end_i  = i + window_size - 1   # = last_accum_idx for the largest window
-            # is_active: breakout candle's body is still inside the accumulation box
+            # is_active: breakout candle body still inside accumulation box
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+
+            # Average body size of candles inside the window (for impulse check)
+            bodies = np.abs(closes - opens)
+            avg_body = float(bodies.mean()) if len(bodies) > 0 else 0.0
 
             zone = {
                 "detector":  "accumulation",
@@ -275,6 +290,7 @@ def detect(
                 "range_pct": round(range_pct, 6),
                 "slope":     round(slope, 8),
                 "adx":       round(adx_val, 2) if adx_val is not None else None,
+                "avg_body":  round(avg_body, 6),
                 "_window_start_idx": i,
             }
 
@@ -301,45 +317,52 @@ def detect(
         if candidate is None:
             return {"detector": "accumulation", "status": "looking", "is_active": False}
 
-        # Active zone — price still inside box
+        # Active zone — breakout candle still inside the box
         if candidate["is_active"]:
             candidate.pop("_window_start_idx", None)
+            candidate["status"] = "active"
             return candidate
 
-        # ── Price broke out — validate breakout candle with FVG ────────────
+        # ── Price broke out — validate as IMPULSIVE ───────────────────────
         #
-        # breakout candle = df[-3] (breakout_idx)
-        # N-1 = df[-4] (last_accum_idx) — last accumulation candle
-        # N+1 = df[-2] (confirm_idx)    — fully closed confirmation candle
-        # All three are fully closed; no forming-candle wicks involved.
+        # breakout candle = df[-2] (breakout_idx)
+        # Conditions for "confirmed":
+        #   1. Body exits the box (broke_up or broke_down)
+        #   2. Breakout body size > avg body size of candles in the window
+        #      — this confirms the move is impulsive, not just a wick poke
 
         box_top    = candidate["top"]
         box_bottom = candidate["bottom"]
+        avg_body   = candidate["avg_body"]
 
-        bo_open      = float(df['Open'].iloc[breakout_idx])
-        bo_close     = float(df['Close'].iloc[breakout_idx])
-        bo_body_high = max(bo_open, bo_close)
-        bo_body_low  = min(bo_open, bo_close)
-
-        broke_up   = bo_body_high > box_top
-        broke_down = bo_body_low  < box_bottom
+        broke_up   = last_body_high > box_top
+        broke_down = last_body_low  < box_bottom
 
         if not broke_up and not broke_down:
-            # Breakout candle still inside box — zone is active
+            # Body still inside — active (is_active flag was wrong, re-check)
             candidate.pop("_window_start_idx", None)
             candidate["is_active"] = True
+            candidate["status"]    = "active"
             return candidate
 
-        fvg = _check_fvg(df, breakout_idx)
+        # Check impulse: body must be bigger than avg window body
+        is_impulsive = bo_body_size > avg_body
 
-        if fvg is None:
-            # Broke out but no valid FVG → not a confirmed signal
+        if not is_impulsive:
             return {"detector": "accumulation", "status": "looking", "is_active": False}
 
-        # FVG confirmed — attach gap zone bounds for chart rendering
+        # Confirmed — impulsive breakout outside the box
         candidate.pop("_window_start_idx", None)
-        candidate["is_active"]  = False
-        candidate["fvg_candle"] = fvg
+        candidate["is_active"]      = False
+        candidate["status"]         = "confirmed"
+        candidate["breakout_dir"]   = "up" if broke_up else "down"
+        candidate["breakout_body"]  = round(bo_body_size, 6)
+        candidate["impulse_ratio"]  = round(bo_body_size / avg_body, 2) if avg_body > 0 else None
+        candidate["breakout_candle"] = {
+            "time":  int(df.index[breakout_idx].timestamp()),
+            "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
+            "low":   round(bo_low_raw, 5),  "close": round(bo_close_raw, 5),
+        }
         return candidate
 
     except Exception as e:
