@@ -207,6 +207,22 @@ DASHBOARD = r"""<!DOCTYPE html>
   #session-global.asian    { border-color: #c8a84b; color: #c8a84b; }
   #session-global.london   { border-color: var(--blue); color: var(--blue); }
   #session-global.new_york { border-color: var(--accent); color: var(--accent); }
+  #session-global.weekend  { border-color: #3a2a2a; color: #553a3a; }
+
+  /* Weekend banner */
+  #weekend-banner {
+    display: none;
+    background: rgba(30, 10, 10, 0.95);
+    border-bottom: 1px solid #2a1a1a;
+    padding: 18px 32px;
+    text-align: center;
+    position: sticky;
+    top: 61px;
+    z-index: 99;
+  }
+  #weekend-banner .wk-title { font-size: 0.85rem; color: #553a3a; letter-spacing: 0.15em; text-transform: uppercase; }
+  #weekend-banner .wk-countdown { font-size: 1.6rem; font-weight: 700; color: #3a2a2a; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  #weekend-banner .wk-hint { font-size: 0.6rem; color: #332222; margin-top: 2px; letter-spacing: 0.08em; }
 
   .grid {
     display: grid;
@@ -366,6 +382,12 @@ DASHBOARD = r"""<!DOCTYPE html>
 
 <div class="grid" id="grid"></div>
 
+<div id="weekend-banner">
+  <div class="wk-title">⛔ Market Closed — Weekend Halt</div>
+  <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
+  <div class="wk-hint">Fri 23:00 UTC → Mon 01:00 UTC &nbsp;·&nbsp; Resumes Asian session</div>
+</div>
+
 <footer>
   <span id="last-update">Waiting for data...</span>
   <div class="refresh-indicator">
@@ -384,8 +406,40 @@ const SESSION_WINDOWS = [
 ];
 
 function getCurrentSession() {
-  const h = new Date().getUTCHours();
-  return SESSION_WINDOWS.find(s => h >= s.start && h < s.end) || null;
+  const now = new Date();
+  const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Sat,6=Sun
+  const hour = now.getUTCHours();
+  // Weekend halt check
+  if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 1)) return null;
+  return SESSION_WINDOWS.find(s => hour >= s.start && hour < s.end) || null;
+}
+
+function isWeekendHalt() {
+  const now = new Date();
+  const dow  = now.getUTCDay();
+  const hour = now.getUTCHours();
+  if (dow === 5 && hour >= 23) return true;
+  if (dow === 6) return true;
+  if (dow === 0 && hour < 1) return true;
+  return false;
+}
+
+function getWeekendCountdown() {
+  const now = new Date();
+  const target = new Date(now);
+  const dow = now.getUTCDay();
+  // Days until Monday (day 1)
+  let daysUntilMon = (1 - dow + 7) % 7;
+  if (daysUntilMon === 0) daysUntilMon = 7;
+  target.setUTCDate(target.getUTCDate() + daysUntilMon);
+  target.setUTCHours(1, 0, 0, 0);
+  const diff = target - now;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
 }
 
 function formatPrice(p, id) {
@@ -465,21 +519,30 @@ async function fetchPair(pair) {
     // ── Accumulation ─────────────────────────────────────────────────────
     if (pair.type === 'accumulation') {
       const z = det.accumulation;
-      if (!z || z.status === 'looking' || !z.status) {
-        dotEl.className   = 'status-dot looking';
-        statusEl.textContent = 'Looking for accumulation';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML  = '';
-        metaEl.textContent = z?.session ? z.session.replace('_',' ').toUpperCase() : '--';
+      if (z && z.status === 'weekend') {
+        dotEl.className      = 'status-dot offline';
+        statusEl.textContent = 'Market closed — weekend';
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = '';
+        metaEl.textContent   = '⛔ CLOSED';
+      } else if (!z || z.status === 'looking' || !z.status) {
+        // Check if it's out of session (result is null from server = out of session)
+        const isOOS = !z;
+        dotEl.className      = 'status-dot looking';
+        statusEl.textContent = isOOS ? 'Out of session' : 'Looking for accumulation';
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = '';
+        metaEl.textContent   = z?.session ? z.session.replace('_',' ').toUpperCase() : (isOOS ? 'OUT OF SESSION' : '--');
       } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
         dotEl.className   = 'status-dot found';
         statusEl.textContent = z.status === 'confirmed' ? 'Accumulation confirmed ✓' : 'Accumulation found';
         statusEl.className = 'status-text';
         const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
+        const fvgStr = z.fvg_candle ? ` &nbsp;·&nbsp; <span style="color:#5a9ef0">FVG ✓</span>` : '';
         extraEl.innerHTML = `
           <div class="accum-box found">
             <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
-            ${adxStr}
+            ${adxStr}${fvgStr}
             <br>Since ${formatUTC(z.start)}
           </div>`;
         metaEl.textContent = '';
@@ -493,11 +556,11 @@ async function fetchPair(pair) {
           </div>`;
         metaEl.textContent = '';
       } else {
-        dotEl.className   = 'status-dot looking';
+        dotEl.className      = 'status-dot looking';
         statusEl.textContent = 'Looking for accumulation';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML  = '';
-        metaEl.textContent = '';
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = '';
+        metaEl.textContent   = '';
       }
     }
 
@@ -558,8 +621,20 @@ function updateClock() {
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   document.getElementById('clock').textContent = timeStr;
 
-  const sess  = getCurrentSession();
   const badge = document.getElementById('session-global');
+
+  if (isWeekendHalt()) {
+    const countdown = getWeekendCountdown();
+    badge.textContent = `⛔ CLOSED · Mon in ${countdown}`;
+    badge.className   = 'weekend';
+    document.getElementById('weekend-banner').style.display = '';
+    document.getElementById('weekend-countdown').textContent = countdown;
+    return;
+  }
+
+  document.getElementById('weekend-banner').style.display = 'none';
+
+  const sess = getCurrentSession();
   if (sess) {
     badge.textContent = sess.label;
     badge.className   = sess.name;
@@ -579,6 +654,7 @@ function updateClock() {
 }
 
 async function pollAll() {
+  if (isWeekendHalt()) return;   // don't poll during weekend halt
   const dot = document.getElementById('refresh-dot');
   dot.classList.add('active');
   await Promise.all(PAIRS.map(fetchPair));
