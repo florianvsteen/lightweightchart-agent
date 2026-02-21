@@ -171,7 +171,7 @@ def detect(
         if is_weekend_halt():
             return {"detector": "accumulation", "status": "weekend", "is_active": False}
 
-        if len(df) < min_candles + 5:
+        if len(df) < min_candles + 4:
             return None
 
         if isinstance(df.columns, pd.MultiIndex):
@@ -196,13 +196,26 @@ def detect(
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        last_closed_open  = float(df['Open'].iloc[-2])
-        last_closed_close = float(df['Close'].iloc[-2])
-        last_body_high    = max(last_closed_open, last_closed_close)
-        last_body_low     = min(last_closed_open, last_closed_close)
+        # Candle layout (newest → oldest):
+        #   df[-1]  forming candle          — never touched
+        #   df[-2]  confirmation candle     — FVG N+1 (fully closed)
+        #   df[-3]  breakout candle         — FVG N   (the impulse, fully closed)
+        #   df[-4]  last accumulation candle— FVG N-1, windows end here
+        #   df[-N…] accumulation window
+        #
+        # Using df[-2] as N+1 (not the forming candle) means the FVG check
+        # uses three fully-closed candles — no half-formed wicks.
 
-        scan_start = max(0, len(df) - lookback)
-        last_closed_idx = len(df) - 2
+        breakout_idx   = len(df) - 3          # FVG candle N
+        confirm_idx    = len(df) - 2          # FVG candle N+1 (fully closed)
+        last_accum_idx = len(df) - 4          # last candle inside accumulation window
+        scan_start     = max(0, len(df) - lookback)
+
+        # is_active check uses the breakout candle's body
+        bo_open_raw  = float(df['Open'].iloc[breakout_idx])
+        bo_close_raw = float(df['Close'].iloc[breakout_idx])
+        last_body_high = max(bo_open_raw, bo_close_raw)
+        last_body_low  = min(bo_open_raw, bo_close_raw)
 
         # Collect all candidate zones with their slope for best-selection
         found_candidates     = []
@@ -211,7 +224,7 @@ def detect(
         for window_size in range(min_candles, lookback + 1):
             slope_limit = (threshold_pct * 0.10) / window_size
 
-            i = last_closed_idx - window_size + 1
+            i = last_accum_idx - window_size + 1
             if i < 0 or i < scan_start:
                 continue
 
@@ -246,8 +259,9 @@ def detect(
             if adx_val is not None and adx_val > adx_threshold:
                 continue
 
-            chop      = _choppiness(closes)
-            end_i     = i + window_size - 1
+            chop   = _choppiness(closes)
+            end_i  = i + window_size - 1   # = last_accum_idx for the largest window
+            # is_active: breakout candle's body is still inside the accumulation box
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
             zone = {
@@ -292,49 +306,40 @@ def detect(
             candidate.pop("_window_start_idx", None)
             return candidate
 
-        # ── Price broke out — find the breakout candle and validate FVG ───
+        # ── Price broke out — validate breakout candle with FVG ────────────
         #
-        # The breakout candle is the most recent closed candle whose BODY
-        # moved outside the accumulation box. We scan back up to 5 candles
-        # so we catch fresh breakouts even if one or two inside-box candles
-        # followed before the current bar.
-        #
-        # We need candle[N+1] to be closed too, so the scan window is:
-        #   last_closed_idx - 1  down to  last_closed_idx - 5
-        # (last_closed_idx = len(df) - 2, its N+1 = len(df)-1 which is the
-        #  forming candle — its wick is valid to read even while forming)
+        # breakout candle = df[-3] (breakout_idx)
+        # N-1 = df[-4] (last_accum_idx) — last accumulation candle
+        # N+1 = df[-2] (confirm_idx)    — fully closed confirmation candle
+        # All three are fully closed; no forming-candle wicks involved.
 
         box_top    = candidate["top"]
         box_bottom = candidate["bottom"]
 
-        fvg        = None
-        search_end = last_closed_idx          # = len(df) - 2
-        # N+1 must exist: candle_n_idx + 1 < len(df)  → candle_n_idx ≤ len(df)-2
-        # N-1 must exist: candle_n_idx - 1 ≥ 0        → candle_n_idx ≥ 1
-        for bo_idx in range(search_end, max(1, search_end - 5), -1):
-            bo_open  = float(df['Open'].iloc[bo_idx])
-            bo_close = float(df['Close'].iloc[bo_idx])
-            bo_body_high = max(bo_open, bo_close)
-            bo_body_low  = min(bo_open, bo_close)
+        bo_open      = float(df['Open'].iloc[breakout_idx])
+        bo_close     = float(df['Close'].iloc[breakout_idx])
+        bo_body_high = max(bo_open, bo_close)
+        bo_body_low  = min(bo_open, bo_close)
 
-            broke_up   = bo_body_high > box_top     # bullish breakout
-            broke_down = bo_body_low  < box_bottom  # bearish breakout
+        broke_up   = bo_body_high > box_top
+        broke_down = bo_body_low  < box_bottom
 
-            if not broke_up and not broke_down:
-                continue   # still inside box
+        if not broke_up and not broke_down:
+            # Breakout candle still inside box — zone is active
+            candidate.pop("_window_start_idx", None)
+            candidate["is_active"] = True
+            return candidate
 
-            # This candle broke out — check FVG at it
-            fvg = _check_fvg(df, bo_idx)
-            break   # only validate the first (most recent) breakout candle
+        fvg = _check_fvg(df, breakout_idx)
 
         if fvg is None:
-            # No valid FVG on breakout → treat as still looking
+            # Broke out but no valid FVG → not a confirmed signal
             return {"detector": "accumulation", "status": "looking", "is_active": False}
 
-        # FVG confirmed — attach the gap zone (not the candle range) as fvg_candle
+        # FVG confirmed — attach gap zone bounds for chart rendering
         candidate.pop("_window_start_idx", None)
         candidate["is_active"]  = False
-        candidate["fvg_candle"] = fvg   # top/bottom = actual gap bounds from fvg.py
+        candidate["fvg_candle"] = fvg
         return candidate
 
     except Exception as e:
