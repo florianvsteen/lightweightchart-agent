@@ -198,14 +198,13 @@ class PairServer:
                 is_active_found = (
                     zone is not None
                     and zone.get("is_active")
-                    and zone.get("status") == "found"
+                    and zone.get("status") == "active"
                 )
 
                 # ── State machine ──────────────────────────────────────
-                # looking   → found     (zone active, all checks pass)
-                # found     → confirmed (breakout detected — screenshot dispatched
-                #                        WHILE zone still drawn on chart this cycle)
-                # confirmed → looking   (next cycle after screenshot dispatched, reset)
+                # looking   → active    (zone formed, breakout candle still inside)
+                # active    → confirmed (impulsive breakout — alert dispatched)
+                # confirmed → looking   (next cycle, reset)
                 prev_status = (prev or {}).get("status")
 
                 if is_active_found:
@@ -215,10 +214,10 @@ class PairServer:
                     if zone_start != already_alerted:
                         self.last_active_zone[name] = zone
 
-                elif prev_status == "found" and (
+                elif prev_status == "active" and (
                     zone is None
                     or not zone.get("is_active")
-                    or zone.get("status") == "looking"
+                    or zone.get("status") in ("looking", "confirmed")
                 ):
                     # Breakout detected this cycle. Mark "confirmed" so the browser
                     # still renders the box for one more cycle while the screenshot runs.
@@ -553,43 +552,24 @@ class PairServer:
 
             # Candle layout — must match accumulation.py exactly:
             #   df[-1]  forming candle          — never touched
-            #   df[-2]  confirmation candle     — FVG N+1
-            #   df[-3]  breakout candle         — FVG N  (the impulse)
-            #   df[-4]  last accumulation candle— FVG N-1, windows end here
-            breakout_idx   = len(df) - 3
-            confirm_idx    = len(df) - 2
-            last_accum_idx = len(df) - 4
+            #   df[-2]  breakout/impulse candle — last fully closed
+            #   df[-3…] accumulation window     — windows end at df[-2] exclusive
+            breakout_idx   = len(df) - 2
+            last_accum_idx = len(df) - 3
             scan_start     = max(0, len(df) - lookback)
 
             bo_open_raw  = float(df['Open'].iloc[breakout_idx])
             bo_close_raw = float(df['Close'].iloc[breakout_idx])
+            bo_high_raw  = float(df['High'].iloc[breakout_idx])
+            bo_low_raw   = float(df['Low'].iloc[breakout_idx])
+            bo_body_size = abs(bo_close_raw - bo_open_raw)
             last_body_high = max(bo_open_raw, bo_close_raw)
             last_body_low  = min(bo_open_raw, bo_close_raw)
 
-            # Build breakout candle info for the debug panel
-            from detectors.fvg import _check_fvg as _fvg_check
-            bo_high  = float(df['High'].iloc[breakout_idx])
-            bo_low   = float(df['Low'].iloc[breakout_idx])
-            cf_open  = float(df['Open'].iloc[confirm_idx])
-            cf_close = float(df['Close'].iloc[confirm_idx])
-            cf_high  = float(df['High'].iloc[confirm_idx])
-            cf_low   = float(df['Low'].iloc[confirm_idx])
-            ac_high  = float(df['High'].iloc[last_accum_idx])
-            ac_low   = float(df['Low'].iloc[last_accum_idx])
-
             breakout_candle = {
                 "time":  int(df.index[breakout_idx].timestamp()),
-                "open":  round(bo_open_raw, 5), "high": round(bo_high, 5),
-                "low":   round(bo_low, 5),       "close": round(bo_close_raw, 5),
-            }
-            confirm_candle = {
-                "time":  int(df.index[confirm_idx].timestamp()),
-                "open":  round(cf_open, 5),  "high": round(cf_high, 5),
-                "low":   round(cf_low, 5),   "close": round(cf_close, 5),
-            }
-            accum_last_candle = {
-                "time": int(df.index[last_accum_idx].timestamp()),
-                "high": round(ac_high, 5), "low": round(ac_low, 5),
+                "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
+                "low":   round(bo_low_raw, 5),  "close": round(bo_close_raw, 5),
             }
 
             windows = []
@@ -610,22 +590,23 @@ class PairServer:
                     continue
                 body_highs = np.maximum(opens, closes)
                 body_lows  = np.minimum(opens, closes)
-                h_max = float(body_highs.max())
-                l_min = float(body_lows.min())
+                h_max     = float(body_highs.max())
+                l_min     = float(body_lows.min())
+                avg_body  = float(np.abs(closes - opens).mean())
                 range_pct = round((h_max - l_min) / avg_p, 6)
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
-                # is_active: breakout candle's body still inside box
-                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
 
-                # Breakout info relative to this window
+                is_active  = (last_body_low >= l_min) and (last_body_high <= h_max)
                 broke_up   = last_body_high > h_max
                 broke_down = last_body_low  < l_min
                 broke_out  = broke_up or broke_down
-                fvg_result = None
-                if broke_out:
-                    fvg_result = _fvg_check(df, breakout_idx)
+
+                # Impulse check: breakout body > avg window body
+                is_impulsive   = bo_body_size > avg_body if broke_out else False
+                impulse_ratio  = round(bo_body_size / avg_body, 2) if (broke_out and avg_body > 0) else None
+                is_confirmed   = broke_out and is_impulsive
 
                 reject = None
                 if effective_range_pct and range_pct > effective_range_pct:
@@ -638,26 +619,28 @@ class PairServer:
                     reject = f"chop {chop} < 0.36"
 
                 windows.append({
-                    "window":      window_size,
-                    "start_ts":    int(df.index[i].timestamp()),
-                    "end_ts":      int(df.index[i + window_size - 1].timestamp()),
-                    "top":         round(h_max, 5),
-                    "bottom":      round(l_min, 5),
-                    "range_pct":   range_pct,
-                    "range_limit": effective_range_pct,
-                    "slope":       slope,
-                    "slope_limit": round(slope_limit, 8),
-                    "chop":        chop,
-                    "adx":         round(adx_val, 2) if adx_val is not None else None,
-                    "adx_limit":   adx_threshold,
-                    "is_active":   is_active,
-                    "broke_out":   broke_out,
-                    "broke_up":    broke_up,
-                    "broke_down":  broke_down,
-                    "fvg_valid":   fvg_result is not None,
-                    "fvg":         fvg_result,
-                    "reject":      reject,
-                    "pass":        reject is None,
+                    "window":        window_size,
+                    "start_ts":      int(df.index[i].timestamp()),
+                    "end_ts":        int(df.index[i + window_size - 1].timestamp()),
+                    "top":           round(h_max, 5),
+                    "bottom":        round(l_min, 5),
+                    "avg_body":      round(avg_body, 6),
+                    "range_pct":     range_pct,
+                    "range_limit":   effective_range_pct,
+                    "slope":         slope,
+                    "slope_limit":   round(slope_limit, 8),
+                    "chop":          chop,
+                    "adx":           round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":     adx_threshold,
+                    "is_active":     is_active,
+                    "broke_out":     broke_out,
+                    "broke_up":      broke_up,
+                    "broke_down":    broke_down,
+                    "is_impulsive":  is_impulsive,
+                    "impulse_ratio": impulse_ratio,
+                    "is_confirmed":  is_confirmed,
+                    "reject":        reject,
+                    "pass":          reject is None,
                 })
 
             passed   = [w for w in windows if w.get("pass")]
@@ -686,8 +669,6 @@ class PairServer:
                 "windows":           windows,
                 "best_zone":         best_zone,
                 "breakout_candle":   breakout_candle,
-                "confirm_candle":    confirm_candle,
-                "accum_last_candle": accum_last_candle,
                 "candles":           [
                     {"time": int(r.Index.timestamp()), "open": round(float(r.Open),5),
                      "high": round(float(r.High),5),  "low":  round(float(r.Low),5),
