@@ -674,43 +674,29 @@ function renderSummary(d) {
 
   // ── Breakout candle block ──────────────────────────────────────────────────
   const bo = d.breakout_candle;
-  const cf = d.confirm_candle;
-  const ac = d.accum_last_candle;
   const bHtml = bo ? (() => {
     const isBull = bo.close > bo.open;
     const bCol   = isBull ? 'var(--pass)' : 'var(--red)';
     const bDir   = isBull ? '▲ BULL' : '▼ BEAR';
 
-    // FVG check summary across all passing windows
-    const passingWindows = (d.windows || []).filter(w => w.pass);
-    const fvgPassing = passingWindows.filter(w => w.fvg_valid);
-    const fvgStatus  = passingWindows.length === 0 ? 'no passing windows'
-                     : fvgPassing.length > 0 ? fvgPassing.length + ' / ' + passingWindows.length + ' windows confirmed FVG'
-                     : '✗ 0 / ' + passingWindows.length + ' windows — no FVG';
-    const fvgCol = fvgPassing.length > 0 ? 'var(--pass)' : 'var(--red)';
+    // Impulse check summary across all passing windows
+    const passingWindows = (d.windows || []).filter(w => w.pass && w.broke_out);
+    const confirmed = passingWindows.filter(w => w.is_confirmed);
+    const impStatus = passingWindows.length === 0
+      ? 'no breakout on any passing window'
+      : confirmed.length > 0
+        ? confirmed.length + ' / ' + passingWindows.length + ' windows confirmed (impulsive)'
+        : '✗ 0 / ' + passingWindows.length + ' — not impulsive enough';
+    const impCol = confirmed.length > 0 ? 'var(--pass)' : 'var(--red)';
 
     return '<div style="margin:10px 0;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-3])</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:6px">' +
-        '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:5px 6px">' +
-          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N-1 (accum last)</div>' +
-          '<div style="font-size:10px">H ' + (ac ? fmtPrice(ac.high) : '—') + '</div>' +
-          '<div style="font-size:10px">L ' + (ac ? fmtPrice(ac.low)  : '—') + '</div>' +
-        '</div>' +
-        '<div style="background:var(--bg);border:1px solid ' + bCol + ';border-radius:3px;padding:5px 6px">' +
-          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N breakout</div>' +
-          '<div style="font-size:10px;color:' + bCol + ';font-weight:700">' + bDir + '</div>' +
-          '<div style="font-size:10px">O ' + fmtPrice(bo.open)  + '</div>' +
-          '<div style="font-size:10px">C ' + fmtPrice(bo.close) + '</div>' +
-          '<div style="font-size:10px">H ' + fmtPrice(bo.high)  + ' L ' + fmtPrice(bo.low) + '</div>' +
-        '</div>' +
-        '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:5px 6px">' +
-          '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N+1 confirm (df[-2])</div>' +
-          '<div style="font-size:10px">H ' + (cf ? fmtPrice(cf.high) : '—') + '</div>' +
-          '<div style="font-size:10px">L ' + (cf ? fmtPrice(cf.low)  : '—') + '</div>' +
-        '</div>' +
+      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Last Closed Candle — Breakout Check (df[-2])</div>' +
+      '<div style="background:var(--bg);border:1px solid ' + bCol + ';border-radius:3px;padding:6px 8px;margin-bottom:6px">' +
+        '<div style="font-size:10px;color:' + bCol + ';font-weight:700;margin-bottom:3px">' + bDir + '</div>' +
+        '<div style="font-size:10px">O ' + fmtPrice(bo.open) + '  C ' + fmtPrice(bo.close) + '  H ' + fmtPrice(bo.high) + '  L ' + fmtPrice(bo.low) + '</div>' +
+        '<div style="font-size:9px;color:var(--muted);margin-top:2px">body: ' + fmtPrice(Math.abs(bo.close - bo.open)) + '</div>' +
       '</div>' +
-      '<div style="font-size:10px;color:' + fvgCol + '">' + fvgStatus + '</div>' +
+      '<div style="font-size:10px;color:' + impCol + '">' + impStatus + '</div>' +
     '</div>';
   })() : '';
 
@@ -745,8 +731,8 @@ function renderWindowList(windows, filter) {
     if (!filter) return true;
     if (filter === 'pass') return w.pass;
     if (filter === 'fail') return !w.pass;
-    if (filter === 'fvg')  return w.fvg_valid;
-    if (filter === 'breakout') return w.broke_out;
+    if (filter === 'confirmed') return w.is_confirmed;
+    if (filter === 'breakout')  return w.broke_out;
     if (filter === 'active')   return w.is_active;
     return (w.reject || '').toLowerCase().includes(filter);
   });
@@ -755,17 +741,20 @@ function renderWindowList(windows, filter) {
     const stCls = w.pass ? 'pass' : 'fail';
     const label = w.pass ? '✓ pass' : (w.reject||'?').split(' ')[0];
 
-    // Breakout + FVG indicator
+    // Breakout + impulse indicator
     let boTag = '';
     if (w.pass) {
       if (w.is_active) {
         boTag = '<span style="font-size:9px;color:var(--yellow);margin-left:4px">● active</span>';
       } else if (w.broke_out) {
-        const fvgCol = w.fvg_valid ? 'var(--pass)' : 'var(--red)';
-        const fvgTxt = w.fvg_valid ? '✓ FVG' : '✗ FVG';
-        const dir    = w.broke_up ? '↑' : '↓';
-        boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
-                '<span style="font-size:9px;color:' + fvgCol + ';margin-left:4px">' + fvgTxt + '</span>';
+        const dir = w.broke_up ? '↑' : '↓';
+        if (w.is_confirmed) {
+          boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
+                  '<span style="font-size:9px;color:var(--pass);margin-left:4px">✓ confirmed</span>';
+        } else {
+          boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
+                  '<span style="font-size:9px;color:var(--red);margin-left:4px">✗ not impulsive</span>';
+        }
       }
     }
 
@@ -799,10 +788,10 @@ function selectWindow(windowSize) {
   document.querySelector('[data-tab="detail"]').classList.add('active');
   document.getElementById('tab-detail').classList.add('active');
 
-  // Title: show pass/fail reason + breakout/FVG outcome
+  // Title: show pass/fail reason + breakout outcome
   let titleSuffix = w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase();
-  if (w.pass && w.broke_out) titleSuffix += w.fvg_valid ? ' · ✓ FVG' : ' · ✗ NO FVG';
-  else if (w.pass && w.is_active) titleSuffix += ' · ● ACTIVE';
+  if (w.pass && w.is_active)    titleSuffix += ' · ● ACTIVE';
+  else if (w.pass && w.broke_out) titleSuffix += w.is_confirmed ? ' · ✓ CONFIRMED' : ' · ✗ NOT IMPULSIVE';
   document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
   // Accumulation quality rows
@@ -829,56 +818,39 @@ function selectWindow(windowSize) {
         (r.limit?'<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: '+r.limit+'</div>':'');
   }).join('');
 
-  // Breakout + FVG section (only for passing windows)
+  // Breakout + impulse section (only for passing windows)
   let breakoutHtml = '';
   if (w.pass) {
     const activeData = replayMode ? replayData : liveData;
     const bo = activeData?.breakout_candle;
-    const cf = activeData?.confirm_candle;
-    const ac = activeData?.accum_last_candle;
 
     if (w.is_active) {
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:rgba(240,196,90,0.05);border:1px solid rgba(240,196,90,0.2);border-radius:4px">' +
           '<div style="font-size:9px;color:var(--yellow);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">● Zone Active</div>' +
-          '<div style="font-size:10px;color:var(--muted)">Breakout candle (df[-3]) is still inside the box.</div>' +
+          '<div style="font-size:10px;color:var(--muted)">Last closed candle (df[-2]) is still inside the box. Waiting for breakout.</div>' +
         '</div>';
     } else if (w.broke_out) {
       const dir    = w.broke_up ? '↑ BULLISH BREAKOUT' : '↓ BEARISH BREAKOUT';
       const dirCol = w.broke_up ? 'var(--pass)' : 'var(--red)';
-      const fvgCol = w.fvg_valid ? 'var(--pass)' : 'var(--red)';
-      const fvgTxt = w.fvg_valid ? '✓ FVG CONFIRMED' : '✗ NO VALID FVG';
-      const fvgSub = w.fvg_valid
-        ? 'gap: ' + fmtPrice(w.fvg?.bottom) + ' → ' + fmtPrice(w.fvg?.top) + ' (' + w.fvg?.fvg_type + ')'
-        : 'Breakout had no valid 3-candle fair value gap — window rejected';
+      const impCol = w.is_confirmed ? 'var(--pass)' : 'var(--red)';
+      const impTxt = w.is_confirmed ? '✓ CONFIRMED — IMPULSIVE' : '✗ NOT CONFIRMED — NOT IMPULSIVE';
+      const impSub = w.is_confirmed
+        ? 'Body ' + fmtPrice(Math.abs(bo ? bo.close - bo.open : 0)) + ' vs avg window body ' + fmtPrice(w.avg_body) + ' (ratio ' + (w.impulse_ratio ?? '—') + '×)'
+        : 'Breakout body (' + fmtPrice(Math.abs(bo ? bo.close - bo.open : 0)) + ') ≤ avg window body (' + fmtPrice(w.avg_body) + ') — not impulsive';
 
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-3])</div>' +
+          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-2])</div>' +
           '<div style="font-size:10px;color:' + dirCol + ';font-weight:700;margin-bottom:6px">' + dir + '</div>' +
-          // 3-candle mini grid
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:8px">' +
-            '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:4px 5px">' +
-              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N-1 (last accum)</div>' +
-              '<div style="font-size:9px">H ' + (ac ? fmtPrice(ac.high) : '—') + '</div>' +
-              '<div style="font-size:9px">L ' + (ac ? fmtPrice(ac.low)  : '—') + '</div>' +
-            '</div>' +
-            '<div style="background:var(--bg);border:1px solid ' + dirCol + ';border-radius:3px;padding:4px 5px">' +
-              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N (breakout)</div>' +
-              '<div style="font-size:9px">O ' + (bo ? fmtPrice(bo.open)  : '—') + '</div>' +
-              '<div style="font-size:9px">C ' + (bo ? fmtPrice(bo.close) : '—') + '</div>' +
-              '<div style="font-size:9px">H ' + (bo ? fmtPrice(bo.high)  : '—') + ' L ' + (bo ? fmtPrice(bo.low) : '—') + '</div>' +
-            '</div>' +
-            '<div style="background:var(--bg);border:1px solid #333;border-radius:3px;padding:4px 5px">' +
-              '<div style="font-size:8px;color:var(--muted);margin-bottom:2px">N+1 (confirm)</div>' +
-              '<div style="font-size:9px">H ' + (cf ? fmtPrice(cf.high) : '—') + '</div>' +
-              '<div style="font-size:9px">L ' + (cf ? fmtPrice(cf.low)  : '—') + '</div>' +
-            '</div>' +
+          '<div style="background:var(--bg);border:1px solid ' + dirCol + ';border-radius:3px;padding:5px 8px;margin-bottom:8px">' +
+            '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">O ' + (bo ? fmtPrice(bo.open) : '—') +
+              '  C ' + (bo ? fmtPrice(bo.close) : '—') + '  H ' + (bo ? fmtPrice(bo.high) : '—') + '  L ' + (bo ? fmtPrice(bo.low) : '—') + '</div>' +
+            '<div style="font-size:9px;color:var(--muted)">body: ' + (bo ? fmtPrice(Math.abs(bo.close - bo.open)) : '—') + '</div>' +
           '</div>' +
-          // FVG verdict
-          '<div style="padding:5px 8px;border-radius:3px;border:1px solid ' + fvgCol + ';background:rgba(0,0,0,0.2)">' +
-            '<div style="font-size:10px;color:' + fvgCol + ';font-weight:700;margin-bottom:2px">' + fvgTxt + '</div>' +
-            '<div style="font-size:9px;color:var(--muted)">' + fvgSub + '</div>' +
+          '<div style="padding:5px 8px;border-radius:3px;border:1px solid ' + impCol + ';background:rgba(0,0,0,0.2)">' +
+            '<div style="font-size:10px;color:' + impCol + ';font-weight:700;margin-bottom:2px">' + impTxt + '</div>' +
+            '<div style="font-size:9px;color:var(--muted)">' + impSub + '</div>' +
           '</div>' +
         '</div>';
     }
@@ -902,32 +874,21 @@ function drawWindowOverlay(w, data) {
 
   // Only show breakout overlay if this window actually broke out
   if (!w.broke_out || !data) return;
-
   const bo = data.breakout_candle;
-  const cf = data.confirm_candle;
-  const ac = data.accum_last_candle;
   if (!bo) return;
 
-  // Detect candle interval in seconds from the candle series
+  // Candle interval from data
   const src = data.candles;
   const intervalSecs = (src?.length > 1) ? (src[1].time - src[0].time) : 60;
 
-  // Vertical markers for the 3 FVG candles
-  if (ac) drawVLine(ac.time, 'rgba(240,196,90,0.25)');
-  drawVLine(bo.time, 'rgba(240,196,90,0.7)');
-  if (cf) drawVLine(cf.time, 'rgba(240,196,90,0.35)');
+  // Vertical marker on breakout candle
+  drawVLine(bo.time, w.is_confirmed ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.5)');
 
-  // Breakout candle body highlight
-  const bCol = bo.close > bo.open ? 'rgba(90,158,240,0.8)' : 'rgba(240,90,126,0.8)';
-  drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.12);
-
-  // FVG gap zone if confirmed on this window
-  if (w.fvg?.top != null) {
-    const gCol  = w.fvg.fvg_type === 'bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-    const spanS = ac?.time  ?? (bo.time - intervalSecs);
-    const spanE = cf?.time  ? (cf.time + intervalSecs) : (bo.time + intervalSecs * 2);
-    drawBox(spanS, spanE, w.fvg.top, w.fvg.bottom, gCol, 0.30);
-  }
+  // Breakout candle body highlight — green if confirmed, red if not impulsive
+  const bCol = w.is_confirmed
+    ? (bo.close > bo.open ? 'rgba(90,240,196,0.8)' : 'rgba(90,240,196,0.8)')
+    : 'rgba(240,90,126,0.6)';
+  drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.15);
 }
 
 // Replay
