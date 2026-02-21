@@ -551,17 +551,51 @@ class PairServer:
                 or params.get("max_range_pct")
             )
 
-            last_closed_idx   = len(df) - 2
-            scan_start        = max(0, len(df) - lookback)
-            last_closed_open  = float(df['Open'].iloc[-2])
-            last_closed_close = float(df['Close'].iloc[-2])
-            last_body_high    = max(last_closed_open, last_closed_close)
-            last_body_low     = min(last_closed_open, last_closed_close)
+            # Candle layout — must match accumulation.py exactly:
+            #   df[-1]  forming candle          — never touched
+            #   df[-2]  confirmation candle     — FVG N+1
+            #   df[-3]  breakout candle         — FVG N  (the impulse)
+            #   df[-4]  last accumulation candle— FVG N-1, windows end here
+            breakout_idx   = len(df) - 3
+            confirm_idx    = len(df) - 2
+            last_accum_idx = len(df) - 4
+            scan_start     = max(0, len(df) - lookback)
+
+            bo_open_raw  = float(df['Open'].iloc[breakout_idx])
+            bo_close_raw = float(df['Close'].iloc[breakout_idx])
+            last_body_high = max(bo_open_raw, bo_close_raw)
+            last_body_low  = min(bo_open_raw, bo_close_raw)
+
+            # Build breakout candle info for the debug panel
+            from detectors.fvg import _check_fvg as _fvg_check
+            bo_high  = float(df['High'].iloc[breakout_idx])
+            bo_low   = float(df['Low'].iloc[breakout_idx])
+            cf_open  = float(df['Open'].iloc[confirm_idx])
+            cf_close = float(df['Close'].iloc[confirm_idx])
+            cf_high  = float(df['High'].iloc[confirm_idx])
+            cf_low   = float(df['Low'].iloc[confirm_idx])
+            ac_high  = float(df['High'].iloc[last_accum_idx])
+            ac_low   = float(df['Low'].iloc[last_accum_idx])
+
+            breakout_candle = {
+                "time":  int(df.index[breakout_idx].timestamp()),
+                "open":  round(bo_open_raw, 5), "high": round(bo_high, 5),
+                "low":   round(bo_low, 5),       "close": round(bo_close_raw, 5),
+            }
+            confirm_candle = {
+                "time":  int(df.index[confirm_idx].timestamp()),
+                "open":  round(cf_open, 5),  "high": round(cf_high, 5),
+                "low":   round(cf_low, 5),   "close": round(cf_close, 5),
+            }
+            accum_last_candle = {
+                "time": int(df.index[last_accum_idx].timestamp()),
+                "high": round(ac_high, 5), "low": round(ac_low, 5),
+            }
 
             windows = []
             for window_size in range(min_candles, lookback + 1):
                 slope_limit = (threshold_pct * 0.10) / window_size
-                i = last_closed_idx - window_size + 1
+                i = last_accum_idx - window_size + 1
                 if i < 0 or i < scan_start:
                     continue
 
@@ -582,7 +616,16 @@ class PairServer:
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
+                # is_active: breakout candle's body still inside box
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+
+                # Breakout info relative to this window
+                broke_up   = last_body_high > h_max
+                broke_down = last_body_low  < l_min
+                broke_out  = broke_up or broke_down
+                fvg_result = None
+                if broke_out:
+                    fvg_result = _fvg_check(df, breakout_idx)
 
                 reject = None
                 if effective_range_pct and range_pct > effective_range_pct:
@@ -608,6 +651,11 @@ class PairServer:
                     "adx":         round(adx_val, 2) if adx_val is not None else None,
                     "adx_limit":   adx_threshold,
                     "is_active":   is_active,
+                    "broke_out":   broke_out,
+                    "broke_up":    broke_up,
+                    "broke_down":  broke_down,
+                    "fvg_valid":   fvg_result is not None,
+                    "fvg":         fvg_result,
                     "reject":      reject,
                     "pass":        reject is None,
                 })
@@ -637,6 +685,18 @@ class PairServer:
                 "rejection_summary": reasons,
                 "windows":           windows,
                 "best_zone":         best_zone,
+                "breakout_candle":   breakout_candle,
+                "confirm_candle":    confirm_candle,
+                "accum_last_candle": accum_last_candle,
+                "candles":           [
+                    {"time": int(r.Index.timestamp()), "open": round(float(r.Open),5),
+                     "high": round(float(r.High),5),  "low":  round(float(r.Low),5),
+                     "close": round(float(r.Close),5)}
+                    for r in df.itertuples() if not (
+                        __import__('math').isnan(float(r.Open)) or
+                        __import__('math').isnan(float(r.Close))
+                    )
+                ],
             })
         except Exception as e:
             import traceback
