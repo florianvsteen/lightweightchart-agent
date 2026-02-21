@@ -48,6 +48,10 @@ def proxy_debug(pair_id):
         html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
         html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
         html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
+        html = html.replace("fetch('/debug/sd')", f"fetch('/proxy/{pair_upper}/debug/sd')")
+        html = html.replace('fetch("/debug/sd")', f'fetch("/proxy/{pair_upper}/debug/sd")')
+        html = html.replace("fetch('/debug/fvg')", f"fetch('/proxy/{pair_upper}/debug/fvg')")
+        html = html.replace('fetch("/debug/fvg")', f'fetch("/proxy/{pair_upper}/debug/fvg")')
         # Match the replay fetch regardless of what options follow the URL
         import re
         html = re.sub(
@@ -85,6 +89,30 @@ def proxy_debug_replay(pair_id):
         if idx:
             url += f"?idx={idx}"
         r = requests.get(url, timeout=60)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/proxy/<pair_id>/debug/sd')
+def proxy_debug_sd(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": "unknown pair"}), 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/sd", timeout=30)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/proxy/<pair_id>/debug/fvg')
+def proxy_debug_fvg(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": "unknown pair"}), 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/fvg", timeout=30)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
