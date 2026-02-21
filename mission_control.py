@@ -212,17 +212,48 @@ DASHBOARD = r"""<!DOCTYPE html>
   /* Weekend banner */
   #weekend-banner {
     display: none;
-    background: rgba(30, 10, 10, 0.95);
-    border-bottom: 1px solid #2a1a1a;
-    padding: 18px 32px;
-    text-align: center;
+    background: linear-gradient(180deg, rgba(20, 12, 6, 0.98) 0%, rgba(15, 9, 4, 0.95) 100%);
+    border-bottom: 1px solid #2a1a08;
+    padding: 22px 32px;
     position: sticky;
     top: 61px;
     z-index: 99;
   }
-  #weekend-banner .wk-title { font-size: 0.85rem; color: #553a3a; letter-spacing: 0.15em; text-transform: uppercase; }
-  #weekend-banner .wk-countdown { font-size: 1.6rem; font-weight: 700; color: #3a2a2a; font-variant-numeric: tabular-nums; margin-top: 4px; }
-  #weekend-banner .wk-hint { font-size: 0.6rem; color: #332222; margin-top: 2px; letter-spacing: 0.08em; }
+  #weekend-banner .wk-inner {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  #weekend-banner .wk-icon { font-size: 1.4rem; margin-bottom: 6px; }
+  #weekend-banner .wk-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #4a3010;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #weekend-banner .wk-countdown {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #3a2808;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  #weekend-banner .wk-hint {
+    font-size: 0.6rem;
+    color: #2a1e08;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  #weekend-banner .wk-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #2a1a08 30%, #2a1a08 70%, transparent);
+    margin: 12px 0;
+  }
 
   .grid {
     display: grid;
@@ -295,9 +326,22 @@ DASHBOARD = r"""<!DOCTYPE html>
   .status-dot.potential { background: var(--potential); }
   .status-dot.looking   { background: #2a2a3a; }
   .status-dot.offline   { background: #1a1a2a; }
+  .status-dot.standby   { background: #2a2018; }
   .status-dot.bullish   { background: var(--accent); box-shadow: 0 0 6px rgba(90,240,196,0.4); }
   .status-dot.bearish   { background: var(--accent2); box-shadow: 0 0 6px rgba(240,90,126,0.4); }
   .status-dot.misaligned{ background: var(--muted); }
+
+  .weekend-card-badge {
+    margin-top: 10px;
+    padding: 5px 10px;
+    font-size: 0.58rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #3a2e1a;
+    border: 1px solid #2a2010;
+    border-left: 2px solid #4a3820;
+    display: inline-block;
+  }
 
   .status-text { font-size: 0.72rem; color: var(--text); letter-spacing: 0.05em; }
   .status-text.dim { color: var(--muted); }
@@ -380,19 +424,23 @@ DASHBOARD = r"""<!DOCTYPE html>
   </div>
 </header>
 
-<div class="grid" id="grid"></div>
-
 <div id="weekend-banner">
-  <div class="wk-title">⛔ Market Closed — Weekend Halt</div>
-  <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
-  <div class="wk-hint">Fri 23:00 UTC → Mon 01:00 UTC &nbsp;·&nbsp; Resumes Asian session</div>
+  <div class="wk-inner">
+    <div class="wk-icon">⏸</div>
+    <div class="wk-title">All Operations Suspended — Weekend Halt</div>
+    <div class="wk-divider"></div>
+    <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
+    <div class="wk-hint">Resumes Monday 01:00 UTC &nbsp;·&nbsp; Fri 23:00 → Mon 01:00 UTC</div>
+  </div>
 </div>
+
+<div class="grid" id="grid"></div>
 
 <footer>
   <span id="last-update">Waiting for data...</span>
   <div class="refresh-indicator">
     <div class="refresh-dot" id="refresh-dot"></div>
-    <span>LIVE · 5s</span>
+    <span id="refresh-label">LIVE · 5s</span>
   </div>
 </footer>
 
@@ -439,7 +487,6 @@ function getWeekendCountdown() {
   const s = Math.floor((diff % 60000) / 1000);
   const pad = n => String(n).padStart(2, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
 }
 
 function formatPrice(p, id) {
@@ -625,14 +672,18 @@ function updateClock() {
 
   if (isWeekendHalt()) {
     const countdown = getWeekendCountdown();
-    badge.textContent = `⛔ CLOSED · Mon in ${countdown}`;
+    badge.textContent = `⏸ CLOSED · Mon in ${countdown}`;
     badge.className   = 'weekend';
     document.getElementById('weekend-banner').style.display = '';
     document.getElementById('weekend-countdown').textContent = countdown;
+    const lbl = document.getElementById('refresh-label');
+    if (lbl) lbl.textContent = 'HALTED · weekend';
     return;
   }
 
   document.getElementById('weekend-banner').style.display = 'none';
+  const lbl = document.getElementById('refresh-label');
+  if (lbl) lbl.textContent = 'LIVE · 5s';
 
   const sess = getCurrentSession();
   if (sess) {
@@ -654,7 +705,7 @@ function updateClock() {
 }
 
 async function pollAll() {
-  if (isWeekendHalt()) return;   // don't poll during weekend halt
+  if (isWeekendHalt()) return;   // don't refresh during weekend
   const dot = document.getElementById('refresh-dot');
   dot.classList.add('active');
   await Promise.all(PAIRS.map(fetchPair));
@@ -664,11 +715,61 @@ async function pollAll() {
     'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
+function applyWeekendStandby() {
+  PAIRS.forEach(pair => {
+    const dotEl    = document.getElementById(`dot-${pair.id}`);
+    const statusEl = document.getElementById(`status-${pair.id}`);
+    const extraEl  = document.getElementById(`extra-${pair.id}`);
+    const metaEl   = document.getElementById(`meta-${pair.id}`);
+    const card     = document.getElementById(`card-${pair.id}`);
+    if (!dotEl) return;
+    card.classList.remove('error');
+    dotEl.className      = 'status-dot standby';
+    statusEl.textContent = 'Standby — resumes Monday 01:00 UTC';
+    statusEl.className   = 'status-text dim';
+    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS SUSPENDED</div>';
+    metaEl.textContent   = '⏸ HALTED';
+  });
+  document.getElementById('last-update').textContent = 'Polling suspended for weekend';
+}
+
 buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
-pollAll();
-setInterval(pollAll, 5000);
+
+// Always do one initial fetch to populate card prices, then apply standby if weekend
+Promise.all(PAIRS.map(pair =>
+  fetch(`/proxy/${pair.id}/api/data`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => { if (data) _populatePriceOnly(pair, data); })
+    .catch(() => {})
+)).then(() => {
+  if (isWeekendHalt()) {
+    applyWeekendStandby();
+  } else {
+    // Not weekend — run full fetchPair for all pairs now
+    pollAll();
+    setInterval(pollAll, 5000);
+  }
+});
+
+// Helper: populate just price/change fields without touching status
+function _populatePriceOnly(pair, data) {
+  const candles = data.candles || [];
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  const price = last?.close;
+  const priceEl = document.getElementById(`price-${pair.id}`);
+  if (priceEl) priceEl.textContent = formatPrice(price, pair.id);
+  if (prev?.close && price) {
+    const chg = ((price - prev.close) / prev.close) * 100;
+    const el = document.getElementById(`change-${pair.id}`);
+    if (el) {
+      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
+      el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
+    }
+  }
+}
 </script>
 </body>
 </html>"""
