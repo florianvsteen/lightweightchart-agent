@@ -12,14 +12,13 @@ from detectors.fvg import detect as fvg_detect
 REGISTRY = {
     "accumulation":  accumulation_detect,
     "supply_demand": supply_demand_detect,
-    "fvg": fvg_detect,
+    "fvg":           fvg_detect,
 }
 
 
 def run_detectors(detector_names: list, df, detector_params: dict = None) -> dict:
     if detector_params is None:
         detector_params = {}
-
     results = {}
     for name in detector_names:
         fn = REGISTRY.get(name)
