@@ -393,51 +393,69 @@ function clearOverlays() {
 }
 
 function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
+  // Draw a rectangle on the chart: horizontal top+bottom borders, vertical left+right
+  // borders, and a translucent fill.
+  //
+  // LightweightCharts has no native rectangle primitive, so we compose it from series:
+  //   - top/bottom: LineSeries   (horizontal — two points at different times, same price)
+  //   - left/right: LineSeries   (vertical — we use a 3-point step: top→top→bottom
+  //                               over a 1-second window so the line stays vertical)
+  //   - fill:       BaselineSeries (no visible line, just the band fill)
+  //
+  // The "step" trick for vertical edges works because LightweightCharts draws a straight
+  // line between consecutive points — if we go top@T, top@T+1s, bottom@T+1s the only
+  // visible segment is the vertical drop at T+1, which sits at the box edge.
+
   if (top == null || bottom == null || top === bottom) return;
 
-  const toRgba = (color, alpha) => color.replace(/rgba?\(([^)]+)\)/, (_, g) => {
-    const p = g.split(',').map(x => x.trim());
-    return 'rgba(' + p[0] + ',' + p[1] + ',' + p[2] + ',' + alpha + ')';
-  });
+  const toRgba = (color, alpha) => {
+    const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
+  };
 
   const s = shiftTime(startTs), e = shiftTime(endTs);
+  const step = 1; // 1 second — small enough to be invisible at any zoom level
 
-  const lineOpts = { lineWidth: 1, lineStyle: 0,
+  const lOpts = { lineWidth: 1, lineStyle: 0,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-  // Top & bottom horizontal borders
-  const tl = chart.addLineSeries({ ...lineOpts, color: lineColor });
+  // Top horizontal border
+  const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
 
-  const bl = chart.addLineSeries({ ...lineOpts, color: lineColor });
+  // Bottom horizontal border
+  const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Left & right vertical borders using histogram series.
-  // A histogram bar is drawn as a vertical bar from 0 to value — we use
-  // base=bottom and value=top so it spans exactly the box height.
-  const histOpts = {
-    base: bottom,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-    color: lineColor,
-  };
-  const lh = chart.addHistogramSeries({ ...histOpts });
-  lh.setData([{ time: s, value: top }]);
+  // Left vertical border: go top→top(+1s)→bottom(+1s) — the vertical segment is at s+step
+  const lv = chart.addLineSeries({ ...lOpts, color: lineColor });
+  lv.setData([
+    { time: s,        value: top    },
+    { time: s + step, value: top    },
+    { time: s + step, value: bottom },
+  ]);
 
-  const rh = chart.addHistogramSeries({ ...histOpts });
-  rh.setData([{ time: e, value: top }]);
+  // Right vertical border: go top→top(+1s)→bottom(+1s) anchored at end
+  const rv = chart.addLineSeries({ ...lOpts, color: lineColor });
+  rv.setData([
+    { time: e,        value: top    },
+    { time: e + step, value: top    },
+    { time: e + step, value: bottom },
+  ]);
 
-  // Fill band using baseline series
+  // Translucent fill using BaselineSeries
   const fl = chart.addBaselineSeries({
     baseValue: { type: 'price', price: bottom },
     topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
-    topLineColor: 'rgba(0,0,0,0)',
+    topLineColor:     'rgba(0,0,0,0)',
     bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
-    bottomLineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+    bottomLineColor:  'rgba(0,0,0,0)',
+    lineWidth: 0,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
   fl.setData([{ time: s, value: top }, { time: e, value: top }]);
 
-  overlaySeriesList.push(tl, bl, lh, rh, fl);
+  overlaySeriesList.push(tl, bl, lv, rv, fl);
 }
 
 function drawVLine(ts, color) {
