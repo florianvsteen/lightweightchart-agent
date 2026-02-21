@@ -81,6 +81,16 @@ DEBUG_HTML = r"""<!DOCTYPE html>
   #tag-mode { font-size: 9px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
     color: var(--muted); white-space: nowrap; letter-spacing: 0.08em; text-transform: uppercase; }
 
+  /* ── Timeframe switcher ── */
+  #tf-bar { display: flex; gap: 3px; align-items: center; margin-right: 10px; }
+  .tf-btn {
+    padding: 3px 10px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    cursor: pointer; color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
+    background: var(--surface); font-family: inherit; transition: all 0.15s;
+  }
+  .tf-btn:hover { border-color: var(--text); color: var(--text); }
+  .tf-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(240,196,90,0.06); }
+
   /* ── Left: chart ── */
   #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #topbar { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
@@ -281,6 +291,11 @@ DEBUG_HTML = r"""<!DOCTYPE html>
     <button class="mode-btn sd-btn"   id="mode-sd"    onclick="switchMode('sd')">② Supply &amp; Demand</button>
     <button class="mode-btn fvg-btn"  id="mode-fvg"   onclick="switchMode('fvg')">③ Fair Value Gap</button>
     <span class="mode-spacer"></span>
+    <div id="tf-bar">
+      <button class="tf-btn active" data-tf="1m"  onclick="switchTF('1m')">1m</button>
+      <button class="tf-btn"        data-tf="15m" onclick="switchTF('15m')">15m</button>
+      <button class="tf-btn"        data-tf="30m" onclick="switchTF('30m')">30m</button>
+    </div>
     <span id="tag-mode">accumulation</span>
   </div>
 
@@ -407,6 +422,7 @@ function fmtPrice(v) {
 
 // ── State ─────────────────────────────────────────────────────────────────
 let currentMode = 'accum';
+let currentTF   = '1m';
 let liveData    = null;
 let replayData  = null;
 let replayMode  = false;
@@ -486,6 +502,14 @@ function switchMode(mode) {
   }
 }
 
+function switchTF(tf) {
+  currentTF = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
+  // Clear cached data so next load fetches fresh
+  sdData = null; fvgData = null;
+  refreshCurrentMode();
+}
+
 function refreshCurrentMode() {
   if (currentMode === 'accum') loadLiveData();
   else if (currentMode === 'sd') loadSD();
@@ -549,7 +573,7 @@ function updateTopbarAccum(d, isReplay) {
 
 async function loadLiveData() {
   if (replayMode) return;
-  const res = await fetch(`/debug/data`);
+  const res = await fetch(`/debug/data?interval=${currentTF}`);
   liveData = await res.json();
   renderChart(liveData.candles);
   renderSummary(liveData);
@@ -839,7 +863,7 @@ async function loadSD() {
   document.getElementById('sd-loading').style.display = '';
   document.getElementById('sd-content').style.display = 'none';
   try {
-    const res = await fetch('/debug/sd');
+    const res = await fetch(`/debug/sd?interval=${currentTF}`);
     sdData = await res.json();
     if (sdData.error) {
       document.getElementById('sd-loading').textContent = '✗ Error: ' + sdData.error;
@@ -979,7 +1003,7 @@ async function loadFVG() {
   document.getElementById('fvg-loading').style.display = '';
   document.getElementById('fvg-content').style.display = 'none';
   try {
-    const res = await fetch('/debug/fvg');
+    const res = await fetch(`/debug/fvg?interval=${currentTF}`);
     fvgData = await res.json();
     if (fvgData.error) {
       document.getElementById('fvg-loading').textContent = '✗ Error: ' + fvgData.error;
@@ -1467,8 +1491,9 @@ class PairServer:
                 get_current_session, _slope_pct, _choppiness, _adx
             )
 
+            interval = request.args.get("interval", "1m")
             cache = {}
-            df = self._get_df("1m", cache)
+            df = self._get_df(interval, cache)
 
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
@@ -1754,6 +1779,7 @@ class PairServer:
                 _get_bias, _is_indecision, _in_session, _candle_session_or_pre
             )
 
+            interval = request.args.get("interval", None)
             cache = {}
             params = dict(self.detector_params.get("supply_demand", {}))
             params.pop("timeframe", None)
@@ -1764,12 +1790,12 @@ class PairServer:
             max_age_days     = params.get("max_age_days", 3)
             valid_sessions   = params.get("valid_sessions", ["london", "new_york"])
 
+            # Use requested interval or fall back to configured detector timeframe
+            detector_interval = interval or self.detector_params.get("supply_demand", {}).get("timeframe", "30m")
+            df = self._get_df(detector_interval, cache)
+
             # Get bias
             bias_info = _get_bias(ticker, _YF_LOCK)
-
-            # Fetch chart data
-            detector_interval = self.detector_params.get("supply_demand", {}).get("timeframe", "30m")
-            df = self._get_df(detector_interval, cache)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             df = df.loc[:, ~df.columns.duplicated()].copy()
@@ -1893,9 +1919,9 @@ class PairServer:
             import numpy as np
             from detectors.accumulation import _check_fvg
 
+            interval = request.args.get("interval", None)
             cache = {}
-            # Use the detector's configured timeframe
-            det_interval = self.detector_params.get("accumulation", {}).get("timeframe", "1m")
+            det_interval = interval or self.detector_params.get("accumulation", {}).get("timeframe", "1m")
             df = self._get_df(det_interval, cache)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
