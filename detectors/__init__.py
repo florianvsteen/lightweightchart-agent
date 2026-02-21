@@ -7,10 +7,12 @@ Register new detectors here by importing them and adding to REGISTRY.
 
 from detectors.accumulation import detect as accumulation_detect
 from detectors.supply_demand import detect as supply_demand_detect
+from detectors.fvg import detect as fvg_detect
 
 REGISTRY = {
     "accumulation":  accumulation_detect,
     "supply_demand": supply_demand_detect,
+    "fvg": fvg_detect,
 }
 
 
