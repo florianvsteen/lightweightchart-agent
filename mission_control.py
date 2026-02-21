@@ -41,23 +41,34 @@ def proxy_debug(pair_id):
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
+        import re
         r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug", timeout=30)
         html = r.text
-        pair_upper = pair_id.upper()
-        # Rewrite the /debug/data and /debug/replay fetches so they go through the proxy
-        html = html.replace("fetch(`/debug/data`)", f"fetch(`/proxy/{pair_upper}/debug/data`)")
-        html = html.replace("fetch('/debug/data')", f"fetch('/proxy/{pair_upper}/debug/data')")
-        html = html.replace('fetch("/debug/data")', f'fetch("/proxy/{pair_upper}/debug/data")')
-        html = html.replace("fetch(`/debug/data?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/data?interval=${{currentTF}}`)")
-        html = html.replace("fetch(`/debug/sd?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/sd?interval=${{currentTF}}`)")
-        html = html.replace("fetch(`/debug/fvg?interval=${currentTF}`)", f"fetch(`/proxy/{pair_upper}/debug/fvg?interval=${{currentTF}}`)")
-        # Match the replay fetch regardless of what options follow the URL
-        import re
+        p = pair_id.upper()
+
+        # Rewrite all /debug/* fetch calls to route through the mission control proxy.
+        # The template uses literal strings like '/debug/data?interval=' + currentTF
+        # so we can do simple text substitution.
+        replacements = [
+            ("'/debug/data?interval='",    f"'/proxy/{p}/debug/data?interval='"),
+            ('"/debug/data?interval="',    f'"/proxy/{p}/debug/data?interval="'),
+            ("'/debug/sd?interval='",      f"'/proxy/{p}/debug/sd?interval='"),
+            ('"/debug/sd?interval="',      f'"/proxy/{p}/debug/sd?interval="'),
+            ("'/debug/fvg?interval='",     f"'/proxy/{p}/debug/fvg?interval='"),
+            ('"/debug/fvg?interval="',     f'"/proxy/{p}/debug/fvg?interval="'),
+            ("'/debug/replay?idx='",       f"'/proxy/{p}/debug/replay?idx='"),
+            ('"/debug/replay?idx="',       f'"/proxy/{p}/debug/replay?idx="'),
+        ]
+        for old, new in replacements:
+            html = html.replace(old, new)
+
+        # Also handle the replay idx pattern which uses string concat
         html = re.sub(
-            r"fetch\(`/debug/replay\?idx=\$\{idx\}`",
-            f"fetch(`/proxy/{pair_upper}/debug/replay?idx=${{idx}}`",
+            r"fetch\('/debug/replay\?idx=' \+ idx",
+            f"fetch('/proxy/{p}/debug/replay?idx=' + idx",
             html,
         )
+
         if '<meta charset' not in html:
             html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
         return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
