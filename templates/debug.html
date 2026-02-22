@@ -982,7 +982,7 @@ function stopPlay() {
 }
 
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
-document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode) enterReplayMode(); });
+document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode && liveData) enterReplayMode(); });
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
 document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, false); });
 document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
