@@ -182,6 +182,11 @@ class PairServer:
 
     def _process_alerts(self, detector_results: dict):
         """Check results and fire Discord alerts on breakout."""
+        # Never send alerts during the weekend market halt (Fri 23:00 – Mon 01:00 UTC)
+        from detectors.accumulation import is_weekend_halt
+        if is_weekend_halt():
+            return
+
         for name, result in detector_results.items():
 
             # ── Accumulation ──────────────────────────────────────────
@@ -1025,10 +1030,12 @@ class PairServer:
 
         try:
             if PLAYWRIGHT_AVAILABLE:
+                highlight_ts = zone.get("start", "")
+                page_url = f"http://127.0.0.1:{self.port}?highlight={highlight_ts}"
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page(viewport={"width": 1280, "height": 720})
-                    page.goto(f"http://127.0.0.1:{self.port}")
+                    page.goto(page_url)
                     page.wait_for_timeout(6000)
                     page.screenshot(path=screenshot_path)
                     browser.close()
