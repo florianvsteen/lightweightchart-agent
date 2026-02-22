@@ -480,7 +480,7 @@ DASHBOARD = r"""<!DOCTYPE html>
     <div class="wk-title">All Operations Suspended — Weekend Halt</div>
     <div class="wk-divider"></div>
     <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
-    <div class="wk-hint">Resumes Monday 01:00 UTC &nbsp;·&nbsp; Fri 23:00 → Mon 01:00 UTC</div>
+    <div class="wk-hint">Resumes Sunday 21:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 21:00 UTC</div>
   </div>
 </div>
 
@@ -516,9 +516,9 @@ function isWeekendHalt() {
   const now = new Date();
   const dow  = now.getUTCDay();
   const hour = now.getUTCHours();
-  if (dow === 5 && hour >= 23) return true;
-  if (dow === 6) return true;
-  if (dow === 0 && hour < 1) return true;
+  if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
+  if (dow === 6) return true;                  // All Saturday
+  if (dow === 0 && hour < 21) return true;     // Sun < 21:00
   return false;
 }
 
@@ -526,11 +526,11 @@ function getWeekendCountdown() {
   const now = new Date();
   const target = new Date(now);
   const dow = now.getUTCDay();
-  // Days until Monday (day 1)
-  let daysUntilMon = (1 - dow + 7) % 7;
-  if (daysUntilMon === 0) daysUntilMon = 7;
-  target.setUTCDate(target.getUTCDate() + daysUntilMon);
-  target.setUTCHours(1, 0, 0, 0);
+  // Count to next Sunday 21:00 UTC (earliest market reopen)
+  let daysUntilSun = (0 - dow + 7) % 7;
+  if (daysUntilSun === 0 && now.getUTCHours() >= 21) daysUntilSun = 7;
+  target.setUTCDate(target.getUTCDate() + daysUntilSun);
+  target.setUTCHours(21, 0, 0, 0);
   const diff = target - now;
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
