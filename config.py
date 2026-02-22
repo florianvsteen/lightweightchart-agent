@@ -36,7 +36,7 @@ PAIRS = {
         "port": 5001,
         "label": "US100 (Nasdaq Futures)",
         "interval": "1m",
-        "period": "3d",
+        "period": "1d",
         "default_interval": "1m",
         "detectors": ["accumulation"],
         "detector_params": {
