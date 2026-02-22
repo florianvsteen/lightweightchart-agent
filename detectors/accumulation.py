@@ -49,8 +49,12 @@ SESSION_WINDOWS = {
 }
 
 
-def is_weekend_halt() -> bool:
-    """Return True if we are in the Fri 23:00 – Sun 22:00 UTC weekend halt window."""
+def is_weekend_halt(always_open: bool = False) -> bool:
+    """Return True if we are in the Fri 23:00 – Sun 22:00 UTC weekend halt window.
+    If always_open is True (e.g. Bitcoin), always returns False.
+    """
+    if always_open:
+        return False
     now  = datetime.now(timezone.utc)
     dow  = now.weekday()   # 0=Mon … 4=Fri … 5=Sat … 6=Sun
     hour = now.hour
