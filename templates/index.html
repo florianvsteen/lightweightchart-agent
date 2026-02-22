@@ -325,11 +325,9 @@
 
         document.querySelectorAll('.tf-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                console.log('[TF] Button clicked:', btn.dataset.interval, '| was:', currentInterval);
                 document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentInterval = btn.dataset.interval;
-                console.log('[TF] currentInterval now:', currentInterval);
                 loadData();
             });
         });
@@ -606,24 +604,18 @@
         }
 
         function loadData() {
-            console.log('[loadData] called | interval:', currentInterval, '| isWeekendHalt:', isWeekendHalt(), '| ALWAYS_OPEN:', ALWAYS_OPEN);
             if (isWeekendHalt()) {
-                console.log('[loadData] blocked by weekend halt');
                 showClosedOverlay('weekend');
                 return;
             }
-            const url = `/api/data?interval=${currentInterval}`;
-            console.log('[loadData] fetching:', url);
-            fetch(url)
+            fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.text())
                 .then(raw => {
-                    console.log('[loadData] raw response:', raw.substring(0, 500));
                     let data;
                     try { data = JSON.parse(raw); } catch(e) {
-                        console.error('[loadData] JSON parse failed — server returned:', raw.substring(0, 300));
+                        console.error('[loadData] Server returned non-JSON:', raw.substring(0, 300));
                         return;
                     }
-                    console.log('[loadData] response | candles:', data.candles?.length, '| error:', data.error);
                     if (!data.candles || data.candles.length === 0) {
                         showClosedOverlay('no_data');
                         return;
@@ -634,13 +626,7 @@
                     // timestamp ordering conflicts in LightweightCharts
                     candleSeries.setData([]);
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
-                    console.log('[loadData] setting', shifted.length, 'candles | first:', shifted[0]?.time, 'last:', shifted[shifted.length-1]?.time);
-                    try {
-                        candleSeries.setData(shifted);
-                        console.log('[loadData] candleSeries.setData OK');
-                    } catch(e) {
-                        console.error('[loadData] candleSeries.setData FAILED:', e);
-                    }
+                    candleSeries.setData(shifted);
                     candleSeries.setData(shifted);
 
                     for (const [name, seriesList] of Object.entries(activeSeries)) {
@@ -697,9 +683,7 @@
                         }
                     }
                 })
-                .catch(err => {
-                    console.error('[loadData] fetch error:', err);
-                });
+                .catch(err => console.error('Fetch error:', err));
         }
 
         setInterval(() => { loadData(); }, 2000);
