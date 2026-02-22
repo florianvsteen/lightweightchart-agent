@@ -225,6 +225,7 @@
 
     <script>
         const PAIR_ID = "{{ pair_id }}";
+        const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
         const TIMEZONE = "{{ timezone }}";
 
         // ── Timezone offset ───────────────────────────────────────────
@@ -371,6 +372,7 @@
 
         // ── Weekend check (client-side) ───────────────────────────────
         function isWeekendHalt() {
+            if (ALWAYS_OPEN) return false;   // 24/7 markets (e.g. Bitcoin) — never halt
             const now = new Date();
             const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Fri,6=Sat
             const hour = now.getUTCHours();
