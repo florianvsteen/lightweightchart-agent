@@ -99,7 +99,7 @@ PAIRS = {
     },
     "EURGBP": {
       "yf_ticker": "EURGBP=X",
-      "ymt5_ticker": "EURGBP",
+      "mt5_ticker": "EURGBP",
       "port": 5003,
       "label": "EUR/GBP",
       "interval": "15m",
