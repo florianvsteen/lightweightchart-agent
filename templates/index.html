@@ -615,8 +615,14 @@
             const url = `/api/data?interval=${currentInterval}`;
             console.log('[loadData] fetching:', url);
             fetch(url)
-                .then(res => res.json())
-                .then(data => {
+                .then(res => res.text())
+                .then(raw => {
+                    console.log('[loadData] raw response:', raw.substring(0, 500));
+                    let data;
+                    try { data = JSON.parse(raw); } catch(e) {
+                        console.error('[loadData] JSON parse failed — server returned:', raw.substring(0, 300));
+                        return;
+                    }
                     console.log('[loadData] response | candles:', data.candles?.length, '| error:', data.error);
                     if (!data.candles || data.candles.length === 0) {
                         showClosedOverlay('no_data');
