@@ -367,6 +367,16 @@ class PairServer:
             cache = {}
             df = self._get_df(interval, cache)
 
+            if df is None or len(df) < 5:
+                return jsonify({
+                    "pair": self.pair_id, "session": None, "effective_range": None,
+                    "adx_threshold": None, "last_close": None,
+                    "windows_checked": 0, "passed": 0,
+                    "rejection_summary": {}, "windows": [], "best_zone": None,
+                    "secondary_zone": None, "candles": [],
+                    "error": "No data available (market closed or download failed)",
+                })
+
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             lookback      = params.get("lookback", 40)
@@ -525,6 +535,16 @@ class PairServer:
             if isinstance(full_df.columns, pd.MultiIndex):
                 full_df.columns = full_df.columns.get_level_values(0)
             full_df = full_df.dropna()
+
+            if full_df is None or len(full_df) < 5:
+                return jsonify({
+                    "idx": 0, "total": 0, "session": None, "effective_range": None,
+                    "adx_threshold": None, "last_close": None,
+                    "windows_checked": 0, "passed": 0,
+                    "rejection_summary": {}, "windows": [], "best_zone": None,
+                    "secondary_zone": None, "breakout_candle": None, "candles": [],
+                    "error": "No data available (market closed or download failed)",
+                })
 
             params        = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
