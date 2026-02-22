@@ -62,8 +62,8 @@ class PairServer:
         # Resolve ticker based on active provider.
         # Config supports yf_ticker (Yahoo Finance) and mt5_ticker (MetaTrader 5).
         # Falls back to whichever is set, then to the legacy "ticker" key.
-        from providers import PROVIDER_NAME
-        if PROVIDER_NAME == "metatrader":
+        _provider = os.environ.get("DATA_PROVIDER", "yahoo").lower().strip()
+        if _provider == "metatrader":
             self.ticker = (
                 config.get("mt5_ticker")
                 or config.get("yf_ticker")
@@ -75,7 +75,7 @@ class PairServer:
                 or config.get("ticker")
             )
         if not self.ticker:
-            raise ValueError(f"[{pair_id}] No ticker configured for provider '{PROVIDER_NAME}'")
+            raise ValueError(f"[{pair_id}] No ticker configured for provider '{_provider}'")
 
         # Alert dedup — persisted to disk so restarts don't re-fire old alerts
         self._alerted_file = os.path.join(
