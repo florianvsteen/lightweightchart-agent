@@ -466,6 +466,21 @@ class PairServer:
                 key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
 
+            # Best zone: ADX<10 preferred, then lowest slope. Secondary = runner-up.
+            def _rank_windows(ws):
+                low_adx = sorted(
+                    [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
+                    key=lambda w: w["slope"]
+                )
+                rest = sorted(
+                    [w for w in ws if not (w.get("adx") is not None and w["adx"] < 10)],
+                    key=lambda w: w["slope"]
+                )
+                return low_adx + rest
+
+            ranked = _rank_windows(passed)
+            best_zone      = ranked[0] if ranked else None
+            secondary_zone = ranked[1] if len(ranked) > 1 else None
             return jsonify({
                 "pair":              self.pair_id,
                 "session":           session,
@@ -476,12 +491,10 @@ class PairServer:
                 "passed":            len(passed),
                 "rejection_summary": reasons,
                 "windows":           windows,
+                "best_zone":         best_zone,
+                "secondary_zone":    secondary_zone,
                 "candles":           candles,
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    def _debug_replay(self):
         """
         Run the accumulation detector against only the first `idx` candles.
         Query param: idx=N (1-based candle index to replay up to)
@@ -650,11 +663,21 @@ class PairServer:
                 key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
 
-            # Best zone: tightest active passing window
-            best_zone = None
-            active_passing = [w for w in passed if w.get("is_active")]
-            if active_passing:
-                best_zone = min(active_passing, key=lambda w: w["range_pct"])
+            # Best zone: ADX<10 preferred, then lowest slope. Secondary = runner-up.
+            def _rank_windows(ws):
+                low_adx = sorted(
+                    [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
+                    key=lambda w: w["slope"]
+                )
+                rest = sorted(
+                    [w for w in ws if not (w.get("adx") is not None and w["adx"] < 10)],
+                    key=lambda w: w["slope"]
+                )
+                return low_adx + rest
+
+            ranked    = _rank_windows(passed)
+            best_zone      = ranked[0] if ranked else None
+            secondary_zone = ranked[1] if len(ranked) > 1 else None
 
             return jsonify({
                 "idx":               idx,
@@ -668,6 +691,7 @@ class PairServer:
                 "rejection_summary": reasons,
                 "windows":           windows,
                 "best_zone":         best_zone,
+                "secondary_zone":    secondary_zone,
                 "breakout_candle":   breakout_candle,
                 "candles":           [
                     {"time": int(r.Index.timestamp()), "open": round(float(r.Open),5),
