@@ -182,9 +182,6 @@ class PairServer:
                 results[name] = None
             else:
                 try:
-                    # Always pass always_open to accumulation so weekend halt is correct
-                    if name == "accumulation":
-                        params.setdefault("always_open", self.always_open)
                     # When using MetaTrader, swap the ticker in supply_demand params
                     if name == "supply_demand" and _provider == "metatrader":
                         mt5_ticker = self._config.get("mt5_ticker")
