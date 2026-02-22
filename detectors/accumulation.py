@@ -301,26 +301,37 @@ def detect(
                 zone["status"] = "potential"
                 potential_candidates.append(zone)
 
-        def _best(candidates):
-            """Select best zone: ADX<10 preferred, then lowest slope."""
+        def _rank(candidates):
+            """Sort candidates: ADX<10 first, then lowest slope within each tier."""
             if not candidates:
-                return None
-            low_adx = [z for z in candidates if z["adx"] is not None and z["adx"] < 10]
-            pool = low_adx if low_adx else candidates
-            return min(pool, key=lambda z: z["slope"])
+                return []
+            low_adx = sorted(
+                [z for z in candidates if z["adx"] is not None and z["adx"] < 10],
+                key=lambda z: z["slope"]
+            )
+            rest = sorted(
+                [z for z in candidates if not (z["adx"] is not None and z["adx"] < 10)],
+                key=lambda z: z["slope"]
+            )
+            return low_adx + rest
 
-        best_found     = _best(found_candidates)
-        best_potential = _best(potential_candidates)
+        # Primary pool: "found" zones first, then "potential"
+        ranked_all = _rank(found_candidates) + _rank(potential_candidates)
 
-        # ── Determine which zone to return ────────────────────────────────
-        candidate = best_found if best_found is not None else best_potential
-        if candidate is None:
+        # ── Determine which zones to return ───────────────────────────────
+        if not ranked_all:
             return {"detector": "accumulation", "status": "looking", "is_active": False}
+
+        candidate      = ranked_all[0]
+        secondary_zone = ranked_all[1] if len(ranked_all) > 1 else None
 
         # Active zone — breakout candle still inside the box
         if candidate["is_active"]:
             candidate.pop("_window_start_idx", None)
             candidate["status"] = "active"
+            if secondary_zone:
+                secondary_zone.pop("_window_start_idx", None)
+            candidate["secondary_zone"] = secondary_zone
             return candidate
 
         # ── Price broke out — validate as IMPULSIVE ───────────────────────
@@ -343,6 +354,9 @@ def detect(
             candidate.pop("_window_start_idx", None)
             candidate["is_active"] = True
             candidate["status"]    = "active"
+            if secondary_zone:
+                secondary_zone.pop("_window_start_idx", None)
+            candidate["secondary_zone"] = secondary_zone
             return candidate
 
         # Check impulse: body must be bigger than avg window body
@@ -363,6 +377,9 @@ def detect(
             "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
             "low":   round(bo_low_raw, 5),  "close": round(bo_close_raw, 5),
         }
+        if secondary_zone:
+            secondary_zone.pop("_window_start_idx", None)
+        candidate["secondary_zone"] = secondary_zone
         return candidate
 
     except Exception as e:
