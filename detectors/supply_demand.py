@@ -80,16 +80,14 @@ def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
     return (total_range - body) / total_range >= min_wick_ratio
 
 
-def _get_bias(ticker: str, yf_lock: threading.Lock = None) -> dict:
+def _get_bias(ticker: str, yf_lock=None) -> dict:
     """
-    Fetch previous completed daily and weekly candles.
-    Uses the active data provider (yahoo or metatrader).
-    yf_lock is accepted for backward compatibility but ignored — locking
-    is handled inside the provider itself.
+    Fetch previous completed daily and weekly candles via the active data provider.
+    yf_lock param retained for backward compatibility but no longer used.
     """
     try:
-        df_d = _provider_get_bias_df(ticker, "5d", "1d")
-        df_w = _provider_get_bias_df(ticker, "3mo", "1wk")
+        df_d = _provider_get_bias_df(ticker, "5d", "1d").dropna()
+        df_w = _provider_get_bias_df(ticker, "3mo", "1wk").dropna()
 
         if len(df_d) < 2 or len(df_w) < 2:
             return {"bias": "misaligned", "reason": "insufficient data"}
