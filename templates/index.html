@@ -523,25 +523,31 @@
 
             if (!zones.length) return allSeries;
 
+            // If a highlight param is set (Playwright screenshot mode), dim non-highlighted zones
+            const urlParams = new URLSearchParams(window.location.search);
+            const highlightTs = urlParams.get('highlight') ? parseInt(urlParams.get('highlight')) : null;
+
             zones.forEach(zone => {
-                const isDemand  = zone.type === 'demand';
-                // All zones are active
+                const isDemand   = zone.type === 'demand';
+                const isHighlighted = !highlightTs || zone.start === highlightTs;
+
+                // Highlighted zone: full opacity. Others: dimmed.
                 const color = isDemand
-                    ? 'rgba(70, 130, 220, 0.35)'
-                    : 'rgba(220, 100, 50, 0.35)';
+                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.9)' : 'rgba(70, 130, 220, 0.15)')
+                    : (isHighlighted ? 'rgba(220, 100, 50, 0.9)'  : 'rgba(220, 100, 50, 0.15)');
                 const fill  = isDemand
-                    ? 'rgba(70, 130, 220, 0.07)'
-                    : 'rgba(220, 100, 50, 0.07)';
-                const lineStyle = 0;
+                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.18)' : 'rgba(70, 130, 220, 0.03)')
+                    : (isHighlighted ? 'rgba(220, 100, 50, 0.18)' : 'rgba(220, 100, 50, 0.03)');
+                const lineWidth = isHighlighted ? 2 : 1;
 
                 const topLine = chart.addLineSeries({
-                    color, lineWidth: 1, lineStyle,
+                    color, lineWidth, lineStyle: 0,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
                 topLine.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
 
                 const bottomLine = chart.addLineSeries({
-                    color, lineWidth: 1, lineStyle,
+                    color, lineWidth, lineStyle: 0,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
                 bottomLine.setData([{ time: shiftTime(zone.start), value: zone.bottom }, { time: shiftTime(zone.end), value: zone.bottom }]);
