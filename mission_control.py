@@ -596,6 +596,17 @@ async function fetchPair(pair) {
     const prev = candles[candles.length - 2];
     const price = last?.close;
 
+    // If no candles returned, market is closed (data unavailable)
+    if (candles.length < 5) {
+      card.classList.remove('error');
+      dotEl.className      = 'status-dot standby';
+      statusEl.textContent = 'No data — market closed';
+      statusEl.className   = 'status-text dim';
+      extraEl.innerHTML    = '<div class="weekend-card-badge">NO DATA</div>';
+      metaEl.textContent   = '⛔ CLOSED';
+      return;
+    }
+
     document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
 
     if (prev?.close && price) {
