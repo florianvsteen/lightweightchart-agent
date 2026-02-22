@@ -27,7 +27,8 @@ def proxy_api(pair_id):
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        interval = cfg.get("default_interval", cfg.get("interval", "1m"))
+        # Forward the interval param if provided by the browser, otherwise use default
+        interval = request.args.get("interval") or cfg.get("default_interval", cfg.get("interval", "1m"))
         url = f"http://127.0.0.1:{cfg['port']}/api/data?interval={interval}"
         r = requests.get(url, timeout=5)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
