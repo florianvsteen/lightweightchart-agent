@@ -605,10 +605,10 @@ async function fetchPair(pair) {
       const metaEl   = document.getElementById(`meta-${pair.id}`);
       card.classList.remove('error');
       dotEl.className      = 'status-dot standby';
-      statusEl.textContent = 'Markets closed — operations halted';
+      statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed — operations halted';
       statusEl.className   = 'status-text dim';
-      extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
-      metaEl.textContent   = '⛔ CLOSED';
+      extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+      metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
       return;
     }
 
@@ -632,7 +632,7 @@ async function fetchPair(pair) {
     // ── Accumulation ─────────────────────────────────────────────────────
     if (pair.type === 'accumulation') {
       const z = det.accumulation;
-      if (z && z.status === 'weekend') {
+      if (z && z.status === 'weekend' && !pair.always_open) {
         dotEl.className      = 'status-dot offline';
         statusEl.textContent = 'Market closed — weekend';
         statusEl.className   = 'status-text dim';
@@ -726,10 +726,10 @@ async function fetchPair(pair) {
     const extraEl  = document.getElementById(`extra-${pair.id}`);
     card.classList.remove('error');
     dotEl.className      = 'status-dot standby';
-    statusEl.textContent = 'Markets closed — operations halted';
+    statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed — operations halted';
     statusEl.className   = 'status-text dim';
-    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
-    metaEl.textContent   = '⛔ CLOSED';
+    extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+    metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
   }
 }
 
