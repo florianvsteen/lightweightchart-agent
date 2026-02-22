@@ -11,7 +11,8 @@ If a session override is not set, falls back to max_range_pct.
 
 PAIRS = {
     "US30": {
-        "ticker": "YM=F",
+        "yf_ticker": "YM=F",
+        "mt5_ticker": "US30",
         "port": 5000,
         "label": "US30 (Dow Jones Futures)",
         "interval": "1m",
@@ -32,7 +33,8 @@ PAIRS = {
         },
     },
     "US100": {
-        "ticker": "NQ=F",
+        "yf_ticker": "NQ=F",
+        "mt5_ticker": "NAS100",
         "port": 5001,
         "label": "US100 (Nasdaq Futures)",
         "interval": "1m",
@@ -53,7 +55,8 @@ PAIRS = {
         },
     },
     "XAUUSD": {
-        "ticker": "GC=F",
+        "yf_ticker": "GC=F",
+        "mt5_ticker": "XAUUSD",
         "port": 5002,
         "label": "XAUUSD (Gold Futures)",
         "interval": "1m",
@@ -74,7 +77,8 @@ PAIRS = {
         },
     },
     "EURUSD": {
-        "ticker": "EURUSD=X",
+        "yf_ticker": "EURUSD=X",
+        "mt5_ticker": "EURUSD",
         "port": 5004,
         "label": "EUR/USD",
         "interval": "15m",
@@ -94,7 +98,8 @@ PAIRS = {
         },
     },
     "EURGBP": {
-      "ticker": "EURGBP=X",
+      "yf_ticker": "EURGBP=X",
+      "ymt5_ticker": "EURGBP",
       "port": 5003,
       "label": "EUR/GBP",
       "interval": "15m",
@@ -114,7 +119,8 @@ PAIRS = {
       },
     },
       "GBPUSD": {
-      "ticker": "GBPUSD=X",
+      "yf_ticker": "GBPUSD=X",
+      "mt5_ticker": "GBPUSD",
       "port": 5005,
       "label": "GBPUSD",
       "interval": "15m",
@@ -134,7 +140,8 @@ PAIRS = {
       },
   },
     "BTCUSD": {
-        "ticker": "BTCUSD",
+        "yf_ticker": "BTCUSD",
+        "mt5_ticker": "BTCUSD",
         "port": 5006,
         "label": "BTC/USD (Bitcoin)",
         "interval": "1m",
