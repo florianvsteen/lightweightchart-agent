@@ -7,6 +7,9 @@ This provider just obtains a session token and uses it to fetch OHLCV data.
 
 Required env vars:
   MT5_API_URL   Base URL of the mt5rest API (e.g. https://mt5.flownet.be)
+  MT5_USER      MT5 account number
+  MT5_PASSWORD  MT5 account password (special characters are URL-encoded automatically)
+  MT5_SERVER    MT5 broker server name (e.g. FusionMarkets-Live)
 
 Exposes:
   get_df(ticker, interval, period)       → pd.DataFrame  (OHLCV, DatetimeIndex, UTC)
@@ -79,11 +82,37 @@ def _base_url() -> str:
 
 def _connect() -> str:
     """
-    Obtain a session token from the mt5rest API.
-    The server already knows which MT5 account to use — no credentials needed.
-    Just calls GET {MT5_API_URL}/Connect and returns the token.
+    Obtain a session token from the mt5rest API via /ConnectEx.
+    Credentials are read from environment variables.
+
+    Required env vars:
+      MT5_API_URL   Base URL  (e.g. https://mt5.flownet.be)
+      MT5_USER      MT5 account number
+      MT5_PASSWORD  MT5 account password (may contain special characters — URL-encoded automatically)
+      MT5_SERVER    MT5 broker server name (e.g. FusionMarkets-Live)
     """
-    resp = requests.get(f"{_base_url()}/Connect", timeout=30)
+    from urllib.parse import urlencode
+
+    user     = os.environ.get("MT5_USER", "")
+    password = os.environ.get("MT5_PASSWORD", "")
+    server   = os.environ.get("MT5_SERVER", "")
+
+    if not user or not password or not server:
+        raise RuntimeError(
+            "MT5_USER, MT5_PASSWORD and MT5_SERVER must all be set. "
+            "Example: export MT5_USER=283464  MT5_PASSWORD=secret  MT5_SERVER=FusionMarkets-Live"
+        )
+
+    # urlencode handles special characters in the password safely
+    params = urlencode({
+        "user":                               user,
+        "password":                           password,
+        "server":                             server,
+        "connectTimeoutSeconds":              60,
+        "connectTimeoutClusterMemberSeconds": 20,
+    })
+
+    resp = requests.get(f"{_base_url()}/ConnectEx?{params}", timeout=90)
 
     if resp.status_code != 200:
         try:
@@ -91,7 +120,7 @@ def _connect() -> str:
             detail = f"{err.get('code', '')} — {err.get('message', '')}"
         except Exception:
             detail = resp.text[:200]
-        raise RuntimeError(f"[metatrader] /Connect failed: HTTP {resp.status_code} — {detail}")
+        raise RuntimeError(f"[metatrader] /ConnectEx failed: HTTP {resp.status_code} — {detail}")
 
     token = resp.text.strip().strip('"')
     print(f"[metatrader] Connected — token: {token[:8]}…")
