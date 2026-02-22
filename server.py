@@ -50,7 +50,6 @@ class PairServer:
 
     def __init__(self, pair_id: str, config: dict):
         self.pair_id = pair_id
-        self.ticker = config["ticker"]
         self.port = config["port"]
         self.label = config["label"]
         self.interval = config.get("interval", "1m")
@@ -59,6 +58,24 @@ class PairServer:
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
         self.always_open = config.get("always_open", False)
+
+        # Resolve ticker based on active provider.
+        # Config supports yf_ticker (Yahoo Finance) and mt5_ticker (MetaTrader 5).
+        # Falls back to whichever is set, then to the legacy "ticker" key.
+        from providers import PROVIDER_NAME
+        if PROVIDER_NAME == "metatrader":
+            self.ticker = (
+                config.get("mt5_ticker")
+                or config.get("yf_ticker")
+                or config.get("ticker")
+            )
+        else:
+            self.ticker = (
+                config.get("yf_ticker")
+                or config.get("ticker")
+            )
+        if not self.ticker:
+            raise ValueError(f"[{pair_id}] No ticker configured for provider '{PROVIDER_NAME}'")
 
         # Alert dedup — persisted to disk so restarts don't re-fire old alerts
         self._alerted_file = os.path.join(
@@ -730,7 +747,7 @@ class PairServer:
             cache = {}
             params = dict(self.detector_params.get("supply_demand", {}))
             params.pop("timeframe", None)
-            ticker           = params.get("ticker", self.ticker)
+            ticker           = self.ticker  # already resolved to correct provider ticker in __init__
             impulse_mult     = params.get("impulse_multiplier", 1.8)
             wick_ratio       = params.get("wick_ratio", 0.6)
             max_zones        = params.get("max_zones", 5)
