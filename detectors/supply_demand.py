@@ -30,9 +30,9 @@ NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import threading
 from datetime import datetime, timezone
+from providers import get_bias_df as _provider_get_bias_df
 
 
 SESSION_WINDOWS = {
@@ -83,24 +83,13 @@ def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
 def _get_bias(ticker: str, yf_lock: threading.Lock = None) -> dict:
     """
     Fetch previous completed daily and weekly candles.
-    Uses yf_lock if provided to serialize yfinance downloads.
+    Uses the active data provider (yahoo or metatrader).
+    yf_lock is accepted for backward compatibility but ignored — locking
+    is handled inside the provider itself.
     """
     try:
-        def _dl(t, period, interval):
-            if yf_lock:
-                with yf_lock:
-                    return yf.download(t, period=period, interval=interval, progress=False)
-            return yf.download(t, period=period, interval=interval, progress=False)
-
-        df_d = _dl(ticker, "5d", "1d")
-        if isinstance(df_d.columns, pd.MultiIndex):
-            df_d.columns = df_d.columns.get_level_values(0)
-        df_d = df_d.dropna()
-
-        df_w = _dl(ticker, "3mo", "1wk")
-        if isinstance(df_w.columns, pd.MultiIndex):
-            df_w.columns = df_w.columns.get_level_values(0)
-        df_w = df_w.dropna()
+        df_d = _provider_get_bias_df(ticker, "5d", "1d")
+        df_w = _provider_get_bias_df(ticker, "3mo", "1wk")
 
         if len(df_d) < 2 or len(df_w) < 2:
             return {"bias": "misaligned", "reason": "insufficient data"}
