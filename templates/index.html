@@ -218,9 +218,9 @@
     <!-- Weekend closed overlay -->
     <div id="weekend-overlay">
         <div class="wk-title">⛔ Market Closed</div>
-        <div class="wk-sub">Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC</div>
+        <div class="wk-sub" id="wk-sub">Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC</div>
         <div class="wk-countdown" id="wk-countdown">00:00:00</div>
-        <div class="wk-hint">Resumes Monday 01:00 UTC (Asian session open)</div>
+        <div class="wk-hint" id="wk-hint">Resumes Monday 01:00 UTC (Asian session open)</div>
     </div>
 
     <script>
@@ -570,24 +570,46 @@
         }
 
         // ── Data Loop ─────────────────────────────────────────────────
-        function checkWeekendOverlay() {
+        function showClosedOverlay(reason) {
             const overlay = document.getElementById('weekend-overlay');
-            if (isWeekendHalt()) {
-                overlay.classList.add('visible');
-                document.getElementById('wk-countdown').textContent = getWeekendCountdown();
-                return true;
+            const sub     = document.getElementById('wk-sub');
+            const hint    = document.getElementById('wk-hint');
+            const cd      = document.getElementById('wk-countdown');
+            if (reason === 'weekend') {
+                sub.textContent  = 'Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC';
+                hint.textContent = 'Resumes Monday 01:00 UTC (Asian session open)';
+                cd.textContent   = getWeekendCountdown();
+                cd.style.display = '';
             } else {
-                overlay.classList.remove('visible');
-                return false;
+                sub.textContent  = 'No market data available — exchange may be closed';
+                hint.textContent = 'Chart will resume automatically when data is available';
+                cd.style.display = 'none';
             }
+            overlay.classList.add('visible');
+        }
+
+        function hideClosedOverlay() {
+            document.getElementById('weekend-overlay').classList.remove('visible');
+        }
+
+        function checkWeekendOverlay() {
+            if (isWeekendHalt()) {
+                showClosedOverlay('weekend');
+                return true;
+            }
+            return false;
         }
 
         function loadData() {
-            if (checkWeekendOverlay()) return;  // skip fetch during weekend
+            if (checkWeekendOverlay()) return;
             fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.json())
                 .then(data => {
-                    if (!data.candles) return;
+                    if (!data.candles || data.candles.length < 5) {
+                        showClosedOverlay('no_data');
+                        return;
+                    }
+                    hideClosedOverlay();
 
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
                     candleSeries.setData(shifted);
@@ -647,12 +669,8 @@
                 .catch(err => console.error('Fetch error:', err));
         }
 
-        setInterval(() => {
-            checkWeekendOverlay();
-            if (!isWeekendHalt()) loadData();
-        }, 2000);
-        checkWeekendOverlay();
-        if (!isWeekendHalt()) loadData();
+        setInterval(() => { loadData(); }, 2000);
+        loadData();
 
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
     </script>
