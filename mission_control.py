@@ -639,9 +639,9 @@ async function fetchPair(pair) {
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = '';
         metaEl.textContent   = '⛔ CLOSED';
-      } else if (!z || z.status === 'looking' || !z.status) {
-        // null = out of session; {status:'looking'} = in session but no zone found
-        const isOOS = !z;
+      } else if (!z || z.status === 'looking' || !z.status || (z.status === 'weekend' && pair.always_open)) {
+        // null = out of session; 'looking' = in session no zone; 'weekend'+always_open = OOS for 24/7 pairs
+        const isOOS = !z || z.status === 'weekend';
         const oosLabel = pair.always_open ? 'Open — not in session' : 'Out of session';
         dotEl.className      = 'status-dot looking';
         statusEl.textContent = isOOS ? oosLabel : 'Looking for accumulation';
