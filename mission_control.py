@@ -171,6 +171,7 @@ PAIRS_JS = [
         "label": cfg["label"],
         "port":  cfg["port"],
         "type":  "supply_demand" if "supply_demand" in cfg["detectors"] else "accumulation",
+        "always_open": cfg.get("always_open", False),
     }
     for pair_id, cfg in PAIRS.items()
 ]
@@ -775,13 +776,19 @@ function updateClock() {
 }
 
 async function pollAll() {
-  if (isWeekendHalt()) {
-    applyWeekendStandby();
-    return;
-  }
+  const weekend = isWeekendHalt();
   const dot = document.getElementById('refresh-dot');
   dot.classList.add('active');
-  await Promise.all(PAIRS.map(fetchPair));
+
+  // For each pair: skip fetching if weekend AND not always_open
+  await Promise.all(PAIRS.map(pair => {
+    if (weekend && !pair.always_open) return Promise.resolve();
+    return fetchPair(pair);
+  }));
+
+  // Apply standby styling to non-always_open pairs during weekend
+  if (weekend) applyWeekendStandby();
+
   dot.classList.remove('active');
   const now = new Date();
   document.getElementById('last-update').textContent =
@@ -790,6 +797,7 @@ async function pollAll() {
 
 function applyWeekendStandby() {
   PAIRS.forEach(pair => {
+    if (pair.always_open) return;   // 24/7 pairs are never suspended
     const dotEl    = document.getElementById(`dot-${pair.id}`);
     const statusEl = document.getElementById(`status-${pair.id}`);
     const extraEl  = document.getElementById(`extra-${pair.id}`);
@@ -810,20 +818,17 @@ buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
 
-// Always do one initial fetch to populate card prices, then apply standby if weekend
+// Initial fetch — always fetch all pairs for price population, then apply standby to non-always_open
 Promise.all(PAIRS.map(pair =>
   fetch(`/proxy/${pair.id}/api/data`)
     .then(r => r.ok ? r.json() : null)
     .then(data => { if (data) _populatePriceOnly(pair, data); })
     .catch(() => {})
 )).then(() => {
-  if (isWeekendHalt()) {
-    applyWeekendStandby();
-  } else {
-    // Not weekend — run full fetchPair for all pairs now
-    pollAll();
-    setInterval(pollAll, 5000);
-  }
+  if (isWeekendHalt()) applyWeekendStandby();
+  // Always start polling — pollAll handles per-pair always_open logic
+  pollAll();
+  setInterval(pollAll, 5000);
 });
 
 // Helper: populate just price/change fields without touching status
