@@ -6,10 +6,10 @@ Assumes the mt5rest server is already configured with MT5 account credentials.
 This provider just obtains a session token and uses it to fetch OHLCV data.
 
 Required env vars:
-  MT5_API_URL   Base URL of the mt5rest API (e.g. https://mt5.flownet.be)
-  MT5_USER      MT5 account number
-  MT5_PASSWORD  MT5 account password (special characters are URL-encoded automatically)
-  MT5_SERVER    MT5 broker server name (e.g. FusionMarkets-Live)
+  MT5_API_URL       Base URL of the mt5rest API (e.g. https://mt5.flownet.be)
+  MT5_API_USER      MT5 account number
+  MT5_API_PASSWORD  MT5 account password (special characters are safe — URL-encoded automatically)
+  MT5_API_SERVER    MT5 server name (e.g. FusionMarkets-Live)
 
 Exposes:
   get_df(ticker, interval, period)       → pd.DataFrame  (OHLCV, DatetimeIndex, UTC)
@@ -83,36 +83,32 @@ def _base_url() -> str:
 def _connect() -> str:
     """
     Obtain a session token from the mt5rest API via /ConnectEx.
-    Credentials are read from environment variables.
-
-    Required env vars:
-      MT5_API_URL   Base URL  (e.g. https://mt5.flownet.be)
-      MT5_USER      MT5 account number
-      MT5_PASSWORD  MT5 account password (may contain special characters — URL-encoded automatically)
-      MT5_SERVER    MT5 broker server name (e.g. FusionMarkets-Live)
+    Credentials are read from env vars. Password is URL-encoded to handle special characters.
     """
-    from urllib.parse import urlencode
+    user     = os.environ.get("MT5_API_USER", "")
+    password = os.environ.get("MT5_API_PASSWORD", "")
+    server   = os.environ.get("MT5_API_SERVER", "")
 
-    user     = os.environ.get("MT5_USER", "")
-    password = os.environ.get("MT5_PASSWORD", "")
-    server   = os.environ.get("MT5_SERVER", "")
-
-    if not user or not password or not server:
+    missing = [k for k, v in {
+        "MT5_API_USER": user, "MT5_API_PASSWORD": password, "MT5_API_SERVER": server
+    }.items() if not v]
+    if missing:
         raise RuntimeError(
-            "MT5_USER, MT5_PASSWORD and MT5_SERVER must all be set. "
-            "Example: export MT5_USER=283464  MT5_PASSWORD=secret  MT5_SERVER=FusionMarkets-Live"
+            f"Missing env vars for MT5 connection: {', '.join(missing)}. "
+            "Required: MT5_API_USER, MT5_API_PASSWORD, MT5_API_SERVER"
         )
 
-    # urlencode handles special characters in the password safely
-    params = urlencode({
-        "user":                               user,
-        "password":                           password,
-        "server":                             server,
-        "connectTimeoutSeconds":              60,
+    # URL-encode the password to safely handle special characters
+    from urllib.parse import urlencode
+    query = urlencode({
+        "user":                              user,
+        "password":                          password,
+        "server":                            server,
+        "connectTimeoutSeconds":             60,
         "connectTimeoutClusterMemberSeconds": 20,
     })
 
-    resp = requests.get(f"{_base_url()}/ConnectEx?{params}", timeout=90)
+    resp = requests.get(f"{_base_url()}/ConnectEx?{query}", timeout=70)
 
     if resp.status_code != 200:
         try:
@@ -123,7 +119,7 @@ def _connect() -> str:
         raise RuntimeError(f"[metatrader] /ConnectEx failed: HTTP {resp.status_code} — {detail}")
 
     token = resp.text.strip().strip('"')
-    print(f"[metatrader] Connected — token: {token[:8]}…")
+    print(f"[metatrader] Connected via /ConnectEx — token: {token[:8]}…")
     return token
 
 
