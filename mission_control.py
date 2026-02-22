@@ -596,14 +596,23 @@ async function fetchPair(pair) {
     const prev = candles[candles.length - 2];
     const price = last?.close;
 
-    // If no candles returned, market is closed (data unavailable)
-    if (candles.length < 5) {
+    // Market closed check: no candles, or last candle is stale (>2 hours old)
+    const nowSec   = Date.now() / 1000;
+    const lastTime = last?.time || 0;
+    const isStale  = !last || (nowSec - lastTime) > 7200;  // 2 hours
+    if (isStale) {
+      const dotEl    = document.getElementById(`dot-${pair.id}`);
+      const statusEl = document.getElementById(`status-${pair.id}`);
+      const extraEl  = document.getElementById(`extra-${pair.id}`);
+      const metaEl   = document.getElementById(`meta-${pair.id}`);
       card.classList.remove('error');
       dotEl.className      = 'status-dot standby';
-      statusEl.textContent = 'No data — market closed';
+      statusEl.textContent = 'Markets closed — operations halted';
       statusEl.className   = 'status-text dim';
-      extraEl.innerHTML    = '<div class="weekend-card-badge">NO DATA</div>';
+      extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
       metaEl.textContent   = '⛔ CLOSED';
+      // Still show the last known price if we have it
+      if (price) document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
       return;
     }
 
@@ -714,12 +723,17 @@ async function fetchPair(pair) {
     }
 
   } catch (e) {
-    const card = document.getElementById(`card-${pair.id}`);
-    card.classList.add('error');
-    document.getElementById(`status-${pair.id}`).textContent = 'Offline';
-    document.getElementById(`dot-${pair.id}`).className = 'status-dot offline';
-    document.getElementById(`meta-${pair.id}`).textContent = 'ERR';
-    document.getElementById(`extra-${pair.id}`).innerHTML = '';
+    const card     = document.getElementById(`card-${pair.id}`);
+    const dotEl    = document.getElementById(`dot-${pair.id}`);
+    const statusEl = document.getElementById(`status-${pair.id}`);
+    const metaEl   = document.getElementById(`meta-${pair.id}`);
+    const extraEl  = document.getElementById(`extra-${pair.id}`);
+    card.classList.remove('error');
+    dotEl.className      = 'status-dot standby';
+    statusEl.textContent = 'Markets closed — operations halted';
+    statusEl.className   = 'status-text dim';
+    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+    metaEl.textContent   = '⛔ CLOSED';
   }
 }
 
