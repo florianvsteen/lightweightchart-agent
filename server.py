@@ -867,12 +867,19 @@ class PairServer:
                     "avg_body":      round(avg_body, 6),
                 })
 
+            candles_sd = [
+                {"time": int(idx.timestamp()), "open": round(float(r["Open"]),5),
+                 "high": round(float(r["High"]),5), "low": round(float(r["Low"]),5),
+                 "close": round(float(r["Close"]),5)}
+                for idx, r in df.iterrows()
+            ]
             return jsonify({
                 "pair":       self.pair_id,
                 "bias":       bias_info,
                 "look_for":   look_for,
                 "avg_body":   round(avg_body, 6),
                 "candidates": candidates,
+                "candles":    candles_sd,
             })
         except Exception as e:
             import traceback
