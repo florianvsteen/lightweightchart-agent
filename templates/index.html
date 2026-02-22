@@ -617,6 +617,9 @@
                     }
                     hideClosedOverlay();
 
+                    // Clear existing candle data before loading new interval to avoid
+                    // timestamp ordering conflicts in LightweightCharts
+                    candleSeries.setData([]);
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
                     candleSeries.setData(shifted);
 
