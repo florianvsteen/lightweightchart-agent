@@ -640,10 +640,11 @@ async function fetchPair(pair) {
         extraEl.innerHTML    = '';
         metaEl.textContent   = '⛔ CLOSED';
       } else if (!z || z.status === 'looking' || !z.status) {
-        // Check if it's out of session (result is null from server = out of session)
+        // null = out of session; {status:'looking'} = in session but no zone found
         const isOOS = !z;
+        const oosLabel = pair.always_open ? 'Open — not in session' : 'Out of session';
         dotEl.className      = 'status-dot looking';
-        statusEl.textContent = isOOS ? 'Out of session' : 'Looking for accumulation';
+        statusEl.textContent = isOOS ? oosLabel : 'Looking for accumulation';
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = '';
         metaEl.textContent   = z?.session ? z.session.replace('_',' ').toUpperCase() : (isOOS ? 'OUT OF SESSION' : '--');
