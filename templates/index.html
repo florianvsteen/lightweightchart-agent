@@ -372,24 +372,24 @@
         // ── Weekend check (client-side) ───────────────────────────────
         function isWeekendHalt() {
             const now = new Date();
-            const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Sat,6=Sun
+            const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Fri,6=Sat
             const hour = now.getUTCHours();
             if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
             if (dow === 6) return true;                  // All Saturday
-            if (dow === 0 && hour < 1) return true;      // Sun < 01:00
+            if (dow === 0 && hour < 21) return true;     // Sun < 21:00
             return false;
         }
 
         function getWeekendCountdown() {
-            // Returns countdown string to Monday 01:00 UTC
+            // Returns countdown string to Sunday 21:00 UTC (earliest market reopen)
             const now = new Date();
             const target = new Date(now);
-            // Find next Monday 01:00 UTC
             const dow = now.getUTCDay();
-            let daysUntilMon = (1 - dow + 7) % 7;
-            if (daysUntilMon === 0) daysUntilMon = 7; // already Monday but halt still active before 01:00
-            target.setUTCDate(target.getUTCDate() + daysUntilMon);
-            target.setUTCHours(1, 0, 0, 0);
+            // Find next Sunday 21:00 UTC
+            let daysUntilSun = (0 - dow + 7) % 7;
+            if (daysUntilSun === 0 && now.getUTCHours() >= 21) daysUntilSun = 7; // already past Sun 21:00
+            target.setUTCDate(target.getUTCDate() + daysUntilSun);
+            target.setUTCHours(21, 0, 0, 0);
             const diff = target - now;
             const h = Math.floor(diff / 3600000);
             const m = Math.floor((diff % 3600000) / 60000);
@@ -576,8 +576,8 @@
             const hint    = document.getElementById('wk-hint');
             const cd      = document.getElementById('wk-countdown');
             if (reason === 'weekend') {
-                sub.textContent  = 'Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC';
-                hint.textContent = 'Resumes Monday 01:00 UTC (Asian session open)';
+                sub.textContent  = 'Weekend halt — Fri 23:00 UTC to Sun 21:00 UTC';
+                hint.textContent = 'Resumes Sunday 21:00 UTC (forex market open)';
                 cd.textContent   = getWeekendCountdown();
                 cd.style.display = '';
             } else {
