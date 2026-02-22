@@ -940,7 +940,9 @@ function enterReplayMode() {
   document.getElementById('scrubber').max = total - 1;
   document.getElementById('scrubber').value = total - 1;
   document.getElementById('replay-banner').style.display = '';
-  document.getElementById('scrubber-row').style.display = '';
+  const scrubRow = document.getElementById('scrubber-row');
+  scrubRow.style.display = 'flex';
+  console.log('[enterReplayMode] scrubber-row display set to flex, offsetHeight:', scrubRow.offsetHeight);
   const last = liveData.candles[total - 1];
   document.getElementById('scrub-ts').textContent =
     last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
@@ -984,7 +986,12 @@ function stopPlay() {
 }
 
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
-document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode && liveData) enterReplayMode(); });
+document.getElementById('btn-replay').addEventListener('click', () => {
+  console.log('[replay] clicked | replayMode:', replayMode, '| liveData:', !!liveData);
+  if (!replayMode && liveData) enterReplayMode();
+  else if (!liveData) console.log('[replay] blocked — liveData is null');
+  else console.log('[replay] blocked — already in replayMode');
+});
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
 document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, false); });
 document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
