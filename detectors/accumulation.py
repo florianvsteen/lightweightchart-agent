@@ -67,8 +67,8 @@ def is_weekend_halt(always_open: bool = False) -> bool:
     return False
 
 
-def get_current_session():
-    if is_weekend_halt():
+def get_current_session(always_open: bool = False):
+    if is_weekend_halt(always_open=always_open):
         return None
     hour = datetime.now(timezone.utc).hour
     if SESSION_WINDOWS["new_york"][0] <= hour < SESSION_WINDOWS["new_york"][1]:
@@ -77,6 +77,10 @@ def get_current_session():
         return "london"
     elif SESSION_WINDOWS["asian"][0] <= hour < SESSION_WINDOWS["asian"][1]:
         return "asian"
+    # For always-open markets (e.g. Bitcoin), return a placeholder so detection
+    # can still run outside the predefined session windows.
+    if always_open:
+        return "open"
     return None
 
 
@@ -164,6 +168,7 @@ def detect(
     asian_range_pct: float = None,
     london_range_pct: float = None,
     new_york_range_pct: float = None,
+    always_open: bool = False,
 ) -> dict | None:
     """
     Args:
@@ -175,9 +180,10 @@ def detect(
         asian_range_pct:    Max box height during Asian session.
         london_range_pct:   Max box height during London session.
         new_york_range_pct: Max box height during New York session.
+        always_open:        If True (e.g. Bitcoin), skip weekend halt logic entirely.
     """
     try:
-        if is_weekend_halt():
+        if is_weekend_halt(always_open=always_open):
             return {"detector": "accumulation", "status": "weekend", "is_active": False}
 
         if len(df) < min_candles + 4:
@@ -191,7 +197,7 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        session = get_current_session()
+        session = get_current_session(always_open=always_open)
         if session is None:
             return None
 
@@ -199,6 +205,8 @@ def detect(
             "asian":    asian_range_pct,
             "london":   london_range_pct,
             "new_york": new_york_range_pct,
+            # "open" = always-open market outside defined sessions — use new_york as fallback
+            "open":     new_york_range_pct or max_range_pct,
         }.get(session)
         effective_range_pct = session_range if session_range is not None else max_range_pct
 
