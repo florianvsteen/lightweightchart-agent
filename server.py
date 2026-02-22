@@ -58,6 +58,7 @@ class PairServer:
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
         self.always_open = config.get("always_open", False)
+        self._config = config  # keep full config for provider-specific lookups
 
         # Resolve ticker based on active provider.
         # Config supports yf_ticker (Yahoo Finance) and mt5_ticker (MetaTrader 5).
@@ -169,6 +170,7 @@ class PairServer:
 
     def _run_detectors(self, cache: dict) -> dict:
         """Run all detectors using their configured timeframes. Returns results dict."""
+        _provider = os.environ.get("DATA_PROVIDER", "yahoo").lower().strip()
         results = {}
         for name in self.detector_names:
             params = dict(self.detector_params.get(name, {}))
@@ -180,6 +182,14 @@ class PairServer:
                 results[name] = None
             else:
                 try:
+                    # Always pass always_open to accumulation so weekend halt is correct
+                    if name == "accumulation":
+                        params.setdefault("always_open", self.always_open)
+                    # When using MetaTrader, swap the ticker in supply_demand params
+                    if name == "supply_demand" and _provider == "metatrader":
+                        mt5_ticker = self._config.get("mt5_ticker")
+                        if mt5_ticker:
+                            params["ticker"] = mt5_ticker
                     results[name] = fn(df, **params)
                 except Exception as e:
                     print(f"[ERROR] Detector '{name}' failed: {e}")
