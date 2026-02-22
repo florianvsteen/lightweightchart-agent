@@ -14,10 +14,10 @@ import json
 import time
 import threading
 import pandas as pd
+import yfinance as yf
 from flask import Flask, render_template, jsonify, request
 
 from detectors import REGISTRY
-from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
 
 try:
     from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -33,8 +33,10 @@ except ImportError:
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
-# _YF_LOCK is now the provider's LOCK — kept as alias for backward compat
-# (supply_demand detector receives it as yf_lock parameter)
+# ── Debug page HTML ─────────────────────────────────────────────────────────
+# Global lock — yfinance has shared internal state and returns wrong data
+# when multiple tickers download simultaneously across threads.
+_YF_LOCK = threading.Lock()
 
 PERIOD_MAP = {
     "1m":  "1d",
@@ -61,6 +63,7 @@ class PairServer:
         self.detector_names = config.get("detectors", [])
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
+        self.always_open = config.get("always_open", False)
 
         # Alert dedup — persisted to disk so restarts don't re-fire old alerts
         self._alerted_file = os.path.join(
@@ -140,7 +143,11 @@ class PairServer:
 
     def _fetch_df(self, interval: str) -> pd.DataFrame:
         period = PERIOD_MAP.get(interval, self.period)
-        return _provider_get_df(self.ticker, interval, period)
+        with _YF_LOCK:  # serialize all yfinance downloads process-wide
+            df = yf.download(self.ticker, period=period, interval=interval, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df.dropna()
 
     def _get_df(self, interval: str, cache: dict) -> pd.DataFrame:
         """Return cached DataFrame for this interval within a single cycle."""
@@ -178,7 +185,7 @@ class PairServer:
         """Check results and fire Discord alerts on breakout."""
         # Never send alerts during the weekend market halt (Fri 23:00 – Mon 01:00 UTC)
         from detectors.accumulation import is_weekend_halt
-        if is_weekend_halt():
+        if is_weekend_halt(always_open=self.always_open):
             return
 
         for name, result in detector_results.items():
@@ -524,7 +531,15 @@ class PairServer:
             from datetime import timezone
             from detectors.accumulation import _slope_pct, _choppiness, _adx
 
-            full_df = _provider_get_df(self.ticker, "1m", self.period)
+            acquired = _YF_LOCK.acquire(timeout=10)
+            try:
+                full_df = yf.download(self.ticker, period=self.period, interval="1m", progress=False)
+            finally:
+                if acquired:
+                    _YF_LOCK.release()
+
+            if isinstance(full_df.columns, pd.MultiIndex):
+                full_df.columns = full_df.columns.get_level_values(0)
             full_df = full_df.dropna()
 
             if full_df is None or len(full_df) < 5:
@@ -725,6 +740,7 @@ class PairServer:
     def _debug_sd(self):
         """Return detailed Supply & Demand analysis JSON for the debug page."""
         try:
+            import yfinance as yf
             import pandas as pd
             import numpy as np
             from detectors.supply_demand import (
