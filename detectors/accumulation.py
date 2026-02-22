@@ -50,7 +50,7 @@ SESSION_WINDOWS = {
 
 
 def is_weekend_halt() -> bool:
-    """Return True if we are in the Fri 23:00 – Mon 01:00 UTC weekend halt window."""
+    """Return True if we are in the Fri 23:00 – Sun 21:00 UTC weekend halt window."""
     now  = datetime.now(timezone.utc)
     dow  = now.weekday()   # 0=Mon … 4=Fri … 5=Sat … 6=Sun
     hour = now.hour
@@ -58,7 +58,7 @@ def is_weekend_halt() -> bool:
         return True
     if dow == 5:                   # All of Saturday
         return True
-    if dow == 6 and hour < 1:     # Sunday before 01:00
+    if dow == 6 and hour < 21:    # Sunday before 21:00
         return True
     return False
 
