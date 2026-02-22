@@ -607,6 +607,12 @@ async function loadLiveData() {
   try {
     const res = await fetch('/debug/data?interval=' + currentTF);
     liveData = await res.json();
+    if (!liveData.candles || liveData.candles.length === 0) {
+      document.getElementById('stat-grid').innerHTML =
+        '<div class="stat-card"><div class="stat-val red">' +
+        (liveData.error || 'No data available') + '</div></div>';
+      return;
+    }
     renderChart(liveData.candles);
     renderSummary(liveData);
     renderWindowList(liveData.windows);
