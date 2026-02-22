@@ -596,11 +596,8 @@ async function fetchPair(pair) {
     const prev = candles[candles.length - 2];
     const price = last?.close;
 
-    // Market closed check: no candles, or last candle is stale (>2 hours old)
-    const nowSec   = Date.now() / 1000;
-    const lastTime = last?.time || 0;
-    const isStale  = !last || (nowSec - lastTime) > 7200;  // 2 hours
-    if (isStale) {
+    // If no candles returned at all, show closed state
+    if (!last) {
       const dotEl    = document.getElementById(`dot-${pair.id}`);
       const statusEl = document.getElementById(`status-${pair.id}`);
       const extraEl  = document.getElementById(`extra-${pair.id}`);
@@ -611,8 +608,6 @@ async function fetchPair(pair) {
       statusEl.className   = 'status-text dim';
       extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
       metaEl.textContent   = '⛔ CLOSED';
-      // Still show the last known price if we have it
-      if (price) document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
       return;
     }
 
@@ -780,7 +775,10 @@ function updateClock() {
 }
 
 async function pollAll() {
-  if (isWeekendHalt()) return;   // don't refresh during weekend
+  if (isWeekendHalt()) {
+    applyWeekendStandby();
+    return;
+  }
   const dot = document.getElementById('refresh-dot');
   dot.classList.add('active');
   await Promise.all(PAIRS.map(fetchPair));
