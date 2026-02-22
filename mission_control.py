@@ -480,7 +480,7 @@ DASHBOARD = r"""<!DOCTYPE html>
     <div class="wk-title">All Operations Suspended — Weekend Halt</div>
     <div class="wk-divider"></div>
     <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
-    <div class="wk-hint">Resumes Sunday 21:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 21:00 UTC</div>
+    <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
   </div>
 </div>
 
@@ -518,7 +518,7 @@ function isWeekendHalt() {
   const hour = now.getUTCHours();
   if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
   if (dow === 6) return true;                  // All Saturday
-  if (dow === 0 && hour < 21) return true;     // Sun < 21:00
+  if (dow === 0 && hour < 22) return true;     // Sun < 22:00
   return false;
 }
 
@@ -526,11 +526,11 @@ function getWeekendCountdown() {
   const now = new Date();
   const target = new Date(now);
   const dow = now.getUTCDay();
-  // Count to next Sunday 21:00 UTC (earliest market reopen)
+  // Count to next Sunday 22:00 UTC (earliest market reopen)
   let daysUntilSun = (0 - dow + 7) % 7;
-  if (daysUntilSun === 0 && now.getUTCHours() >= 21) daysUntilSun = 7;
+  if (daysUntilSun === 0 && now.getUTCHours() >= 22) daysUntilSun = 7;
   target.setUTCDate(target.getUTCDate() + daysUntilSun);
-  target.setUTCHours(21, 0, 0, 0);
+  target.setUTCHours(22, 0, 0, 0);
   const diff = target - now;
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
@@ -798,7 +798,7 @@ function applyWeekendStandby() {
     if (!dotEl) return;
     card.classList.remove('error');
     dotEl.className      = 'status-dot standby';
-    statusEl.textContent = 'Standby — resumes Monday 01:00 UTC';
+    statusEl.textContent = 'Standby — resumes Sunday 22:00 UTC';
     statusEl.className   = 'status-text dim';
     extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS SUSPENDED</div>';
     metaEl.textContent   = '⏸ HALTED';
