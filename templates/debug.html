@@ -606,6 +606,7 @@ function updateTopbarAccum(d, isReplay) {
 
 async function loadLiveData() {
   if (replayMode) return;
+  document.getElementById('btn-replay').disabled = true;
   try {
     const res = await fetch('/debug/data?interval=' + currentTF);
     liveData = await res.json();
@@ -629,6 +630,7 @@ async function loadLiveData() {
     const sc = document.getElementById('scrubber');
     sc.max   = liveData.candles.length - 1;
     sc.value = liveData.candles.length - 1;
+    document.getElementById('btn-replay').disabled = false;
   } catch(e) {
     console.error('loadLiveData:', e);
   }
