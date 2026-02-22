@@ -386,7 +386,7 @@ chart.subscribeClick(param => {
   if (replayMode && liveData && currentMode === 'accum') {
     // Accumulation replay: click candle to seek
     const idx = liveData.candles.findIndex(c => c.time === param.time);
-    if (idx >= 0) seekTo(idx + 1);
+    if (idx >= 0) seekTo(idx + 1, false);
     return;
   }
 
@@ -610,7 +610,14 @@ async function loadLiveData() {
     renderChart(liveData.candles);
     renderSummary(liveData);
     renderWindowList(liveData.windows);
-    if (currentMode === 'accum') updateTopbarAccum(liveData, false);
+    if (currentMode === 'accum') {
+      updateTopbarAccum(liveData, false);
+      clearOverlays();
+      if (selectedWindow == null) {
+        drawWindowOverlay(liveData.best_zone || null, liveData);
+        drawSecondaryZone(liveData.secondary_zone);
+      }
+    }
     const sc = document.getElementById('scrubber');
     sc.max   = liveData.candles.length - 1;
     sc.value = liveData.candles.length - 1;
@@ -633,8 +640,11 @@ async function fetchReplay(idx) {
     renderSummary(replayData);
     renderWindowList(replayData.windows || []);
     updateTopbarAccum(replayData, true);
-    if (selectedWindow == null && replayData.best_zone) drawWindowOverlay(replayData.best_zone, replayData);
-    else if (selectedWindow != null) {
+    clearOverlays();
+    if (selectedWindow == null && replayData.best_zone) {
+      drawWindowOverlay(replayData.best_zone, replayData);
+      drawSecondaryZone(replayData.secondary_zone);
+    } else if (selectedWindow != null) {
       const w = (replayData.windows || []).find(x => x.window === selectedWindow);
       drawWindowOverlay(w || null, replayData);
     } else drawWindowOverlay(null, replayData);
@@ -643,13 +653,21 @@ async function fetchReplay(idx) {
   } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
 }
 
-async function seekTo(idx) {
+async function seekTo(idx, isStep) {
   const total = liveData.candles.length;
   idx = Math.max(18, Math.min(idx, total));
   replayIdx = idx;
   const slice = liveData.candles.slice(0, idx);
-  candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-  chart.timeScale().fitContent();
+  if (isStep && idx > 1) {
+    // Append only the new candle — keeps the chart view stable
+    const prev = liveData.candles[idx - 2];
+    const curr = liveData.candles[idx - 1];
+    // If the previous candle was already the last one displayed, just update
+    candleSeries.update({...curr, time: shiftTime(curr.time)});
+  } else {
+    candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
+    if (!isStep) chart.timeScale().fitContent();
+  }
   const sc = document.getElementById('scrubber');
   sc.value = idx - 1;
   const last = slice[slice.length - 1];
@@ -863,6 +881,13 @@ function selectWindow(windowSize) {
   drawWindowOverlay(w, activeData);
 }
 
+function drawSecondaryZone(z) {
+  if (!z || z.top == null || z.bottom == null) return;
+  // Draw as a muted amber/yellow box to distinguish from primary (green/teal)
+  const endTs = z.end || z.start;
+  drawBox(z.start_ts || z.start, z.end_ts || endTs, z.top, z.bottom, 'rgba(240,180,60,0.55)', 0.04);
+}
+
 function drawWindowOverlay(w, data) {
   clearOverlays();
   if (!w?.start_ts) return;
@@ -895,7 +920,7 @@ function drawWindowOverlay(w, data) {
 function enterReplayMode() {
   replayMode = true; selectedWindow = null;
   const total = liveData.candles.length;
-  replayIdx = Math.max(22, Math.floor(total * 0.6));
+  replayIdx = total;  // start at the live/last candle
   document.getElementById('btn-live').classList.remove('active');
   document.getElementById('btn-replay').classList.add('active');
   ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = false);
@@ -903,8 +928,13 @@ function enterReplayMode() {
   document.getElementById('scrubber').disabled   = false;
   document.getElementById('btn-analyze').disabled = false;
   document.getElementById('scrubber').max = total - 1;
+  document.getElementById('scrubber').value = total - 1;
   document.getElementById('replay-banner').style.display = '';
-  seekTo(replayIdx);
+  // Don't move the chart — user stays at live view and clicks where they want to go
+  const last = liveData.candles[total - 1];
+  document.getElementById('scrub-ts').textContent =
+    last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
+  document.getElementById('scrub-label').textContent = 'candle ' + total + ' / ' + total;
 }
 
 function exitReplayMode() {
@@ -934,7 +964,7 @@ function startPlay() {
   replayTimer = setInterval(async () => {
     if (replayIdx >= liveData.candles.length) { stopPlay(); return; }
     replayIdx++;
-    await seekTo(replayIdx);
+    await seekTo(replayIdx, true);
   }, speed);
 }
 function stopPlay() {
@@ -945,8 +975,8 @@ function stopPlay() {
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
 document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode) enterReplayMode(); });
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
-document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1); });
-document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1); });
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, false); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
 document.getElementById('btn-analyze').addEventListener('click', () => { if(replayMode) fetchReplay(replayIdx); });
 document.getElementById('scrubber').addEventListener('input', function() {
   if (!replayMode) return;
