@@ -355,12 +355,13 @@
 
         const STATUS_CONFIG = {
             // accumulation
-            looking:         { label: 'Looking for accumulation',         css: 'state-looking'   },
-            potential:       { label: 'Potential accumulation forming',    css: 'state-potential' },
-            found:           { label: 'Accumulation found',                css: 'state-found'     },
-            confirmed:       { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
-            out_of_session:  { label: 'Out of session',                    css: 'state-offline'   },
-            weekend_closed:  { label: 'Market closed — weekend',           css: 'state-offline'   },
+            looking:              { label: 'Looking for accumulation',         css: 'state-looking'   },
+            potential:            { label: 'Potential accumulation forming',    css: 'state-potential' },
+            found:                { label: 'Accumulation found',                css: 'state-found'     },
+            confirmed:            { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
+            out_of_session:       { label: 'Out of session',                    css: 'state-offline'   },
+            open_not_in_session:  { label: 'Open — not in session',             css: 'state-looking'   },
+            weekend_closed:       { label: 'Market closed — weekend',           css: 'state-offline'   },
             // supply_demand
             sd_found:        { label: 'Supply/Demand zones found',         css: 'state-found'    },
             sd_none:         { label: 'No S/D zones found',                css: 'state-looking'  },
@@ -648,7 +649,9 @@
                             } else if (name === 'accumulation') {
                                 const s = result.status;
                                 if (s === 'weekend') {
-                                    setStatus(name, 'weekend_closed');
+                                    // Always-open markets (BTC) should never hit this now,
+                                    // but guard just in case
+                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
                                 } else if (s === 'confirmed') {
                                     setStatus(name, 'confirmed');
                                 } else if (s === 'found' || s === 'potential') {
@@ -665,8 +668,8 @@
                                 updateBiasBadge(null);
                                 setStatus(name, 'sd_none');
                             } else {
-                                // null = truly out of session
-                                setStatus(name, 'out_of_session');
+                                // null = out of session (or no data)
+                                setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
                             }
                         }
                     }
