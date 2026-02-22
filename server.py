@@ -495,6 +495,10 @@ class PairServer:
                 "secondary_zone":    secondary_zone,
                 "candles":           candles,
             })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    def _debug_replay(self):
         """
         Run the accumulation detector against only the first `idx` candles.
         Query param: idx=N (1-based candle index to replay up to)
