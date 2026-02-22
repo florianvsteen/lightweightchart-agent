@@ -601,18 +601,14 @@
         }
 
         function loadData() {
-            if (checkWeekendOverlay()) return;
+            if (isWeekendHalt()) {
+                showClosedOverlay('weekend');
+                return;
+            }
             fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.json())
                 .then(data => {
                     if (!data.candles || data.candles.length === 0) {
-                        showClosedOverlay('no_data');
-                        return;
-                    }
-                    // Stale check: last candle older than 2 hours = market closed
-                    const nowSec  = Date.now() / 1000;
-                    const lastTs  = data.candles[data.candles.length - 1]?.time || 0;
-                    if ((nowSec - lastTs) > 7200) {
                         showClosedOverlay('no_data');
                         return;
                     }
