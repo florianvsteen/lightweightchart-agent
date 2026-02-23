@@ -537,7 +537,11 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
 }
 
 function drawVLine(ts, color) {
-  // Derive visible price range from whichever dataset is currently on the chart
+  // Draw a vertical marker using drawBox with a 1-candle width.
+  // LightweightCharts has no true vertical line primitive — a LineSeries with
+  // two same-timestamp points is rejected; different timestamps give a diagonal.
+  // A very thin box (1 candle wide, full price range, no fill) looks identical
+  // to a vertical dashed line.
   const activeCandleData = (currentMode === 'fvg' && fvgData?.candles)
     ? fvgData.candles
     : (currentMode === 'sd' && sdData?.candles)
@@ -547,10 +551,10 @@ function drawVLine(ts, color) {
   const prices = activeCandleData.flatMap(c => [c.high, c.low]);
   const minP = Math.min(...prices) * 0.999;
   const maxP = Math.max(...prices) * 1.001;
-  const s = chart.addLineSeries({ color, lineWidth: 1, lineStyle: 2,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-  s.setData([{ time: shiftTime(ts), value: minP }, { time: shiftTime(ts), value: maxP }]);
-  overlaySeriesList.push(s);
+  const intervalSecs = activeCandleData.length > 1
+    ? activeCandleData[1].time - activeCandleData[0].time
+    : 60;
+  drawBox(ts, ts + intervalSecs, maxP, minP, color, 0.0);
 }
 
 function renderChart(candles) {
