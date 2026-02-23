@@ -676,6 +676,7 @@ async function fetchPair(pair) {
             <br>Last breakout ${formatUTC(z.start)}
           </div>`;
         metaEl.textContent = '⏸ COOLDOWN';
+      } else if (!z || z.status === 'looking' || !z.status || (z.status === 'weekend' && pair.always_open)) {
         // null = out of session; 'looking' = in session no zone; 'weekend'+always_open = OOS for 24/7 pairs
         const isOOS = !z || z.status === 'weekend';
         const oosLabel = pair.always_open ? 'Open — not in session' : 'Out of session';
