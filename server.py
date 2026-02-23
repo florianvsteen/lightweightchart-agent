@@ -278,6 +278,8 @@ class PairServer:
                         confirmed_zone["status"] = "confirmed"
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
+                        # Save alert timestamp so cooldown logic in _api_data works
+                        self.last_alerted[f"{name}_alert_ts"] = int(time.time())
                         self._save_alerted()
                         threading.Thread(
                             target=self._send_discord_alert,
@@ -286,8 +288,16 @@ class PairServer:
                         ).start()
 
                 elif prev_status == "confirmed":
-                    # Screenshot was dispatched last cycle — now truly reset
-                    self.last_active_zone[name] = None
+                    # Screenshot dispatched last cycle — transition to cooldown zone.
+                    # Keep the zone in last_active_zone so _api_data can serve the
+                    # cooldown state; it will clear automatically when time expires.
+                    cooldown_minutes = self.detector_params.get("accumulation", {}).get(
+                        "alert_cooldown_minutes", 15
+                    )
+                    cooldown_zone = dict(prev)
+                    cooldown_zone["status"]         = "cooldown"
+                    cooldown_zone["cooldown_until"] = self.last_alerted.get(f"{name}_alert_ts", int(time.time())) + cooldown_minutes * 60
+                    self.last_active_zone[name] = cooldown_zone
 
             # ── Supply & Demand ───────────────────────────────────────
             elif name == "supply_demand":
@@ -469,25 +479,23 @@ class PairServer:
                 })
 
             # ── Accumulation state overrides (in-memory only) ─────────────
-            # Apply cooldown / confirmed-screenshot overrides on top of the
-            # cached results. No provider calls involved.
+            # _process_alerts maintains last_active_zone with the correct status
+            # (active / confirmed / cooldown). Override the cached detector result
+            # so the browser always gets the right state without re-running detectors.
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
-                    cooldown_minutes = self.detector_params.get("accumulation", {}).get(
-                        "alert_cooldown_minutes", 15
-                    )
-                    cooldown_seconds = cooldown_minutes * 60
-                    last_alert_ts    = self.last_alerted.get(f"{det_name}_alert_ts", 0)
-                    cooldown_until   = last_alert_ts + cooldown_seconds if last_alert_ts else 0
-                    in_cooldown      = int(time.time()) < cooldown_until
-
-                    if in_cooldown and held:
-                        cooldown_zone = dict(held)
-                        cooldown_zone["status"]         = "cooldown"
-                        cooldown_zone["cooldown_until"] = int(cooldown_until)
-                        detector_results[det_name]      = cooldown_zone
-                    elif held and held.get("status") == "confirmed":
+                    if not held:
+                        continue
+                    status = held.get("status")
+                    if status == "cooldown":
+                        # Check if cooldown has expired
+                        if int(time.time()) < held.get("cooldown_until", 0):
+                            detector_results[det_name] = held
+                        else:
+                            # Cooldown expired — clear and let detector take over
+                            self.last_active_zone[det_name] = None
+                    elif status in ("confirmed", "active"):
                         detector_results[det_name] = held
 
             return jsonify({
