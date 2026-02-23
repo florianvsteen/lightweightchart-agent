@@ -19,10 +19,7 @@ ZONE DETECTION:
   - Only zones created during valid_sessions are kept.
   - Zones up to max_age_days old are returned.
 
-Session windows (UTC):
-  Asian:    01:00 – 07:00 UTC
-  London:   08:00 – 12:00 UTC
-  New York: 13:00 – 19:00 UTC
+Session logic lives in sessions.py.
 
 NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
       the `yf_lock` parameter to avoid concurrent download collisions.
@@ -33,42 +30,20 @@ import pandas as pd
 import threading
 from datetime import datetime, timezone
 from providers import get_bias_df as _provider_get_bias_df
+from sessions import candle_session_or_pre, in_session, FOREX
 
-
+# Backward-compat aliases used by debug.html server routes
 SESSION_WINDOWS = {
     "asian":    (1,  7),
     "london":   (8,  12),
     "new_york": (13, 19),
 }
 
-# One candle before session open is also valid as the indecision candle
-# so the first session candle can be the impulse.
-# This maps session name -> (allowed_start_hour_inclusive)
-# i.e. indecision candle can start from (session_start - 1) UTC
-SESSION_PRE_OPEN = {
-    "asian":    0,   # 00:00 UTC
-    "london":   7,   # 07:00 UTC
-    "new_york": 13,  # 13:00 UTC
-}
+def _candle_session_or_pre(ts: int, market_timing: str = FOREX) -> str | None:
+    return candle_session_or_pre(ts, market_timing)
 
-
-def _candle_session_or_pre(ts: int) -> str | None:
-    """
-    Return session name if candle falls within session OR one hour before session open.
-    This allows the pre-open candle to be the indecision candle.
-    """
-    hour = datetime.fromtimestamp(ts, tz=timezone.utc).hour
-    for name, (start, end) in SESSION_WINDOWS.items():
-        pre = SESSION_PRE_OPEN[name]
-        if pre <= hour < end:
-            return name
-    return None
-
-
-def _in_session(ts: int, valid_sessions: list) -> bool:
-    """True if timestamp falls within a valid session (or one candle before open)."""
-    session = _candle_session_or_pre(ts)
-    return session in valid_sessions
+def _in_session(ts: int, valid_sessions: list, market_timing: str = FOREX) -> bool:
+    return in_session(ts, valid_sessions, market_timing)
 
 
 def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
