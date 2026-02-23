@@ -354,13 +354,31 @@ class PairServer:
             # Run detectors fresh for the browser response
             detector_results = self._run_detectors(cache)
 
-            # If a "confirmed" zone is held in state (breakout just detected,
-            # screenshot in-flight), override the fresh result so the browser
-            # still renders the box for one cycle while Playwright screenshots it.
+            # Accumulation: override the fresh detector result when the browser
+            # should keep rendering a zone box — two cases:
+            #  (a) "confirmed" state: screenshot in-flight, show box for one more cycle
+            #  (b) post-alert cooldown: show box with status="cooldown" + cooldown_until
+            #      timestamp until the cooldown expires, then let it clear naturally.
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
-                    if held and held.get("status") == "confirmed":
+                    cooldown_minutes = self.detector_params.get("accumulation", {}).get(
+                        "alert_cooldown_minutes", 15
+                    )
+                    cooldown_seconds = cooldown_minutes * 60
+                    last_alert_ts    = self.last_alerted.get(f"{det_name}_alert_ts", 0)
+                    cooldown_until   = last_alert_ts + cooldown_seconds if last_alert_ts else 0
+                    in_cooldown      = int(time.time()) < cooldown_until
+
+                    if in_cooldown and held:
+                        # Serve the held zone annotated with cooldown metadata so the
+                        # frontend can render the box and display the countdown.
+                        cooldown_zone = dict(held)
+                        cooldown_zone["status"]         = "cooldown"
+                        cooldown_zone["cooldown_until"] = int(cooldown_until)
+                        detector_results[det_name]      = cooldown_zone
+                    elif held and held.get("status") == "confirmed":
+                        # Not yet in cooldown path but screenshot still in-flight
                         detector_results[det_name] = held
 
             # Fetch chart candles at the requested interval
