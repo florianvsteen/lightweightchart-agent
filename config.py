@@ -152,7 +152,7 @@ PAIRS = {
                 "wick_ratio": 0.6,
                 "max_zones": 5,
                 "max_age_days": 3,
-                "valid_sessions": ["london", "new_york"],
+                "valid_sessions": ["asian", "new_york"],
             },
         },
     },
