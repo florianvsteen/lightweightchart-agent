@@ -28,56 +28,22 @@ Breakout validation — IMPULSIVE CANDLE:
     active    — valid zone, breakout candle still inside the box
     confirmed — valid zone + impulsive breakout outside the box
 
-Session hours in UTC:
-  Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
-  London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
-  New York: 13:00 – 19:00 UTC  (14:00 – 20:00 CET)
-
-Weekend halt:
-  Friday  23:00 UTC → Sunday 01:00 UTC  — returns None (no detection)
+Session hours and weekend halt logic live in sessions.py.
 """
 
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
+from sessions import (
+    is_weekend_halt, get_current_session, FOREX
+)
 
-
+# Kept for backward-compat with any external code that imports these directly
 SESSION_WINDOWS = {
     "asian":    (1,  7),
     "london":   (8,  12),
     "new_york": (13, 19),
 }
-
-
-def is_weekend_halt(always_open: bool = False) -> bool:
-    """Return True if we are in the Fri 23:00 – Sun 22:00 UTC weekend halt window.
-    If always_open is True (e.g. Bitcoin), always returns False.
-    """
-    if always_open:
-        return False
-    now  = datetime.now(timezone.utc)
-    dow  = now.weekday()   # 0=Mon … 4=Fri … 5=Sat … 6=Sun
-    hour = now.hour
-    if dow == 4 and hour >= 23:   # Friday ≥ 23:00
-        return True
-    if dow == 5:                   # All of Saturday
-        return True
-    if dow == 6 and hour < 22:    # Sunday before 22:00
-        return True
-    return False
-
-
-def get_current_session():
-    if is_weekend_halt():
-        return None
-    hour = datetime.now(timezone.utc).hour
-    if SESSION_WINDOWS["new_york"][0] <= hour < SESSION_WINDOWS["new_york"][1]:
-        return "new_york"
-    elif SESSION_WINDOWS["london"][0] <= hour < SESSION_WINDOWS["london"][1]:
-        return "london"
-    elif SESSION_WINDOWS["asian"][0] <= hour < SESSION_WINDOWS["asian"][1]:
-        return "asian"
-    return None
 
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
@@ -165,7 +131,8 @@ def detect(
     london_range_pct: float = None,
     new_york_range_pct: float = None,
     valid_sessions: list = None,
-    always_open: bool = False,
+    market_timing: str = FOREX,
+    always_open: bool = False,   # deprecated — use market_timing instead
     alert_cooldown_minutes: int = 15,
 ) -> dict | None:
     """
@@ -180,11 +147,12 @@ def detect(
         new_york_range_pct:     Max box height during New York session.
         valid_sessions:         List of session names in which detection is active
                                 (e.g. ["london", "new_york"]). None = all sessions.
-        always_open:            Skip weekend halt (24/7 markets like BTC).
+        market_timing:          Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
+        always_open:            Deprecated. Use market_timing=CRYPTO instead.
         alert_cooldown_minutes: Accepted for forward-compat; enforced by server, not here.
     """
     try:
-        if is_weekend_halt():
+        if is_weekend_halt(market_timing):
             return {"detector": "accumulation", "status": "weekend", "is_active": False}
 
         if len(df) < min_candles + 4:
@@ -198,13 +166,11 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        session = get_current_session()
+        session = get_current_session(market_timing)
         if session is None:
             return None
 
         # Gate detection to configured sessions only.
-        # If valid_sessions is set and the current session is not in it,
-        # return "out_of_session" so the frontend can display the right label.
         if valid_sessions and session not in valid_sessions:
             return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
 
