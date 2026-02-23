@@ -45,6 +45,21 @@ PERIOD_MAP = {
 # How often the background detector loop runs (seconds)
 DETECTION_INTERVAL = 30
 
+# Map interval strings to their candle period in seconds.
+# Used to skip detection cycles where the data hasn't changed yet
+# (e.g. 15m forex pairs only need to run once every 15 minutes).
+INTERVAL_SECONDS = {
+    "1m":  60,
+    "2m":  120,
+    "5m":  300,
+    "15m": 900,
+    "30m": 1800,
+    "1h":  3600,
+    "4h":  14400,
+    "1d":  86400,
+    "1wk": 604800,
+}
+
 
 class PairServer:
 
@@ -92,6 +107,10 @@ class PairServer:
 
         self._detection_lock = threading.Lock()
         self._stagger_seconds = 0  # set by app.py before run()
+        # Tracks when the last detection cycle actually ran (epoch seconds).
+        # Used to respect per-pair minimum poll intervals derived from the
+        # configured detector timeframe (e.g. 15m forex → poll every 900s).
+        self._last_detection_time: float = 0.0
 
         root = os.path.dirname(os.path.abspath(__file__))
         self.app = Flask(
@@ -204,28 +223,10 @@ class PairServer:
 
             # ── Accumulation ──────────────────────────────────────────
             if name == "accumulation":
-                # Cooldown: suppress new alerts for N minutes after one fires.
-                # Configured via alert_cooldown_minutes in detector_params; default 15.
-                cooldown_minutes = self.detector_params.get("accumulation", {}).get(
-                    "alert_cooldown_minutes", 15
-                )
-                cooldown_seconds = cooldown_minutes * 60
-                now_ts = int(time.time())
-
-                # Check whether we are still inside the post-alert cooldown window.
-                last_alert_ts = self.last_alerted.get(f"{name}_alert_ts", 0)
-                in_cooldown = (now_ts - last_alert_ts) < cooldown_seconds
-                if in_cooldown:
-                    remaining = cooldown_seconds - (now_ts - last_alert_ts)
-                    print(f"[{self.pair_id}] Accumulation cooldown active — {remaining}s remaining, skipping.")
-                    # Still clear the confirmed state so the chart box is cleaned up.
-                    if (self.last_active_zone.get(name) or {}).get("status") == "confirmed":
-                        self.last_active_zone[name] = None
-                    continue
-
-                # Clean up per-zone alerted key once it's outside the cooldown window
+                # Clean up alerted timestamps older than 4 hours
+                cutoff = int(time.time()) - (4 * 3600)
                 if name in self.last_alerted and isinstance(self.last_alerted[name], int):
-                    if self.last_alerted[name] < now_ts - cooldown_seconds:
+                    if self.last_alerted[name] < cutoff:
                         del self.last_alerted[name]
                         self._save_alerted()
 
@@ -264,11 +265,7 @@ class PairServer:
                         confirmed_zone["status"] = "confirmed"
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
-                        # Record wall-clock time of this alert for cooldown enforcement
-                        self.last_alerted[f"{name}_alert_ts"] = now_ts
                         self._save_alerted()
-                        print(f"[{self.pair_id}] Accumulation alert fired — "
-                              f"cooldown active for {cooldown_minutes}min.")
                         threading.Thread(
                             target=self._send_discord_alert,
                             args=(confirmed_zone,),
@@ -326,20 +323,54 @@ class PairServer:
     # Background detection loop — runs regardless of browser
     # ------------------------------------------------------------------ #
 
+    def _min_poll_interval(self) -> float:
+        """
+        Return the minimum number of seconds between detection cycles for this pair.
+
+        Derived from the slowest detector timeframe configured — no point polling
+        more often than one candle period (e.g. a 15m candle only closes every 900s).
+        Falls back to DETECTION_INTERVAL (30s) for 1m pairs so they stay responsive.
+        """
+        max_seconds = DETECTION_INTERVAL  # default: 30s for 1m pairs
+        for name in self.detector_names:
+            tf = self.detector_params.get(name, {}).get("timeframe", "1m")
+            tf_secs = INTERVAL_SECONDS.get(tf, DETECTION_INTERVAL)
+            if tf_secs > max_seconds:
+                max_seconds = tf_secs
+        return float(max_seconds)
+
     def _detection_loop(self):
-        # Stagger startup so pairs don't all hit yfinance simultaneously
+        # Stagger startup so pairs don't all hit the provider simultaneously
         if self._stagger_seconds:
             time.sleep(self._stagger_seconds)
-        print(f"[{self.pair_id}] Background detector started (every {DETECTION_INTERVAL}s)")
+
+        min_interval = self._min_poll_interval()
+        print(
+            f"[{self.pair_id}] Background detector started "
+            f"(poll interval: {int(min_interval)}s)"
+        )
+
         while True:
+            now = time.time()
+            elapsed = now - self._last_detection_time
+
+            if elapsed < min_interval:
+                # Not enough time has passed for a new candle to have closed.
+                # Sleep the remainder then re-check rather than running the detectors.
+                sleep_for = min(DETECTION_INTERVAL, min_interval - elapsed)
+                time.sleep(sleep_for)
+                continue
+
             try:
                 with self._detection_lock:
                     cache = {}
                     results = self._run_detectors(cache)
                     self._process_alerts(results)
+                self._last_detection_time = time.time()
                 print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
             except Exception as e:
                 print(f"[{self.pair_id}] Detection loop error: {e}")
+
             time.sleep(DETECTION_INTERVAL)
 
     # ------------------------------------------------------------------ #
@@ -354,31 +385,13 @@ class PairServer:
             # Run detectors fresh for the browser response
             detector_results = self._run_detectors(cache)
 
-            # Accumulation: override the fresh detector result when the browser
-            # should keep rendering a zone box — two cases:
-            #  (a) "confirmed" state: screenshot in-flight, show box for one more cycle
-            #  (b) post-alert cooldown: show box with status="cooldown" + cooldown_until
-            #      timestamp until the cooldown expires, then let it clear naturally.
+            # If a "confirmed" zone is held in state (breakout just detected,
+            # screenshot in-flight), override the fresh result so the browser
+            # still renders the box for one cycle while Playwright screenshots it.
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
-                    cooldown_minutes = self.detector_params.get("accumulation", {}).get(
-                        "alert_cooldown_minutes", 15
-                    )
-                    cooldown_seconds = cooldown_minutes * 60
-                    last_alert_ts    = self.last_alerted.get(f"{det_name}_alert_ts", 0)
-                    cooldown_until   = last_alert_ts + cooldown_seconds if last_alert_ts else 0
-                    in_cooldown      = int(time.time()) < cooldown_until
-
-                    if in_cooldown and held:
-                        # Serve the held zone annotated with cooldown metadata so the
-                        # frontend can render the box and display the countdown.
-                        cooldown_zone = dict(held)
-                        cooldown_zone["status"]         = "cooldown"
-                        cooldown_zone["cooldown_until"] = int(cooldown_until)
-                        detector_results[det_name]      = cooldown_zone
-                    elif held and held.get("status") == "confirmed":
-                        # Not yet in cooldown path but screenshot still in-flight
+                    if held and held.get("status") == "confirmed":
                         detector_results[det_name] = held
 
             # Fetch chart candles at the requested interval
