@@ -543,10 +543,8 @@ function getWeekendCountdown() {
 
 function formatPrice(p, id) {
   if (p == null) return '---';
-  if (id === 'EURUSD' || id === 'EURGBP' || id === 'GBPUSD') return p.toFixed(5);
+  if (id === 'EURUSD' || id === 'EURGBP') return p.toFixed(5);
   if (id === 'XAUUSD') return p.toFixed(2);
-  if (id === 'BTCUSD') return p.toFixed(0);
-  // US30, US100 and any other index futures → no decimals
   return p.toFixed(0);
 }
 
@@ -641,6 +639,12 @@ async function fetchPair(pair) {
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = '';
         metaEl.textContent   = '⛔ CLOSED';
+      } else if (z && z.status === 'out_of_session') {
+        dotEl.className      = 'status-dot offline';
+        statusEl.textContent = pair.always_open ? 'Open — not in session' : 'Out of session';
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = '';
+        metaEl.textContent   = 'OUT OF SESSION';
       } else if (!z || z.status === 'looking' || !z.status || (z.status === 'weekend' && pair.always_open)) {
         // null = out of session; 'looking' = in session no zone; 'weekend'+always_open = OOS for 24/7 pairs
         const isOOS = !z || z.status === 'weekend';
