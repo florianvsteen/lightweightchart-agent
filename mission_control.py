@@ -36,6 +36,14 @@ def proxy_api(pair_id):
         return jsonify({"error": str(e)}), 502
 
 
+@app.route('/proxy/debug')
+def proxy_debug_default():
+    """Redirect /proxy/debug to the first available pair."""
+    first_pair = next(iter(PAIRS))
+    from flask import redirect
+    return redirect(f'/proxy/{first_pair}/debug')
+
+
 @app.route('/proxy/<pair_id>/debug')
 def proxy_debug(pair_id):
     cfg = PAIRS.get(pair_id.upper())
@@ -65,10 +73,18 @@ def proxy_debug(pair_id):
         for old, new in replacements:
             html = html.replace(old, new)
 
-        # Also handle the replay idx pattern which uses string concat
+        # Rewrite the replay idx pattern which uses string concat
         html = re.sub(
             r"fetch\('/debug/replay\?idx=' \+ idx",
             f"fetch('/proxy/{p}/debug/replay?idx=' + idx",
+            html,
+        )
+
+        # Rewrite switchPair so the pair switcher navigates via proxy URLs
+        # instead of raw port-based URLs.
+        html = re.sub(
+            r"window\.location\.protocol \+ '//' \+ window\.location\.hostname \+ ':' \+ port \+ '/debug'",
+            "window.location.origin + '/proxy/' + pairId + '/debug'",
             html,
         )
 
