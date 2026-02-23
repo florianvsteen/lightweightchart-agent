@@ -74,6 +74,13 @@
         .detector-status.state-offline .indicator { background: #333; }
         .detector-status.state-offline .label-text { color: #444; font-style: italic; }
 
+        .detector-status.state-cooldown { border-color: #b8860b; background: #1e1c12; }
+        .detector-status.state-cooldown .indicator {
+            background: #d4a017;
+            box-shadow: 0 0 6px rgba(212,160,23,0.5);
+        }
+        .detector-status.state-cooldown .label-text { color: #c9a227; font-weight: 600; }
+
         /* ── Weekend closed overlay ── */
         #weekend-overlay {
             display: none;
@@ -359,6 +366,7 @@
             potential:            { label: 'Potential accumulation forming',    css: 'state-potential' },
             found:                { label: 'Accumulation found',                css: 'state-found'     },
             confirmed:            { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
+            cooldown:             { label: 'Cooldown — resuming in …',          css: 'state-cooldown'  },
             out_of_session:       { label: 'Out of session',                    css: 'state-offline'   },
             open_not_in_session:  { label: 'Open — not in session',             css: 'state-looking'   },
             weekend_closed:       { label: 'Market closed — weekend',           css: 'state-offline'   },
@@ -427,16 +435,26 @@
         const activeSeries = {};
 
         function renderAccumulation(chart, zone) {
-            const isFound = zone.status === 'found' || zone.status === 'confirmed';
+            const isFound    = zone.status === 'found' || zone.status === 'confirmed';
+            const isCooldown = zone.status === 'cooldown';
             // Don't render if status is looking/potential without valid zone coords
             if (!zone.top || !zone.bottom || !zone.start) return [];
 
             const allSeries = [];
 
-            // ── Accumulation box: grey OUTLINE only (no fill) ────────────────
-            const lineAlpha = isFound ? 0.55 : 0.28;
-            const lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
-            const lineStyle = isFound ? 0 : 2;
+            // ── Accumulation box ─────────────────────────────────────────────
+            // Normal found/active: grey outline
+            // Cooldown: amber outline + subtle amber fill to signal paused state
+            let lineAlpha, lineColor, lineStyle;
+            if (isCooldown) {
+                lineAlpha = 0.60;
+                lineColor = `rgba(212, 160, 23, ${lineAlpha})`;
+                lineStyle = 1;  // dashed
+            } else {
+                lineAlpha = isFound ? 0.55 : 0.28;
+                lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
+                lineStyle = isFound ? 0 : 2;
+            }
             const seriesOpts = { color: lineColor, lineWidth: 1, lineStyle,
                 priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
@@ -461,6 +479,25 @@
                 { time: shiftTime(zone.end), value: zone.bottom },
             ]);
             allSeries.push(topLine, bottomLine, leftLine, rightLine);
+
+            // ── Cooldown: amber fill inside the box ───────────────────────────
+            if (isCooldown) {
+                const cooldownFill = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: zone.bottom },
+                    topFillColor1: 'rgba(212, 160, 23, 0.07)',
+                    topFillColor2: 'rgba(212, 160, 23, 0.07)',
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                cooldownFill.setData([
+                    { time: shiftTime(zone.start), value: zone.top },
+                    { time: shiftTime(zone.end),   value: zone.top },
+                ]);
+                allSeries.push(cooldownFill);
+            }
 
             // ── FVG breakout candle zone: filled box (like supply/demand) ───
             const fvg = zone.fvg_candle;
@@ -572,6 +609,53 @@
             return allSeries;
         }
 
+        // ── Cooldown countdown timer ──────────────────────────────────────
+        // Runs a 1-second interval that updates the status badge label with a live
+        // countdown, then clears the box and resets to 'looking' when time is up.
+        let _cooldownTimer    = null;
+        let _cooldownUntilTs  = 0;
+
+        function startCooldownTimer(cooldownUntilEpoch) {
+            // If already tracking this same cooldown, just update the label — don't restart.
+            if (_cooldownTimer && _cooldownUntilTs === cooldownUntilEpoch) {
+                _updateCooldownLabel();
+                return;
+            }
+            stopCooldownTimer();
+            _cooldownUntilTs = cooldownUntilEpoch;
+            _updateCooldownLabel();
+            _cooldownTimer = setInterval(() => {
+                const remaining = _cooldownUntilTs - Math.floor(Date.now() / 1000);
+                if (remaining <= 0) {
+                    stopCooldownTimer();
+                    // Cooldown expired — clear the box and go back to looking state
+                    for (const [, seriesList] of Object.entries(activeSeries)) {
+                        (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+                    }
+                    Object.keys(activeSeries).forEach(k => delete activeSeries[k]);
+                    setStatus('accumulation', 'looking');
+                    return;
+                }
+                _updateCooldownLabel();
+            }, 1000);
+        }
+
+        function stopCooldownTimer() {
+            if (_cooldownTimer) { clearInterval(_cooldownTimer); _cooldownTimer = null; }
+            _cooldownUntilTs = 0;
+        }
+
+        function _updateCooldownLabel() {
+            const remaining = Math.max(0, _cooldownUntilTs - Math.floor(Date.now() / 1000));
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            const pad = n => String(n).padStart(2, '0');
+            const el = ensureStatusEl('accumulation');
+            el.className = 'detector-status state-cooldown';
+            el.querySelector('.label-text').textContent =
+                `Cooldown — resuming in ${pad(m)}:${pad(s)}`;
+        }
+
         // ── Data Loop ─────────────────────────────────────────────────
         function showClosedOverlay(reason) {
             const overlay = document.getElementById('weekend-overlay');
@@ -661,12 +745,18 @@
                                     // Always-open markets (BTC) should never hit this now,
                                     // but guard just in case
                                     setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
+                                    stopCooldownTimer();
+                                } else if (s === 'cooldown') {
+                                    startCooldownTimer(result.cooldown_until);
                                 } else if (s === 'confirmed') {
                                     setStatus(name, 'confirmed');
+                                    stopCooldownTimer();
                                 } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
+                                    stopCooldownTimer();
                                 } else {
                                     setStatus(name, 'looking');
+                                    stopCooldownTimer();
                                 }
                             } else {
                                 setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
