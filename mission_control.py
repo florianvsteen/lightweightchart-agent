@@ -81,9 +81,9 @@ def proxy_debug(pair_id):
         )
 
         # Rewrite switchPair so the pair switcher navigates via proxy URLs
-        # instead of raw port-based URLs.
+        # instead of raw port-based URLs. Matches the select onchange handler.
         html = re.sub(
-            r"window\.location\.protocol \+ '//' \+ window\.location\.hostname \+ ':' \+ port \+ '/debug'",
+            r"window\.location\.origin \+ '/proxy/' \+ pairId \+ '/debug'",
             "window.location.origin + '/proxy/' + pairId + '/debug'",
             html,
         )
