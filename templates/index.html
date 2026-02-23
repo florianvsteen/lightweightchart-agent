@@ -239,23 +239,14 @@
         // LightweightCharts 4.x doesn't support timezone config directly.
         // We shift timestamps by the container's UTC offset so the chart
         // displays times in the correct local timezone.
-        function getTzOffsetSeconds(tz) {
-            try {
-                const now = new Date();
-                // Get UTC time and local time in the target timezone
-                const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
-                const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
-                const diff   = (new Date(tzStr) - new Date(utcStr)) / 1000;
-                return diff;
-            } catch(e) {
-                return 0;
-            }
-        }
-        const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
-
-        function shiftTime(ts) {
-            return ts + TZ_OFFSET;
-        }
+        // LightweightCharts 4.x internally treats unix timestamps as UTC and
+        // then applies the *browser's* local offset when rendering labels.
+        // Shifting timestamps server-side causes double-offsetting for anyone
+        // whose browser timezone matches TZ. Instead we lock the chart to UTC
+        // via localization.utcOffset=0 so labels are always correct for everyone
+        // regardless of where they are (Brussels, Dubai, anywhere).
+        const TZ_OFFSET = 0;
+        function shiftTime(ts) { return ts; }
         let currentInterval = "{{ default_interval }}";
 
         // ── Session clock ─────────────────────────────────────────────
@@ -344,6 +335,7 @@
         const chart = LightweightCharts.createChart(container, {
             layout: { background: { color: '#1e1e1f' }, textColor: '#d1d4dc' },
             grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+            localization: { utcOffset: 0 },
             timeScale: { timeVisible: true, borderColor: '#2B2B43' },
         });
 
