@@ -55,6 +55,8 @@ def proxy_debug(pair_id):
             ('"/debug/data?interval="',    f'"/proxy/{p}/debug/data?interval="'),
             ("'/debug/sd?interval='",      f"'/proxy/{p}/debug/sd?interval='"),
             ('"/debug/sd?interval="',      f'"/proxy/{p}/debug/sd?interval="'),
+            ("'/debug/sd/bias'",           f"'/proxy/{p}/debug/sd/bias'"),
+            ('"/debug/sd/bias"',           f'"/proxy/{p}/debug/sd/bias"'),
             ("'/debug/fvg?interval='",     f"'/proxy/{p}/debug/fvg?interval='"),
             ('"/debug/fvg?interval="',     f'"/proxy/{p}/debug/fvg?interval="'),
             ("'/debug/replay?idx='",       f"'/proxy/{p}/debug/replay?idx='"),
@@ -120,6 +122,18 @@ def proxy_debug_sd(pair_id):
         if interval:
             url += f"?interval={interval}"
         r = requests.get(url, timeout=30)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/proxy/<pair_id>/debug/sd/bias')
+def proxy_debug_sd_bias(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": "unknown pair"}), 404
+    try:
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/sd/bias", timeout=15)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
