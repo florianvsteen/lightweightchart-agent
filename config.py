@@ -94,7 +94,6 @@ PAIRS = {
         "detector_params": {
             "supply_demand": {
                 "timeframe": "30m",
-                "ticker": "EURUSD=X",          # needed for bias fetch (daily + weekly)
                 "impulse_multiplier": 1.8,
                 "wick_ratio": 0.6,
                 "max_zones": 5,
@@ -115,7 +114,6 @@ PAIRS = {
       "detector_params": {
           "supply_demand": {
               "timeframe": "30m",
-              "ticker": "EURGBP=X",          # needed for bias fetch (daily + weekly)
               "impulse_multiplier": 1.8,
               "wick_ratio": 0.6,
               "max_zones": 5,
@@ -136,7 +134,6 @@ PAIRS = {
       "detector_params": {
           "supply_demand": {
               "timeframe": "30m",
-              "ticker": "GBPUSD=X",          # needed for bias fetch (daily + weekly)
               "impulse_multiplier": 1.8,
               "wick_ratio": 0.6,
               "max_zones": 5,
@@ -157,7 +154,6 @@ PAIRS = {
       "detector_params": {
           "supply_demand": {
               "timeframe": "30m",
-              "ticker": "USDJPY=X",          # needed for bias fetch (daily + weekly)
               "impulse_multiplier": 1.8,
               "wick_ratio": 0.6,
               "max_zones": 5,
