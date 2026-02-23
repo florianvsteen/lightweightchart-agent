@@ -101,6 +101,33 @@ class PairServer:
         self.last_alerted: dict[str, int] = self._load_alerted()
         self.last_active_zone: dict[str, dict] = {}
 
+        # ── Restore cooldown state after restart ──────────────────────────
+        # If we're still within a cooldown window when the process restarts,
+        # rebuild the cooldown zone in last_active_zone so _api_data serves
+        # the correct state immediately without waiting for a detection cycle.
+        for det_name in config.get("detectors", []):
+            if det_name == "accumulation":
+                alert_ts = self.last_alerted.get(f"{det_name}_alert_ts", 0)
+                if alert_ts:
+                    cooldown_minutes = config.get("detector_params", {}).get(
+                        "accumulation", {}
+                    ).get("alert_cooldown_minutes", 15)
+                    cooldown_until = alert_ts + cooldown_minutes * 60
+                    if int(time.time()) < cooldown_until:
+                        saved_zone = self.last_alerted.get(f"{det_name}_cooldown_zone", {})
+                        self.last_active_zone[det_name] = {
+                            "detector":      "accumulation",
+                            "status":        "cooldown",
+                            "cooldown_until": int(cooldown_until),
+                            "is_active":     False,
+                            "start":         saved_zone.get("start", 0),
+                            "end":           saved_zone.get("end", 0),
+                            "top":           saved_zone.get("top", 0),
+                            "bottom":        saved_zone.get("bottom", 0),
+                        }
+                        print(f"[{pair_id}] Cooldown restored from disk — expires in "
+                              f"{int((cooldown_until - time.time()) / 60)}m")
+
         # Per-request DataFrame cache (cleared each cycle)
         self._df_cache: dict[str, pd.DataFrame] = {}
         self._cache_lock = threading.Lock()
@@ -273,8 +300,15 @@ class PairServer:
                         confirmed_zone["status"] = "confirmed"
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
-                        # Save alert timestamp so cooldown logic in _api_data works
+                        # Save alert timestamp and zone geometry so cooldown
+                        # state can be fully restored after a restart.
                         self.last_alerted[f"{name}_alert_ts"] = int(time.time())
+                        self.last_alerted[f"{name}_cooldown_zone"] = {
+                            "start":  prev.get("start"),
+                            "end":    prev.get("end"),
+                            "top":    prev.get("top"),
+                            "bottom": prev.get("bottom"),
+                        }
                         self._save_alerted()
                         threading.Thread(
                             target=self._send_discord_alert,
