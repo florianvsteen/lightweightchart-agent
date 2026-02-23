@@ -565,7 +565,7 @@ class PairServer:
         try:
             import numpy as np
             from detectors.accumulation import (
-                get_current_session, _slope_pct, _choppiness, _adx, _touchpoints
+                get_current_session, _slope_pct, _choppiness, _adx, _count_touchpoints
             )
 
             interval = request.args.get("interval", "1m")
@@ -646,7 +646,9 @@ class PairServer:
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
-                touches   = _touchpoints(highs, lows, h_max, l_min)
+                b_highs   = np.maximum(opens, closes)
+                b_lows    = np.minimum(opens, closes)
+                touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
 
                 reject = None
                 if effective_range_pct and range_pct > effective_range_pct:
@@ -734,7 +736,7 @@ class PairServer:
             import numpy as np
             import pandas as pd
             from datetime import timezone
-            from detectors.accumulation import _slope_pct, _choppiness, _adx, _touchpoints
+            from detectors.accumulation import _slope_pct, _choppiness, _adx, _count_touchpoints
 
             full_df = _provider_get_df(self.ticker, "1m", self.period)
             full_df = full_df.dropna()
@@ -838,7 +840,9 @@ class PairServer:
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
-                touches   = _touchpoints(highs, lows, h_max, l_min)
+                b_highs   = np.maximum(opens, closes)
+                b_lows    = np.minimum(opens, closes)
+                touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
 
                 is_active  = (last_body_low >= l_min) and (last_body_high <= h_max)
                 broke_up   = last_body_high > h_max
