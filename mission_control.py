@@ -662,7 +662,20 @@ async function fetchPair(pair) {
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = '';
         metaEl.textContent   = 'OUT OF SESSION';
-      } else if (!z || z.status === 'looking' || !z.status || (z.status === 'weekend' && pair.always_open)) {
+      } else if (z && z.status === 'cooldown') {
+        const remaining = Math.max(0, z.cooldown_until - Math.floor(Date.now() / 1000));
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        const pad = n => String(n).padStart(2, '0');
+        dotEl.className      = 'status-dot potential';
+        statusEl.textContent = `Cooldown — resumes in ${pad(m)}:${pad(s)}`;
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = `
+          <div class="accum-box potential">
+            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+            <br>Last breakout ${formatUTC(z.start)}
+          </div>`;
+        metaEl.textContent = '⏸ COOLDOWN';
         // null = out of session; 'looking' = in session no zone; 'weekend'+always_open = OOS for 24/7 pairs
         const isOOS = !z || z.status === 'weekend';
         const oosLabel = pair.always_open ? 'Open — not in session' : 'Out of session';
