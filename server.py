@@ -209,11 +209,11 @@ class PairServer:
                 results[name] = None
             else:
                 try:
-                    # When using MetaTrader, swap the ticker in supply_demand params
-                    if name == "supply_demand" and _provider == "metatrader":
-                        mt5_ticker = self._config.get("mt5_ticker")
-                        if mt5_ticker:
-                            params["ticker"] = mt5_ticker
+                    # Always inject the resolved ticker for supply_demand so the
+                    # bias fetch uses the correct provider symbol regardless of
+                    # whether Yahoo or MetaTrader is active.
+                    if name == "supply_demand":
+                        params["ticker"] = self.ticker
                     results[name] = fn(df, **params)
                 except Exception as e:
                     print(f"[ERROR] Detector '{name}' failed: {e}")
