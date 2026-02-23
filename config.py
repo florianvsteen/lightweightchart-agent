@@ -145,29 +145,4 @@ PAIRS = {
           },
       },
   },
-    "BTCUSD": {
-        "yf_ticker": "BTCUSD",
-        "mt5_ticker": "BTCUSD",
-        "port": 5006,
-        "label": "BTC/USD (Bitcoin)",
-        "interval": "1m",
-        "period": "1d",
-        "default_interval": "1m",
-        "always_open": True,              # 24/7 — skip weekend halt logic
-        "detectors": ["accumulation"],
-        "detector_params": {
-            "accumulation": {
-                "timeframe": "1m",
-                "lookback": 40,
-                "min_candles": 15,
-                "adx_threshold": 20,
-                "threshold_pct": 0.003,
-                "asian_range_pct":    0.002,
-                "london_range_pct":   0.003,
-                "new_york_range_pct": 0.004,
-                "valid_sessions":     ["london", "new_york"],
-                "alert_cooldown_minutes": 15,
-            },
-        },
-    },
 }
