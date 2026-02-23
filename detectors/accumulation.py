@@ -70,6 +70,38 @@ def _is_v_shape(closes: np.ndarray) -> bool:
     return (lo <= peak_i <= hi) or (lo <= trough_i <= hi)
 
 
+def _count_touchpoints(
+    body_highs: np.ndarray,
+    body_lows: np.ndarray,
+    box_top: float,
+    box_bottom: float,
+    tolerance: float = 0.0002,
+) -> int:
+    """
+    Count how many candle bodies touch the top or bottom boundary of the box.
+
+    A body "touches" a boundary when its high is within `tolerance` (fraction of
+    box height) of box_top, or its low is within `tolerance` of box_bottom.
+
+    Args:
+        body_highs: array of per-candle body tops  (max of open/close)
+        body_lows:  array of per-candle body bottoms (min of open/close)
+        box_top:    upper boundary of the accumulation box
+        box_bottom: lower boundary of the accumulation box
+        tolerance:  fraction of box height used as proximity threshold (default 0.02%)
+
+    Returns:
+        Total number of distinct candle touches (top + bottom combined).
+    """
+    box_height = box_top - box_bottom
+    if box_height <= 0:
+        return 0
+    tol = box_height * tolerance
+    touches_top    = int(np.sum(body_highs >= box_top - tol))
+    touches_bottom = int(np.sum(body_lows  <= box_bottom + tol))
+    return touches_top + touches_bottom
+
+
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
     """Calculate ADX. Auto-reduces period for short windows. Returns float or None."""
     n = len(closes)
@@ -134,6 +166,7 @@ def detect(
     market_timing: str = FOREX,
     always_open: bool = False,   # deprecated — use market_timing instead
     alert_cooldown_minutes: int = 15,
+    min_touchpoints: int = 0,
 ) -> dict | None:
     """
     Args:
@@ -150,6 +183,10 @@ def detect(
         market_timing:          Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
         always_open:            Deprecated. Use market_timing=CRYPTO instead.
         alert_cooldown_minutes: Accepted for forward-compat; enforced by server, not here.
+        min_touchpoints:        Minimum number of candle body touches on box top/bottom
+                                required for the zone to be valid. 0 = disabled (default).
+                                Example: 6 means price must have bounced off the box
+                                walls at least 6 times total.
     """
     try:
         if is_weekend_halt(market_timing):
@@ -262,18 +299,24 @@ def detect(
             bodies = np.abs(closes - opens)
             avg_body = float(bodies.mean()) if len(bodies) > 0 else 0.0
 
+            # Touchpoints: count how many bodies touch the box walls
+            touchpoints = _count_touchpoints(body_highs, body_lows, h_max, l_min)
+            if min_touchpoints > 0 and touchpoints < min_touchpoints:
+                continue
+
             zone = {
-                "detector":  "accumulation",
-                "session":   session,
-                "start":     int(df.index[i].timestamp()),
-                "end":       int(df.index[end_i].timestamp()),
-                "top":       h_max,
-                "bottom":    l_min,
-                "is_active": is_active,
-                "range_pct": round(range_pct, 6),
-                "slope":     round(slope, 8),
-                "adx":       round(adx_val, 2) if adx_val is not None else None,
-                "avg_body":  round(avg_body, 6),
+                "detector":    "accumulation",
+                "session":     session,
+                "start":       int(df.index[i].timestamp()),
+                "end":         int(df.index[end_i].timestamp()),
+                "top":         h_max,
+                "bottom":      l_min,
+                "is_active":   is_active,
+                "range_pct":   round(range_pct, 6),
+                "slope":       round(slope, 8),
+                "adx":         round(adx_val, 2) if adx_val is not None else None,
+                "avg_body":    round(avg_body, 6),
+                "touchpoints": touchpoints,
                 "_window_start_idx": i,
             }
 
