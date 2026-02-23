@@ -1463,6 +1463,8 @@ function selectFvg(idx) {
   const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
   if (!c?.candle_n) return;
 
+  clearOverlays();
+
   // All confirmed FVG gap zones dimmed
   withFvg.forEach(x => {
     if (!x.gap_top) return;
