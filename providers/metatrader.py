@@ -63,6 +63,12 @@ _PERIOD_MAP = {
 # ── mt5rest datetime format ───────────────────────────────────────────────────
 _DT_FMT = "%Y-%m-%dT%H:%M:%S"
 
+# Most MT5 brokers run on UTC+2 (EET) or UTC+3 (EEST in summer).
+# mt5rest returns bar timestamps in broker LOCAL time with no timezone info.
+# We subtract this offset to convert back to true UTC.
+# Override with: export MT5_BROKER_UTC_OFFSET=3  (e.g. for EEST in summer)
+_BROKER_UTC_OFFSET = int(os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
+
 # ── Module-level session token — established once, reused across all calls ────
 _token: str | None = None
 _token_lock = threading.Lock()
@@ -158,7 +164,9 @@ def _bars_to_df(bars: list) -> pd.DataFrame:
         "Volume": b.get("tickVolume") or b.get("volume", 0),
     } for b in bars])
 
-    df["time"] = pd.to_datetime(df["time"], format=_DT_FMT, utc=True)
+    df["time"] = pd.to_datetime(df["time"], format=_DT_FMT, utc=False)
+    df["time"] = df["time"] - pd.Timedelta(hours=_BROKER_UTC_OFFSET)
+    df["time"] = df["time"].dt.tz_localize("UTC")
     df = df.set_index("time")
     return df.dropna()
 
