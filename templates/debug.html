@@ -537,10 +537,8 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
 }
 
 function drawVLine(ts, color) {
-  // LightweightCharts has no vertical line primitive.
-  // A LineSeries with points at the same timestamp is rejected.
-  // Solution: draw a price spike — min → max → min across 3 timestamps
-  // spaced 1 second apart. The result visually looks like a vertical line.
+  // Use a HistogramSeries — renders as a true vertical bar at a single timestamp.
+  // base=minP, value=maxP gives a bar spanning the full visible price range.
   const activeCandleData = (currentMode === 'fvg' && fvgData?.candles)
     ? fvgData.candles
     : (currentMode === 'sd' && sdData?.candles)
@@ -551,15 +549,13 @@ function drawVLine(ts, color) {
   const minP = Math.min(...prices) * 0.999;
   const maxP = Math.max(...prices) * 1.001;
   const st = shiftTime(ts);
-  const s = chart.addLineSeries({
-    color, lineWidth: 1, lineStyle: 2,
+  const s = chart.addHistogramSeries({
+    color,
+    base: minP,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    priceScaleId: 'right',
   });
-  s.setData([
-    { time: st,     value: minP },
-    { time: st + 1, value: maxP },
-    { time: st + 2, value: minP },
-  ]);
+  s.setData([{ time: st, value: maxP }]);
   overlaySeriesList.push(s);
 }
 
