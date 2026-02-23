@@ -543,8 +543,10 @@ function getWeekendCountdown() {
 
 function formatPrice(p, id) {
   if (p == null) return '---';
-  if (id === 'EURUSD' || id === 'EURGBP') return p.toFixed(5);
+  if (id === 'EURUSD' || id === 'EURGBP' || id === 'GBPUSD') return p.toFixed(5);
   if (id === 'XAUUSD') return p.toFixed(2);
+  if (id === 'BTCUSD') return p.toFixed(0);
+  // US30, US100 and any other index futures → no decimals
   return p.toFixed(0);
 }
 
