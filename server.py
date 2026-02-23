@@ -172,6 +172,11 @@ class PairServer:
         _debug_sd.__name__ = f"debug_sd_{pair_id}"
         app.route("/debug/sd")(_debug_sd)
 
+        def _debug_sd_bias():
+            return self._debug_sd_bias()
+        _debug_sd_bias.__name__ = f"debug_sd_bias_{pair_id}"
+        app.route("/debug/sd/bias")(_debug_sd_bias)
+
         def _debug_fvg():
             return self._debug_fvg()
         _debug_fvg.__name__ = f"debug_fvg_{pair_id}"
@@ -1016,8 +1021,52 @@ class PairServer:
             import traceback
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
-    def _debug_fvg(self):
-        """
+    def _debug_sd_bias(self):
+        """Return daily and weekly candles used for bias calculation."""
+        try:
+            from providers import get_bias_df as _provider_get_bias_df
+
+            df_d = _provider_get_bias_df(self.ticker, "5d",  "1d").dropna()
+            df_w = _provider_get_bias_df(self.ticker, "3mo", "1wk").dropna()
+
+            def df_to_candles(df):
+                if isinstance(df.columns, pd.MultiIndex):
+                    df = df.copy()
+                    df.columns = df.columns.get_level_values(0)
+                df = df.loc[:, ~df.columns.duplicated()].copy()
+                for col in ['Open', 'High', 'Low', 'Close']:
+                    df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
+                df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+                return [
+                    {
+                        "time":  int(idx.timestamp()),
+                        "open":  float(r["Open"]),
+                        "high":  float(r["High"]),
+                        "low":   float(r["Low"]),
+                        "close": float(r["Close"]),
+                    }
+                    for idx, r in df.iterrows()
+                ]
+
+            daily_candles  = df_to_candles(df_d)
+            weekly_candles = df_to_candles(df_w)
+
+            # Mark which candle was used for bias (second-to-last = previous completed candle)
+            if len(daily_candles) >= 2:
+                daily_candles[-2]["bias_candle"] = True
+            if len(weekly_candles) >= 2:
+                weekly_candles[-2]["bias_candle"] = True
+
+            return jsonify({
+                "pair":           self.pair_id,
+                "daily_candles":  daily_candles,
+                "weekly_candles": weekly_candles,
+            })
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+    def _debug_fvg(self):        """
         Run the standalone FVG detector and return full candidate details.
         Uses fvg.detect() which applies min_gap_pct and impulse_body_pct filters.
         """
