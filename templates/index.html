@@ -347,6 +347,16 @@
             timeScale: { timeVisible: true, borderColor: '#2B2B43' },
         });
 
+        // Price axis precision: forex pairs need 5 decimal places,
+        // gold needs 2, index futures need 0.
+        function getPriceFormat(pairId) {
+            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
+            if (forex5.includes(pairId))     return { type: 'price', precision: 5, minMove: 0.00001 };
+            if (pairId === 'XAUUSD')         return { type: 'price', precision: 2, minMove: 0.01   };
+            if (pairId === 'BTCUSD')         return { type: 'price', precision: 0, minMove: 1       };
+            /* US30, US100, other futures */ return { type: 'price', precision: 0, minMove: 1       };
+        }
+
         const candleSeries = chart.addCandlestickSeries({
             upColor:       '#d4d0d0',
             downColor:     '#068c76',
@@ -354,6 +364,7 @@
             wickDownColor: '#068c76',
             borderVisible: false,
             wickVisible:   true,
+            priceFormat:   getPriceFormat(PAIR_ID),
         });
 
         // ── Status Badge helpers ──────────────────────────────────────
