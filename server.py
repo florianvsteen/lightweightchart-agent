@@ -105,6 +105,14 @@ class PairServer:
         self._df_cache: dict[str, pd.DataFrame] = {}
         self._cache_lock = threading.Lock()
 
+        # Results cache — populated by the background detection loop and
+        # served directly by _api_data so browser requests never trigger
+        # fresh provider calls. Candles are keyed by interval string so
+        # timeframe switching in the browser still works.
+        self._cached_detector_results: dict = {}
+        self._cached_candles: dict[str, list] = {}  # interval → [candle dicts]
+        self._results_lock = threading.Lock()
+
         self._detection_lock = threading.Lock()
         self._stagger_seconds = 0  # set by app.py before run()
         # Tracks when the last detection cycle actually ran (epoch seconds).
@@ -367,6 +375,37 @@ class PairServer:
                     results = self._run_detectors(cache)
                     self._process_alerts(results)
                 self._last_detection_time = time.time()
+
+                # Cache candles for every interval the browser may request
+                # (detector timeframe + default display interval + chart interval).
+                intervals_to_cache = set()
+                for name in self.detector_names:
+                    tf = self.detector_params.get(name, {}).get("timeframe", self.interval)
+                    intervals_to_cache.add(tf)
+                intervals_to_cache.add(self.default_interval)
+                intervals_to_cache.add(self.interval)
+
+                candles_by_interval = {}
+                for iv in intervals_to_cache:
+                    try:
+                        df_iv = self._fetch_df(iv)
+                        candles_by_interval[iv] = [
+                            {
+                                "time":  int(idx.timestamp()),
+                                "open":  float(r["Open"]),
+                                "high":  float(r["High"]),
+                                "low":   float(r["Low"]),
+                                "close": float(r["Close"]),
+                            }
+                            for idx, r in df_iv.iterrows()
+                        ]
+                    except Exception as ce:
+                        print(f"[{self.pair_id}] Candle cache error ({iv}): {ce}")
+
+                with self._results_lock:
+                    self._cached_detector_results = results
+                    self._cached_candles.update(candles_by_interval)
+
                 print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
             except Exception as e:
                 print(f"[{self.pair_id}] Detection loop error: {e}")
@@ -378,39 +417,78 @@ class PairServer:
     # ------------------------------------------------------------------ #
 
     def _api_data(self):
+        """
+        Serve chart data to the browser — zero provider calls.
+
+        Reads detector results and candles from the cache that the background
+        detection loop populates on its own schedule. The browser is purely a
+        read path; it no longer drives any data fetching.
+
+        Cold-start fallback: if the background loop has not completed its first
+        cycle yet, a single live fetch is done so the chart is not blank.
+        """
         try:
             chart_interval = request.args.get("interval", self.interval)
-            cache = {}
 
-            # Run detectors fresh for the browser response
-            detector_results = self._run_detectors(cache)
+            # ── Read from cache (populated by background loop) ────────────
+            with self._results_lock:
+                detector_results = dict(self._cached_detector_results)
+                candles = list(self._cached_candles.get(chart_interval, []))
 
-            # If a "confirmed" zone is held in state (breakout just detected,
-            # screenshot in-flight), override the fresh result so the browser
-            # still renders the box for one cycle while Playwright screenshots it.
+            # ── Cold-start fallback ───────────────────────────────────────
+            # Background loop has not run yet — do one live fetch so the
+            # browser does not show a blank chart on first load.
+            if not candles:
+                try:
+                    df_chart = self._fetch_df(chart_interval)
+                    candles = [
+                        {
+                            "time":  int(idx.timestamp()),
+                            "open":  float(r["Open"]),
+                            "high":  float(r["High"]),
+                            "low":   float(r["Low"]),
+                            "close": float(r["Close"]),
+                        }
+                        for idx, r in df_chart.iterrows()
+                    ]
+                except Exception:
+                    candles = []
+
+            if not detector_results:
+                # Detectors not ready yet — return candles only, no overlays
+                return jsonify({
+                    "pair":      self.pair_id,
+                    "label":     self.label,
+                    "candles":   candles,
+                    "detectors": {},
+                })
+
+            # ── Accumulation state overrides (in-memory only) ─────────────
+            # Apply cooldown / confirmed-screenshot overrides on top of the
+            # cached results. No provider calls involved.
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
-                    if held and held.get("status") == "confirmed":
+                    cooldown_minutes = self.detector_params.get("accumulation", {}).get(
+                        "alert_cooldown_minutes", 15
+                    )
+                    cooldown_seconds = cooldown_minutes * 60
+                    last_alert_ts    = self.last_alerted.get(f"{det_name}_alert_ts", 0)
+                    cooldown_until   = last_alert_ts + cooldown_seconds if last_alert_ts else 0
+                    in_cooldown      = int(time.time()) < cooldown_until
+
+                    if in_cooldown and held:
+                        cooldown_zone = dict(held)
+                        cooldown_zone["status"]         = "cooldown"
+                        cooldown_zone["cooldown_until"] = int(cooldown_until)
+                        detector_results[det_name]      = cooldown_zone
+                    elif held and held.get("status") == "confirmed":
                         detector_results[det_name] = held
 
-            # Fetch chart candles at the requested interval
-            df_chart = self._get_df(chart_interval, cache)
-            candles = [
-                {
-                    "time": int(idx.timestamp()),
-                    "open": float(r["Open"]),
-                    "high": float(r["High"]),
-                    "low": float(r["Low"]),
-                    "close": float(r["Close"]),
-                }
-                for idx, r in df_chart.iterrows()
-            ]
-
             return jsonify({
-                "pair": self.pair_id,
-                "label": self.label,
-                "candles": candles,
+                "pair":      self.pair_id,
+                "label":     self.label,
+                "candles":   candles,
                 "detectors": detector_results,
             })
 
