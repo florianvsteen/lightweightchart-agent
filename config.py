@@ -29,7 +29,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 15,
+                "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.001,
@@ -54,7 +54,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 15,
+                "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "asian_range_pct":    0.0008,
@@ -79,7 +79,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 15,
+                "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.002,
                 "asian_range_pct":    0.0015,
