@@ -698,6 +698,18 @@ async function fetchPair(pair) {
             <br>Since ${formatUTC(z.start)}
           </div>`;
         metaEl.textContent = '';
+      } else if (z.status === 'active' && z.is_active) {
+        dotEl.className      = 'status-dot potential';
+        statusEl.textContent = 'Accumulation forming';
+        statusEl.className   = 'status-text';
+        const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
+        extraEl.innerHTML = `
+          <div class="accum-box potential">
+            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+            ${adxStr}
+            <br>Since ${formatUTC(z.start)}
+          </div>`;
+        metaEl.textContent = '● FORMING';
       } else if (z.status === 'potential' && z.is_active) {
         dotEl.className   = 'status-dot potential';
         statusEl.textContent = 'Potential forming';
