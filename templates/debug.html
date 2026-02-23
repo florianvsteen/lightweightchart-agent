@@ -685,6 +685,8 @@ async function fetchReplay(idx) {
   } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
 }
 
+let _replayDisplayedCount = 0;  // tracks how many candles are currently on the chart
+
 async function seekTo(idx, isStep) {
   const total = liveData.candles.length;
   idx = Math.max(18, Math.min(idx, total));
@@ -692,27 +694,25 @@ async function seekTo(idx, isStep) {
   const slice = liveData.candles.slice(0, idx);
 
   if (isStep) {
-    // Preserve the current viewport — do NOT call fitContent.
-    // Use update() only for forward steps (last candle is new);
-    // for backward steps or any other step, just set the data in place.
-    const prevLen = candleSeries.data ? candleSeries.data().length : 0;
-    if (idx > prevLen && idx > 1) {
-      // Forward step: append the new last candle
+    // Always preserve the current viewport — never call fitContent on a step.
+    const isForward = idx === _replayDisplayedCount + 1;
+    if (isForward) {
+      // Single candle forward: use update() — doesn't touch the viewport at all
       const curr = liveData.candles[idx - 1];
       candleSeries.update({...curr, time: shiftTime(curr.time)});
     } else {
-      // Backward step or first render: set full slice, keep viewport
+      // Backward (or jump): save visible range, setData, restore it
       const visibleRange = chart.timeScale().getVisibleRange();
       candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-      if (visibleRange) {
-        chart.timeScale().setVisibleRange(visibleRange);
-      }
+      if (visibleRange) chart.timeScale().setVisibleRange(visibleRange);
     }
   } else {
-    // Full seek (scrubber drag or click): fit content to show the sliced window
+    // Full seek (scrubber drag or candle click): reframe to show the new slice
     candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
     chart.timeScale().fitContent();
   }
+
+  _replayDisplayedCount = idx;
 
   const sc = document.getElementById('scrubber');
   sc.value = idx - 1;
@@ -966,7 +966,8 @@ function drawWindowOverlay(w, data) {
 function enterReplayMode() {
   replayMode = true; selectedWindow = null;
   const total = liveData.candles.length;
-  replayIdx = total;  // start at the live/last candle
+  replayIdx = total;
+  _replayDisplayedCount = total;
   document.getElementById('btn-live').classList.remove('active');
   document.getElementById('btn-replay').classList.add('active');
   ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = false);
@@ -986,6 +987,7 @@ function enterReplayMode() {
 
 function exitReplayMode() {
   stopPlay(); replayMode = false; replayData = null; selectedWindow = null;
+  _replayDisplayedCount = 0;
   document.getElementById('btn-live').classList.add('active');
   document.getElementById('btn-replay').classList.remove('active');
   ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = true);
