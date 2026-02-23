@@ -137,7 +137,7 @@ class PairServer:
         pair_id = self.pair_id
 
         def _index():
-            tz = os.environ.get("TZ", "Europe/London")
+            tz = os.environ.get("TZ", "UTC")
             return render_template("index.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval, always_open=self.always_open)
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
@@ -497,7 +497,7 @@ class PairServer:
 
     def _debug(self):
         """Rich debug page — served from templates/debug.html"""
-        tz = os.environ.get("TZ", "Europe/London")
+        tz = os.environ.get("TZ", "Europe/Brussels")
         return render_template("debug.html",
             pair_id=self.pair_id,
             label=self.label,
