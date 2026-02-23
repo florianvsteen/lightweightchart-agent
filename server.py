@@ -558,7 +558,7 @@ class PairServer:
         try:
             import numpy as np
             from detectors.accumulation import (
-                get_current_session, _slope_pct, _choppiness, _adx
+                get_current_session, _slope_pct, _choppiness, _adx, _count_touchpoints
             )
 
             interval = request.args.get("interval", "1m")
@@ -581,6 +581,7 @@ class PairServer:
             min_candles   = params.get("min_candles", 20)
             adx_threshold = params.get("adx_threshold", 25)
             threshold_pct = params.get("threshold_pct", 0.003)
+            min_touchpoints = params.get("min_touchpoints", 0)
 
             session = get_current_session()
             session_range_key = f"{session}_range_pct" if session else None
@@ -638,6 +639,7 @@ class PairServer:
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
                 is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+                touchpoints = _count_touchpoints(body_highs, body_lows, h_max, l_min)
 
                 reject = None
                 if effective_range_pct and range_pct > effective_range_pct:
@@ -648,23 +650,27 @@ class PairServer:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
                 elif chop < 0.36:
                     reject = f"chop {chop} < 0.36"
+                elif min_touchpoints > 0 and touchpoints < min_touchpoints:
+                    reject = f"touchpoints {touchpoints} < {min_touchpoints}"
 
                 windows.append({
-                    "window":      window_size,
-                    "start_ts":    int(df.index[i].timestamp()),
-                    "end_ts":      int(df.index[i + window_size - 1].timestamp()),
-                    "top":         round(h_max, 5),
-                    "bottom":      round(l_min, 5),
-                    "range_pct":   range_pct,
-                    "range_limit": effective_range_pct,
-                    "slope":       slope,
-                    "slope_limit": round(slope_limit, 8),
-                    "chop":        chop,
-                    "adx":         round(adx_val, 2) if adx_val is not None else None,
-                    "adx_limit":   adx_threshold,
-                    "is_active":   is_active,
-                    "reject":      reject,
-                    "pass":        reject is None,
+                    "window":          window_size,
+                    "start_ts":        int(df.index[i].timestamp()),
+                    "end_ts":          int(df.index[i + window_size - 1].timestamp()),
+                    "top":             round(h_max, 5),
+                    "bottom":          round(l_min, 5),
+                    "range_pct":       range_pct,
+                    "range_limit":     effective_range_pct,
+                    "slope":           slope,
+                    "slope_limit":     round(slope_limit, 8),
+                    "chop":            chop,
+                    "adx":             round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":       adx_threshold,
+                    "is_active":       is_active,
+                    "touchpoints":     touchpoints,
+                    "min_touchpoints": min_touchpoints,
+                    "reject":          reject,
+                    "pass":            reject is None,
                 })
 
             passed   = [w for w in windows if w.get("pass")]
@@ -694,6 +700,7 @@ class PairServer:
                 "session":           session,
                 "effective_range":   effective_range_pct,
                 "adx_threshold":     adx_threshold,
+                "min_touchpoints":   min_touchpoints,
                 "last_close":        round(float(df['Close'].iloc[-2]), 5),
                 "windows_checked":   len([w for w in windows if "skip" not in w]),
                 "passed":            len(passed),
@@ -721,7 +728,7 @@ class PairServer:
             import numpy as np
             import pandas as pd
             from datetime import timezone
-            from detectors.accumulation import _slope_pct, _choppiness, _adx
+            from detectors.accumulation import _slope_pct, _choppiness, _adx, _count_touchpoints
 
             full_df = _provider_get_df(self.ticker, "1m", self.period)
             full_df = full_df.dropna()
@@ -742,6 +749,7 @@ class PairServer:
             min_candles   = params.get("min_candles", 15)
             adx_threshold = params.get("adx_threshold", 25)
             threshold_pct = params.get("threshold_pct", 0.003)
+            min_touchpoints = params.get("min_touchpoints", 0)
 
             total = len(full_df)
             idx = raw_idx if raw_idx > 0 else total
@@ -835,6 +843,8 @@ class PairServer:
                 impulse_ratio  = round(bo_body_size / avg_body, 2) if (broke_out and avg_body > 0) else None
                 is_confirmed   = broke_out and is_impulsive
 
+                touchpoints = _count_touchpoints(body_highs, body_lows, h_max, l_min)
+
                 reject = None
                 if effective_range_pct and range_pct > effective_range_pct:
                     reject = f"range {range_pct} > limit {effective_range_pct}"
@@ -844,30 +854,34 @@ class PairServer:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
                 elif chop < 0.36:
                     reject = f"chop {chop} < 0.36"
+                elif min_touchpoints > 0 and touchpoints < min_touchpoints:
+                    reject = f"touchpoints {touchpoints} < {min_touchpoints}"
 
                 windows.append({
-                    "window":        window_size,
-                    "start_ts":      int(df.index[i].timestamp()),
-                    "end_ts":        int(df.index[i + window_size - 1].timestamp()),
-                    "top":           round(h_max, 5),
-                    "bottom":        round(l_min, 5),
-                    "avg_body":      round(avg_body, 6),
-                    "range_pct":     range_pct,
-                    "range_limit":   effective_range_pct,
-                    "slope":         slope,
-                    "slope_limit":   round(slope_limit, 8),
-                    "chop":          chop,
-                    "adx":           round(adx_val, 2) if adx_val is not None else None,
-                    "adx_limit":     adx_threshold,
-                    "is_active":     is_active,
-                    "broke_out":     broke_out,
-                    "broke_up":      broke_up,
-                    "broke_down":    broke_down,
-                    "is_impulsive":  is_impulsive,
-                    "impulse_ratio": impulse_ratio,
-                    "is_confirmed":  is_confirmed,
-                    "reject":        reject,
-                    "pass":          reject is None,
+                    "window":          window_size,
+                    "start_ts":        int(df.index[i].timestamp()),
+                    "end_ts":          int(df.index[i + window_size - 1].timestamp()),
+                    "top":             round(h_max, 5),
+                    "bottom":          round(l_min, 5),
+                    "avg_body":        round(avg_body, 6),
+                    "range_pct":       range_pct,
+                    "range_limit":     effective_range_pct,
+                    "slope":           slope,
+                    "slope_limit":     round(slope_limit, 8),
+                    "chop":            chop,
+                    "adx":             round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":       adx_threshold,
+                    "is_active":       is_active,
+                    "broke_out":       broke_out,
+                    "broke_up":        broke_up,
+                    "broke_down":      broke_down,
+                    "is_impulsive":    is_impulsive,
+                    "impulse_ratio":   impulse_ratio,
+                    "is_confirmed":    is_confirmed,
+                    "touchpoints":     touchpoints,
+                    "min_touchpoints": min_touchpoints,
+                    "reject":          reject,
+                    "pass":            reject is None,
                 })
 
             passed   = [w for w in windows if w.get("pass")]
@@ -899,6 +913,7 @@ class PairServer:
                 "session":           session,
                 "effective_range":   effective_range_pct,
                 "adx_threshold":     adx_threshold,
+                "min_touchpoints":   min_touchpoints,
                 "last_close":        round(float(df['Close'].iloc[-2]), 5),
                 "windows_checked":   len(windows),
                 "passed":            len(passed),
