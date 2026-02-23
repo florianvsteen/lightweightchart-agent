@@ -204,10 +204,28 @@ class PairServer:
 
             # ── Accumulation ──────────────────────────────────────────
             if name == "accumulation":
-                # Clean up alerted timestamps older than 4 hours
-                cutoff = int(time.time()) - (4 * 3600)
+                # Cooldown: suppress new alerts for N minutes after one fires.
+                # Configured via alert_cooldown_minutes in detector_params; default 15.
+                cooldown_minutes = self.detector_params.get("accumulation", {}).get(
+                    "alert_cooldown_minutes", 15
+                )
+                cooldown_seconds = cooldown_minutes * 60
+                now_ts = int(time.time())
+
+                # Check whether we are still inside the post-alert cooldown window.
+                last_alert_ts = self.last_alerted.get(f"{name}_alert_ts", 0)
+                in_cooldown = (now_ts - last_alert_ts) < cooldown_seconds
+                if in_cooldown:
+                    remaining = cooldown_seconds - (now_ts - last_alert_ts)
+                    print(f"[{self.pair_id}] Accumulation cooldown active — {remaining}s remaining, skipping.")
+                    # Still clear the confirmed state so the chart box is cleaned up.
+                    if (self.last_active_zone.get(name) or {}).get("status") == "confirmed":
+                        self.last_active_zone[name] = None
+                    continue
+
+                # Clean up per-zone alerted key once it's outside the cooldown window
                 if name in self.last_alerted and isinstance(self.last_alerted[name], int):
-                    if self.last_alerted[name] < cutoff:
+                    if self.last_alerted[name] < now_ts - cooldown_seconds:
                         del self.last_alerted[name]
                         self._save_alerted()
 
@@ -246,7 +264,11 @@ class PairServer:
                         confirmed_zone["status"] = "confirmed"
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
+                        # Record wall-clock time of this alert for cooldown enforcement
+                        self.last_alerted[f"{name}_alert_ts"] = now_ts
                         self._save_alerted()
+                        print(f"[{self.pair_id}] Accumulation alert fired — "
+                              f"cooldown active for {cooldown_minutes}min.")
                         threading.Thread(
                             target=self._send_discord_alert,
                             args=(confirmed_zone,),
