@@ -251,20 +251,6 @@ class PairServer:
                     and zone.get("status") == "active"
                 )
 
-                # ── Cooldown guard ─────────────────────────────────────
-                # If we're in cooldown, ignore all detector output until
-                # the cooldown period has expired. This prevents a new
-                # accumulation zone from firing immediately after a breakout.
-                prev_status = (prev or {}).get("status")
-                if prev_status == "cooldown":
-                    if int(time.time()) < (prev or {}).get("cooldown_until", 0):
-                        continue  # still in cooldown — skip all state transitions
-                    else:
-                        # Cooldown expired — clear and fall through to normal logic
-                        self.last_active_zone[name] = None
-                        prev        = None
-                        prev_status = None
-
                 # ── State machine ──────────────────────────────────────
                 # looking   → active    (zone formed, breakout candle still inside)
                 # active    → confirmed (impulsive breakout — alert dispatched)
