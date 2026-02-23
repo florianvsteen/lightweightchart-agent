@@ -6,17 +6,20 @@ Adding a new market type or adjusting session hours only needs to happen in this
 
 Market types (set via config.py "market_timing" key per pair):
   FOREX  — Forex pairs (EUR/USD, GBP/USD etc.)
-           Sessions: Asian 01-07, London 08-12, New York 13-19 UTC
+           Sessions: Asian 01:00-07:00, London 08:00-12:00, New York 13:00-19:00 UTC
            Weekend halt: Fri 23:00 – Sun 22:00 UTC
 
   NYSE   — US equity indices and stocks (US30, US100, XAUUSD)
-           Sessions: London 08-12 UTC, New York 14:30-21:00 UTC
-           Note: NYSE opens 14:30 UTC (09:30 ET), not 13:00
+           Sessions: London 08:00-12:00 UTC, New York 14:30-21:00 UTC
+           NYSE opens 14:30 UTC (09:30 ET)
            Weekend halt: Fri 23:00 – Sun 22:00 UTC
 
   CRYPTO — Crypto markets (BTC, ETH etc.)
            Sessions: same windows as FOREX but market never halts
            No weekend halt — runs 24/7
+
+Session tuples are (start_hour, start_minute, end_hour, end_minute) in UTC.
+Pre-session window for S/D indecision candles: 60 minutes before session open.
 """
 
 from datetime import datetime, timezone
@@ -27,30 +30,37 @@ NYSE   = "NYSE"
 CRYPTO = "CRYPTO"
 
 # ── Session definitions per market type ───────────────────────────────────────
-# Each session is (start_hour_utc_inclusive, end_hour_utc_exclusive)
-# Pre-session window (for supply/demand indecision candle): 1 hour before open
+# Each session: (start_hour, start_minute, end_hour, end_minute) UTC
 
 SESSIONS = {
     FOREX: {
-        "asian":    (1,  7),
-        "london":   (8,  12),
-        "new_york": (13, 19),
+        "asian":    (1,  0,  7,  0),
+        "london":   (8,  0,  12, 0),
+        "new_york": (13, 0,  19, 0),
     },
     NYSE: {
-        "london":   (8,    12),
-        "new_york": (14,   21),   # NYSE opens 14:30 UTC; we use 14 to catch pre-open
+        "london":   (8,  0,  12, 0),
+        "new_york": (14, 30, 21, 0),
     },
     CRYPTO: {
-        "asian":    (1,  7),
-        "london":   (8,  12),
-        "new_york": (13, 19),
+        "asian":    (1,  0,  7,  0),
+        "london":   (8,  0,  12, 0),
+        "new_york": (13, 0,  19, 0),
     },
 }
 
-# ── Weekend halt windows ───────────────────────────────────────────────────────
-# CRYPTO never halts. FOREX and NYSE halt over the weekend.
-# Format: list of (day_of_week, hour_start) → (day_of_week, hour_end)
-# day_of_week: 0=Mon … 4=Fri, 5=Sat, 6=Sun
+
+def _now_minutes() -> int:
+    """Current UTC time as total minutes since midnight."""
+    now = datetime.now(timezone.utc)
+    return now.hour * 60 + now.minute
+
+
+def _ts_minutes(ts: int) -> int:
+    """Timestamp as total minutes since midnight UTC."""
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    return dt.hour * 60 + dt.minute
+
 
 def is_weekend_halt(market_timing: str = FOREX) -> bool:
     """
@@ -60,7 +70,7 @@ def is_weekend_halt(market_timing: str = FOREX) -> bool:
     if market_timing == CRYPTO:
         return False
 
-    now = datetime.now(timezone.utc)
+    now  = datetime.now(timezone.utc)
     dow  = now.weekday()   # 0=Mon … 6=Sun
     hour = now.hour
 
@@ -81,15 +91,13 @@ def get_current_session(market_timing: str = FOREX) -> str | None:
     if is_weekend_halt(market_timing):
         return None
 
-    hour = datetime.now(timezone.utc).hour
+    mins    = _now_minutes()
     windows = SESSIONS.get(market_timing, SESSIONS[FOREX])
 
-    # Check in priority order: new_york → london → asian
-    for name in ("new_york", "london", "asian"):
-        if name not in windows:
-            continue
-        start, end = windows[name]
-        if start <= hour < end:
+    for name, (sh, sm, eh, em) in windows.items():
+        start = sh * 60 + sm
+        end   = eh * 60 + em
+        if start <= mins < end:
             return name
     return None
 
@@ -97,15 +105,17 @@ def get_current_session(market_timing: str = FOREX) -> str | None:
 def candle_session_or_pre(ts: int, market_timing: str = FOREX) -> str | None:
     """
     Return session name if a candle timestamp falls within a session OR
-    one hour before session open (pre-session window for S/D indecision candles).
-    Returns None if outside all windows.
+    within 60 minutes before session open (pre-session window for S/D
+    indecision candles). Returns None if outside all windows.
     """
-    hour = datetime.fromtimestamp(ts, tz=timezone.utc).hour
+    mins    = _ts_minutes(ts)
     windows = SESSIONS.get(market_timing, SESSIONS[FOREX])
 
-    for name, (start, end) in windows.items():
-        pre = max(0, start - 1)
-        if pre <= hour < end:
+    for name, (sh, sm, eh, em) in windows.items():
+        start = sh * 60 + sm
+        end   = eh * 60 + em
+        pre   = max(0, start - 60)   # 60 min before open
+        if pre <= mins < end:
             return name
     return None
 
@@ -113,7 +123,7 @@ def candle_session_or_pre(ts: int, market_timing: str = FOREX) -> str | None:
 def in_session(ts: int, valid_sessions: list, market_timing: str = FOREX) -> bool:
     """
     Return True if timestamp falls within one of the valid sessions
-    (or one candle before session open).
+    (or 60 minutes before session open).
     """
     return candle_session_or_pre(ts, market_timing) in valid_sessions
 
