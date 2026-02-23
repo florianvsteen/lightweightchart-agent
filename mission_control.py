@@ -543,8 +543,10 @@ function getWeekendCountdown() {
 
 function formatPrice(p, id) {
   if (p == null) return '---';
-  const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
+  const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
+  const forex3 = ['USDJPY', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY'];
   if (forex5.includes(id)) return p.toFixed(5);
+  if (forex3.includes(id)) return p.toFixed(3);
   if (id === 'XAUUSD') return p.toFixed(2);
   return p.toFixed(0);
 }
