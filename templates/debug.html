@@ -45,15 +45,13 @@
   #tag-mode { font-size: 9px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
     color: var(--muted); white-space: nowrap; letter-spacing: 0.08em; text-transform: uppercase; }
 
-  #pair-switcher { display: flex; gap: 3px; align-items: center; margin-right: 10px; }
-  .pair-btn {
-    padding: 3px 10px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-    cursor: pointer; color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
-    background: var(--surface); font-family: inherit; transition: all 0.15s; text-decoration: none;
-    display: inline-block;
+  #pair-switcher {
+    padding: 3px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    cursor: pointer; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 3px; background: rgba(90,240,196,0.06);
+    font-family: inherit; margin-right: 10px; max-width: 200px;
   }
-  .pair-btn:hover  { border-color: var(--text); color: var(--text); }
-  .pair-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.06); }
+  #pair-switcher option { background: var(--surface); color: var(--text); text-transform: uppercase; }
 
   /* ── Timeframe switcher ── */
   #tf-bar { display: flex; gap: 3px; align-items: center; margin-right: 10px; }
@@ -245,14 +243,11 @@
     <button class="mode-btn sd-btn"  id="mode-sd"    onclick="switchMode('sd')">② Supply &amp; Demand</button>
     <button class="mode-btn fvg-btn" id="mode-fvg"   onclick="switchMode('fvg')">③ Fair Value Gap</button>
     <span class="mode-spacer"></span>
-    <div id="pair-switcher">
+    <select id="pair-switcher" onchange="switchPair(this.value)" title="Switch pair">
       {% for p in pairs %}
-      <a class="pair-btn{% if p.id == pair_id %} active{% endif %}"
-         href="javascript:void(0)"
-         onclick="switchPair({{ p.port }}, {{ p.id | tojson }})"
-         title="{{ p.label }}">{{ p.id }}</a>
+      <option value="{{ p.id }}" data-port="{{ p.port }}" {% if p.id == pair_id %}selected{% endif %}>{{ p.id }} — {{ p.label }}</option>
       {% endfor %}
-    </div>
+    </select>
     <div id="tf-bar">
       <button class="tf-btn active" data-tf="1m"  onclick="switchTF('1m')">1m</button>
       <button class="tf-btn"        data-tf="15m" onclick="switchTF('15m')">15m</button>
@@ -360,14 +355,15 @@ const PAIR_ID  = {{ pair_id | tojson }};
 const TIMEZONE = {{ timezone | tojson }};
 const CURRENT_PORT = {{ port }};
 
-function switchPair(port, pairId) {
-  // Navigate to /proxy/<pairId>/debug on the same origin.
-  // When accessed directly (per-port), falls back to port-based navigation.
+function switchPair(pairId) {
   const isProxy = window.location.pathname.startsWith('/proxy/');
   if (isProxy) {
     window.location.href = window.location.origin + '/proxy/' + pairId + '/debug';
   } else {
-    window.location.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/debug';
+    // Direct port access — find the port from the select option's data-port attribute
+    const opt = document.querySelector('#pair-switcher option[value="' + pairId + '"]');
+    const port = opt ? opt.dataset.port : null;
+    if (port) window.location.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/debug';
   }
 }
 
