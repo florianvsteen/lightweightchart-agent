@@ -350,10 +350,8 @@
         // Price axis precision: forex pairs need 5 decimal places,
         // gold needs 2, index futures need 0.
         function getPriceFormat(pairId) {
-            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
-            const forex3 = ['USDJPY', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY'];
+            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
             if (forex5.includes(pairId))     return { type: 'price', precision: 5, minMove: 0.00001 };
-            if (forex3.includes(pairId))     return { type: 'price', precision: 3, minMove: 0.001   };
             if (pairId === 'XAUUSD')         return { type: 'price', precision: 2, minMove: 0.01   };
             if (pairId === 'BTCUSD')         return { type: 'price', precision: 0, minMove: 1       };
             /* US30, US100, other futures */ return { type: 'price', precision: 0, minMove: 1       };
@@ -377,6 +375,7 @@
             // accumulation
             looking:              { label: 'Looking for accumulation',         css: 'state-looking'   },
             potential:            { label: 'Potential accumulation forming',    css: 'state-potential' },
+            active:               { label: 'Accumulation forming',              css: 'state-potential' },
             found:                { label: 'Accumulation found',                css: 'state-found'     },
             confirmed:            { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
             cooldown:             { label: 'Cooldown — resuming in …',          css: 'state-cooldown'  },
@@ -763,6 +762,9 @@
                                     startCooldownTimer(result.cooldown_until);
                                 } else if (s === 'confirmed') {
                                     setStatus(name, 'confirmed');
+                                    stopCooldownTimer();
+                                } else if (s === 'active') {
+                                    setStatus(name, 'active');
                                     stopCooldownTimer();
                                 } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
