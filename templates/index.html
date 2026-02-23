@@ -350,8 +350,10 @@
         // Price axis precision: forex pairs need 5 decimal places,
         // gold needs 2, index futures need 0.
         function getPriceFormat(pairId) {
-            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
+            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
+            const forex3 = ['USDJPY', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY'];
             if (forex5.includes(pairId))     return { type: 'price', precision: 5, minMove: 0.00001 };
+            if (forex3.includes(pairId))     return { type: 'price', precision: 3, minMove: 0.001   };
             if (pairId === 'XAUUSD')         return { type: 'price', precision: 2, minMove: 0.01   };
             if (pairId === 'BTCUSD')         return { type: 'price', precision: 0, minMove: 1       };
             /* US30, US100, other futures */ return { type: 'price', precision: 0, minMove: 1       };
