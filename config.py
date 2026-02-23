@@ -6,8 +6,13 @@ Per-session accumulation thresholds (max_range_pct):
   London session  — moderate volatility
   New York session — most volatile, widest valid boxes
 
-If a session override is not set, falls back to max_range_pct.
+market_timing options (defined in sessions.py):
+  FOREX  — Forex pairs. Sessions: Asian 01-07, London 08-12, NY 13-19 UTC. Weekend halt.
+  NYSE   — US equities/indices. Sessions: London 08-12, NYSE 14:30-21 UTC. Weekend halt.
+  CRYPTO — Crypto. Same session windows as FOREX but no weekend halt, runs 24/7.
 """
+
+from sessions import FOREX, NYSE, CRYPTO
 
 PAIRS = {
     "US30": {
@@ -18,6 +23,7 @@ PAIRS = {
         "interval": "1m",
         "period": "1d",
         "default_interval": "1m",
+        "market_timing": NYSE,
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
@@ -26,9 +32,9 @@ PAIRS = {
                 "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.001,   # ~44pts at 44,000
-                "london_range_pct":   0.002,   # ~88pts at 44,000
-                "new_york_range_pct": 0.003,   # ~132pts at 44,000
+                "asian_range_pct":    0.001,
+                "london_range_pct":   0.002,
+                "new_york_range_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
             },
@@ -42,6 +48,7 @@ PAIRS = {
         "interval": "1m",
         "period": "1d",
         "default_interval": "1m",
+        "market_timing": NYSE,
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
@@ -50,9 +57,9 @@ PAIRS = {
                 "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.0008,  # Asian: ~26pt box max
-                "london_range_pct":   0.001,    # London: ~42pt box max
-                "new_york_range_pct": 0.0025,   # NY: ~52pt box max
+                "asian_range_pct":    0.0008,
+                "london_range_pct":   0.001,
+                "new_york_range_pct": 0.0025,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
             },
@@ -66,6 +73,7 @@ PAIRS = {
         "interval": "1m",
         "period": "1d",
         "default_interval": "1m",
+        "market_timing": FOREX,
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
@@ -74,9 +82,9 @@ PAIRS = {
                 "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.002,
-                "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
-                "london_range_pct":   0.002,   # London: ~$6 box max
-                "new_york_range_pct": 0.003,   # NY: ~$9 box max
+                "asian_range_pct":    0.0015,
+                "london_range_pct":   0.002,
+                "new_york_range_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
             },
@@ -90,6 +98,7 @@ PAIRS = {
         "interval": "15m",
         "period": "5d",
         "default_interval": "30m",
+        "market_timing": FOREX,
         "detectors": ["supply_demand"],
         "detector_params": {
             "supply_demand": {
@@ -103,24 +112,25 @@ PAIRS = {
         },
     },
     "EURGBP": {
-      "yf_ticker": "EURGBP=X",
-      "mt5_ticker": "EURGBP",
-      "port": 5003,
-      "label": "EUR/GBP",
-      "interval": "15m",
-      "period": "5d",
-      "default_interval": "30m",
-      "detectors": ["supply_demand"],
-      "detector_params": {
-          "supply_demand": {
-              "timeframe": "30m",
-              "impulse_multiplier": 1.8,
-              "wick_ratio": 0.6,
-              "max_zones": 5,
-              "max_age_days": 3,
-              "valid_sessions": ["london", "new_york"],
-          },
-      },
+        "yf_ticker": "EURGBP=X",
+        "mt5_ticker": "EURGBP",
+        "port": 5003,
+        "label": "EUR/GBP",
+        "interval": "15m",
+        "period": "5d",
+        "default_interval": "30m",
+        "market_timing": FOREX,
+        "detectors": ["supply_demand"],
+        "detector_params": {
+            "supply_demand": {
+                "timeframe": "30m",
+                "impulse_multiplier": 1.8,
+                "wick_ratio": 0.6,
+                "max_zones": 5,
+                "max_age_days": 3,
+                "valid_sessions": ["london", "new_york"],
+            },
+        },
     },
     "USDJPY": {
         "yf_ticker": "USDJPY=X",
@@ -130,6 +140,7 @@ PAIRS = {
         "interval": "15m",
         "period": "5d",
         "default_interval": "30m",
+        "market_timing": FOREX,
         "detectors": ["supply_demand"],
         "detector_params": {
             "supply_demand": {
@@ -138,28 +149,29 @@ PAIRS = {
                 "wick_ratio": 0.6,
                 "max_zones": 5,
                 "max_age_days": 3,
-                "valid_sessions": ["asian", "new_york"],
+                "valid_sessions": ["london", "new_york"],
             },
         },
     },
-      "GBPUSD": {
-      "yf_ticker": "GBPUSD=X",
-      "mt5_ticker": "GBPUSD",
-      "port": 5005,
-      "label": "GBPUSD",
-      "interval": "15m",
-      "period": "5d",
-      "default_interval": "30m",
-      "detectors": ["supply_demand"],
-      "detector_params": {
-          "supply_demand": {
-              "timeframe": "30m",
-              "impulse_multiplier": 1.8,
-              "wick_ratio": 0.6,
-              "max_zones": 5,
-              "max_age_days": 3,
-              "valid_sessions": ["london", "new_york"],
-          },
-      },
-  },
+    "GBPUSD": {
+        "yf_ticker": "GBPUSD=X",
+        "mt5_ticker": "GBPUSD",
+        "port": 5005,
+        "label": "GBPUSD",
+        "interval": "15m",
+        "period": "5d",
+        "default_interval": "30m",
+        "market_timing": FOREX,
+        "detectors": ["supply_demand"],
+        "detector_params": {
+            "supply_demand": {
+                "timeframe": "30m",
+                "impulse_multiplier": 1.8,
+                "wick_ratio": 0.6,
+                "max_zones": 5,
+                "max_age_days": 3,
+                "valid_sessions": ["london", "new_york"],
+            },
+        },
+    },
 }
