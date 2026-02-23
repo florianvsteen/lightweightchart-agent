@@ -765,6 +765,9 @@
                                 } else if (s === 'found' || s === 'potential') {
                                     setStatus(name, s);
                                     stopCooldownTimer();
+                                } else if (s === 'out_of_session') {
+                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                                    stopCooldownTimer();
                                 } else {
                                     setStatus(name, 'looking');
                                     stopCooldownTimer();
