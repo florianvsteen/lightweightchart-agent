@@ -40,7 +40,7 @@ SESSIONS = {
     },
     NYSE: {
         "london":   (8,  0,  12, 0),
-        "new_york": (14, 30, 21, 0),
+        "new_york": (14, 30, 19, 0),
     },
     CRYPTO: {
         "asian":    (1,  0,  7,  0),
