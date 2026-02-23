@@ -122,6 +122,7 @@
   .reject-row.slope   { border-color: var(--blue); }
   .reject-row.adx     { border-color: var(--red); }
   .reject-row.chop    { border-color: #a070f0; }
+  .reject-row.touchpoints { border-color: var(--orange); }
   .reject-row.v_shape { border-color: var(--muted); }
   .reject-label { font-size: 10px; color: var(--text); }
   .reject-count { font-size: 12px; font-weight: 700; color: #fff; }
@@ -772,7 +773,7 @@ function renderSummary(d) {
       const reasons  = d.rejection_summary || {};
       const sorted   = Object.entries(reasons).sort((a,b) => b[1]-a[1]);
       const maxCnt   = sorted.length ? sorted[0][1] : 1;
-      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', v_shape:'#666' };
+      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', touchpoints:'#f0904a', v_shape:'#666' };
       return sorted.map(([key, cnt]) =>
         '<div class="reject-row ' + key + '">' +
           '<div style="display:flex;justify-content:space-between">' +
@@ -799,6 +800,7 @@ function renderWindowList(windows, filter) {
     if (filter === 'confirmed') return w.is_confirmed;
     if (filter === 'breakout')  return w.broke_out;
     if (filter === 'active')   return w.is_active;
+    if (filter === 'touchpoints') return w.min_touchpoints > 0 && w.touchpoints < w.min_touchpoints;
     return (w.reject || '').toLowerCase().includes(filter);
   });
   document.getElementById('window-list').innerHTML = filtered.map(w => {
@@ -828,6 +830,7 @@ function renderWindowList(windows, filter) {
       '<span class="win-status ' + stCls + '">' + label + '</span>' +
       boTag +
       '<span class="win-chop" style="margin-left:auto">chop ' + w.chop + '</span>' +
+      (w.touchpoints != null ? '<span class="win-extra" style="color:' + (w.min_touchpoints>0&&w.touchpoints<w.min_touchpoints?'var(--red)':'var(--muted)') + '" title="touchpoints">tp ' + w.touchpoints + '</span>' : '') +
       '</div>';
   }).join('');
   if (selectedWindow != null) {
@@ -865,7 +868,8 @@ function selectWindow(windowSize) {
     { key:'Slope',    val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,                      ratio:w.slope/w.slope_limit },
     { key:'Chop',     val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                               ratio:w.chop/0.44 },
     { key:'ADX',      val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit,            ratio:w.adx!=null?w.adx/w.adx_limit:0 },
-    { key:'ADX<10',   val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
+    { key:'ADX<10',      val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
+    { key:'Touchpoints', val:(w.touchpoints??'—')+(w.min_touchpoints>0?' / '+w.min_touchpoints+' req':''), limit: w.min_touchpoints>0?'≥'+w.min_touchpoints:'disabled', pass: w.min_touchpoints>0?(w.touchpoints>=w.min_touchpoints):null, ratio: w.min_touchpoints>0?(w.touchpoints/w.min_touchpoints):0 },
     { key:'Top',      val:w.top,        limit:'', pass:null, ratio:0 },
     { key:'Bottom',   val:w.bottom,     limit:'', pass:null, ratio:0 },
   ];
