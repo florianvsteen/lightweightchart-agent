@@ -99,7 +99,8 @@ def detect(
     max_zones: int = 5,
     max_age_days: int = 3,
     valid_sessions: list = None,
-    yf_lock: threading.Lock = None,  # passed from server to serialize downloads
+    market_timing: str = FOREX,
+    yf_lock: threading.Lock = None,
 ) -> dict:
     """
     Returns a dict with:
@@ -161,7 +162,7 @@ def detect(
                 break
 
             # Indecision candle must be in session or one candle before session open
-            if not _in_session(candle_ts, valid_sessions):
+            if not _in_session(candle_ts, valid_sessions, market_timing):
                 continue
 
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
@@ -202,7 +203,7 @@ def detect(
             zones.append({
                 "type":      zone_type,
                 "status":    status,
-                "session":   _candle_session_or_pre(candle_ts),
+                "session":   _candle_session_or_pre(candle_ts, market_timing),
                 "is_active": status == "active",
                 "start":     candle_ts,
                 "end":       int(df.index[-1].timestamp()),
