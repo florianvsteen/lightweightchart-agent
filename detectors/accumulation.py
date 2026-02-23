@@ -164,7 +164,9 @@ def detect(
     asian_range_pct: float = None,
     london_range_pct: float = None,
     new_york_range_pct: float = None,
+    valid_sessions: list = None,
     always_open: bool = False,
+    alert_cooldown_minutes: int = 15,
 ) -> dict | None:
     """
     Args:
@@ -172,11 +174,14 @@ def detect(
         min_candles:        Minimum window size for valid accumulation. Default 20.
         adx_threshold:      Maximum ADX value allowed (default 25 = no trend).
         threshold_pct:      Slope scaling factor per instrument.
-        max_range_pct:      Fallback max box height % if no session override.
-        asian_range_pct:    Max box height during Asian session.
-        london_range_pct:   Max box height during London session.
-        new_york_range_pct: Max box height during New York session.
-        always_open:        Unused by detector — kept for forward-compat. Chart-side only.
+        max_range_pct:          Fallback max box height % if no session override.
+        asian_range_pct:        Max box height during Asian session.
+        london_range_pct:       Max box height during London session.
+        new_york_range_pct:     Max box height during New York session.
+        valid_sessions:         List of session names in which detection is active
+                                (e.g. ["london", "new_york"]). None = all sessions.
+        always_open:            Skip weekend halt (24/7 markets like BTC).
+        alert_cooldown_minutes: Accepted for forward-compat; enforced by server, not here.
     """
     try:
         if is_weekend_halt():
@@ -196,6 +201,12 @@ def detect(
         session = get_current_session()
         if session is None:
             return None
+
+        # Gate detection to configured sessions only.
+        # If valid_sessions is set and the current session is not in it,
+        # return "out_of_session" so the frontend can display the right label.
+        if valid_sessions and session not in valid_sessions:
+            return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
 
         session_range = {
             "asian":    asian_range_pct,
