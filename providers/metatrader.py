@@ -65,9 +65,9 @@ _DT_FMT = "%Y-%m-%dT%H:%M:%S"
 
 # Most MT5 brokers run on UTC+2 (EET) or UTC+3 (EEST in summer).
 # mt5rest returns bar timestamps in broker LOCAL time with no timezone info.
-# We subtract this offset to convert back to true UTC.
-# Override with: export MT5_BROKER_UTC_OFFSET=3  (e.g. for EEST in summer)
-_BROKER_UTC_OFFSET = int(os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
+# Override with: export MT5_BROKER_UTC_OFFSET=3
+import os as _os
+_BROKER_UTC_OFFSET = int(_os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
 
 # ── Module-level session token — established once, reused across all calls ────
 _token: str | None = None
@@ -183,15 +183,18 @@ def _fetch(ticker: str, interval: str, period: str) -> pd.DataFrame:
         print(f"[metatrader] Unsupported interval: {interval!r}")
         return pd.DataFrame()
 
-    delta     = _PERIOD_MAP.get(period, timedelta(days=1))
-    now       = datetime.now(timezone.utc)
-    date_from = now - delta
+    delta         = _PERIOD_MAP.get(period, timedelta(days=1))
+    now           = datetime.now(timezone.utc)
+    broker_offset = timedelta(hours=_BROKER_UTC_OFFSET)
+    # Broker expects from/to in its LOCAL time, not UTC — shift the window forward
+    date_from     = (now - delta) + broker_offset
+    date_to       = now + broker_offset
 
     params = {
         "id":        _get_token(),
         "symbol":    ticker,
         "from":      date_from.strftime(_DT_FMT),
-        "to":        now.strftime(_DT_FMT),
+        "to":        date_to.strftime(_DT_FMT),
         "timeFrame": tf,
     }
 
