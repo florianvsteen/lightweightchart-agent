@@ -701,10 +701,11 @@ async function seekTo(idx, isStep) {
       const curr = liveData.candles[idx - 1];
       candleSeries.update({...curr, time: shiftTime(curr.time)});
     } else {
-      // Backward (or jump): save visible range, setData, restore it
-      const visibleRange = chart.timeScale().getVisibleRange();
+      // Backward step: save the logical bar range (immune to price scale changes),
+      // setData, restore it. Then re-enable autoscale so the price axis stays live.
+      const logicalRange = chart.timeScale().getVisibleLogicalRange();
       candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-      if (visibleRange) chart.timeScale().setVisibleRange(visibleRange);
+      if (logicalRange) chart.timeScale().setVisibleLogicalRange(logicalRange);
     }
   } else {
     // Full seek (scrubber drag or candle click): reframe to show the new slice
