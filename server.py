@@ -1066,7 +1066,8 @@ class PairServer:
             import traceback
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
-    def _debug_fvg(self):        """
+    def _debug_fvg(self):
+        """
         Run the standalone FVG detector and return full candidate details.
         Uses fvg.detect() which applies min_gap_pct and impulse_body_pct filters.
         """
