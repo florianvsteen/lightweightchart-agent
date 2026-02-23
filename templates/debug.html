@@ -121,9 +121,8 @@
   .reject-row.range   { border-color: var(--yellow); }
   .reject-row.slope   { border-color: var(--blue); }
   .reject-row.adx     { border-color: var(--red); }
-  .reject-row.chop        { border-color: #a070f0; }
-  .reject-row.touchpoints { border-color: #f0904a; }
-  .reject-row.v_shape     { border-color: var(--muted); }
+  .reject-row.chop    { border-color: #a070f0; }
+  .reject-row.v_shape { border-color: var(--muted); }
   .reject-label { font-size: 10px; color: var(--text); }
   .reject-count { font-size: 12px; font-weight: 700; color: #fff; }
   .reject-bar      { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
@@ -391,8 +390,9 @@ chart.subscribeClick(param => {
   if (!param.time) return;
 
   if (replayMode && liveData && currentMode === 'accum') {
-    // Accumulation replay: click candle to seek
-    const idx = liveData.candles.findIndex(c => c.time === param.time);
+    // param.time is already TZ-shifted by the chart — undo that before matching raw UTC timestamps
+    const rawTime = param.time - TZ_OFFSET;
+    const idx = liveData.candles.findIndex(c => c.time === rawTime);
     if (idx >= 0) seekTo(idx + 1, false);
     return;
   }
@@ -690,16 +690,30 @@ async function seekTo(idx, isStep) {
   idx = Math.max(18, Math.min(idx, total));
   replayIdx = idx;
   const slice = liveData.candles.slice(0, idx);
-  if (isStep && idx > 1) {
-    // Append only the new candle — keeps the chart view stable
-    const prev = liveData.candles[idx - 2];
-    const curr = liveData.candles[idx - 1];
-    // If the previous candle was already the last one displayed, just update
-    candleSeries.update({...curr, time: shiftTime(curr.time)});
+
+  if (isStep) {
+    // Preserve the current viewport — do NOT call fitContent.
+    // Use update() only for forward steps (last candle is new);
+    // for backward steps or any other step, just set the data in place.
+    const prevLen = candleSeries.data ? candleSeries.data().length : 0;
+    if (idx > prevLen && idx > 1) {
+      // Forward step: append the new last candle
+      const curr = liveData.candles[idx - 1];
+      candleSeries.update({...curr, time: shiftTime(curr.time)});
+    } else {
+      // Backward step or first render: set full slice, keep viewport
+      const visibleRange = chart.timeScale().getVisibleRange();
+      candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
+      if (visibleRange) {
+        chart.timeScale().setVisibleRange(visibleRange);
+      }
+    }
   } else {
+    // Full seek (scrubber drag or click): fit content to show the sliced window
     candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-    if (!isStep) chart.timeScale().fitContent();
+    chart.timeScale().fitContent();
   }
+
   const sc = document.getElementById('scrubber');
   sc.value = idx - 1;
   const last = slice[slice.length - 1];
@@ -757,7 +771,7 @@ function renderSummary(d) {
       const reasons  = d.rejection_summary || {};
       const sorted   = Object.entries(reasons).sort((a,b) => b[1]-a[1]);
       const maxCnt   = sorted.length ? sorted[0][1] : 1;
-      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', touchpoints:'#f0904a', v_shape:'#666' };
+      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', v_shape:'#666' };
       return sorted.map(([key, cnt]) =>
         '<div class="reject-row ' + key + '">' +
           '<div style="display:flex;justify-content:space-between">' +
@@ -813,7 +827,6 @@ function renderWindowList(windows, filter) {
       '<span class="win-status ' + stCls + '">' + label + '</span>' +
       boTag +
       '<span class="win-chop" style="margin-left:auto">chop ' + w.chop + '</span>' +
-      '<span class="win-extra" style="color:' + ((w.min_touchpoints||0)>0 && (w.touchpoints||0)<(w.min_touchpoints||0) ? 'var(--red)' : 'var(--muted)') + ';margin-left:6px">tp ' + (w.touchpoints??'—') + '</span>' +
       '</div>';
   }).join('');
   if (selectedWindow != null) {
@@ -852,7 +865,6 @@ function selectWindow(windowSize) {
     { key:'Chop',     val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                               ratio:w.chop/0.44 },
     { key:'ADX',      val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit,            ratio:w.adx!=null?w.adx/w.adx_limit:0 },
     { key:'ADX<10',   val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
-    { key:'Touchpoints', val:(w.touchpoints??'—'), limit:(w.min_touchpoints>0?'≥'+w.min_touchpoints:'disabled'), pass:w.min_touchpoints>0?(w.touchpoints>=w.min_touchpoints):null, ratio:w.min_touchpoints>0?Math.min(1,(w.touchpoints||0)/w.min_touchpoints):0 },
     { key:'Top',      val:w.top,        limit:'', pass:null, ratio:0 },
     { key:'Bottom',   val:w.bottom,     limit:'', pass:null, ratio:0 },
   ];
@@ -1011,7 +1023,7 @@ function stopPlay() {
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
 document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode && liveData) enterReplayMode(); });
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
-document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, false); });
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, true); });
 document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
 document.getElementById('btn-analyze').addEventListener('click', () => { if(replayMode) fetchReplay(replayIdx); });
 document.getElementById('scrubber').addEventListener('input', function() {
