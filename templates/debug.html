@@ -54,6 +54,9 @@
   }
   .tf-btn:hover  { border-color: var(--text); color: var(--text); }
   .tf-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(240,196,90,0.06); }
+  .tf-btn.tf-bias { border-color: #2a2a1a; color: #60604a; }
+  .tf-btn.tf-bias:hover { border-color: #c8a84b; color: #c8a84b; }
+  .tf-btn.tf-bias.active { border-color: #c8a84b; color: #c8a84b; background: rgba(200,168,75,0.06); }
 
   /* ── Left: chart ── */
   #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -235,6 +238,8 @@
       <button class="tf-btn active" data-tf="1m"  onclick="switchTF('1m')">1m</button>
       <button class="tf-btn"        data-tf="15m" onclick="switchTF('15m')">15m</button>
       <button class="tf-btn"        data-tf="30m" onclick="switchTF('30m')">30m</button>
+      <button class="tf-btn tf-bias" data-tf="1D" onclick="switchTF('1D')">1D</button>
+      <button class="tf-btn tf-bias" data-tf="1W" onclick="switchTF('1W')">1W</button>
     </div>
     <span id="tag-mode">accumulation</span>
   </div>
@@ -363,6 +368,7 @@ let selectedWindow = null;
 let overlaySeriesList = [];
 let sdData  = null;
 let fvgData = null;
+let biasData = null;
 
 // ── Chart setup ───────────────────────────────────────────────────────────────
 const chartContainer = document.getElementById('chart');
@@ -553,8 +559,13 @@ function switchMode(mode) {
   } else if (mode === 'sd') {
     document.getElementById('tag-session').textContent = 'S/D MODE';
     document.getElementById('tag-info').textContent = currentTF + ' · supply & demand';
-    if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); }
-    else loadSD();
+    if (currentTF === '1D' || currentTF === '1W') {
+      if (biasData) renderBias(biasData);
+      else loadBias(currentTF);
+    } else {
+      if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); }
+      else loadSD();
+    }
   } else if (mode === 'fvg') {
     document.getElementById('tag-session').textContent = 'FVG MODE';
     document.getElementById('tag-info').textContent = currentTF + ' · fair value gap';
@@ -571,12 +582,22 @@ function switchTF(tf) {
   fvgData = null;
   // Also reload accumulation data since TF affects it
   liveData = null;
+
+  // 1D / 1W are bias-only views — only meaningful in SD mode
+  if (tf === '1D' || tf === '1W') {
+    if (currentMode !== 'sd') switchMode('sd');
+    else loadBias(tf);
+    return;
+  }
   refreshCurrentMode();
 }
 
 function refreshCurrentMode() {
   if (currentMode === 'accum') loadLiveData();
-  else if (currentMode === 'sd') loadSD();
+  else if (currentMode === 'sd') {
+    if (currentTF === '1D' || currentTF === '1W') { biasData = null; loadBias(currentTF); }
+    else loadSD();
+  }
   else if (currentMode === 'fvg') loadFVG();
 }
 
@@ -1031,6 +1052,97 @@ async function loadSD() {
   } catch(e) {
     document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
   }
+}
+
+async function loadBias(tf) {
+  document.getElementById('sd-loading').textContent = '⟳ Loading bias candles…';
+  document.getElementById('sd-loading').style.display = '';
+  document.getElementById('sd-content').style.display = 'none';
+  try {
+    const res = await fetch('/debug/sd/bias');
+    biasData = await res.json();
+    if (biasData.error) {
+      document.getElementById('sd-loading').textContent = '✗ Error: ' + biasData.error;
+      return;
+    }
+    renderBias(tf || currentTF);
+  } catch(e) {
+    document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
+  }
+}
+
+function renderBias(tf) {
+  if (!biasData) return;
+  document.getElementById('sd-loading').style.display = 'none';
+  document.getElementById('sd-content').style.display = '';
+
+  const candles = tf === '1W' ? biasData.weekly_candles : biasData.daily_candles;
+  const label   = tf === '1W' ? 'Weekly' : 'Daily';
+
+  if (!candles || !candles.length) {
+    document.getElementById('sd-loading').textContent = '✗ No ' + label + ' candles returned';
+    document.getElementById('sd-loading').style.display = '';
+    document.getElementById('sd-content').style.display = 'none';
+    return;
+  }
+
+  // Render candles on chart
+  renderChart(candles);
+  clearOverlays();
+
+  // Highlight the bias candle (second-to-last = previous completed)
+  const biasCandle = candles.find(c => c.bias_candle);
+  if (biasCandle) {
+    const isBull = biasCandle.close > biasCandle.open;
+    const col    = isBull ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.7)';
+    // Approximate bar width: 1 day or 7 days in seconds
+    const barSecs = tf === '1W' ? 604800 : 86400;
+    drawBox(biasCandle.time, biasCandle.time + barSecs, biasCandle.high, biasCandle.low, col, 0.12);
+  }
+
+  // Build info panel in the sd-content area
+  document.getElementById('tag-session').textContent = label.toUpperCase() + ' BIAS';
+  document.getElementById('tag-info').textContent    = label + ' · ' + candles.length + ' candles';
+
+  document.getElementById('sd-info-bar').style.display = '';
+  document.getElementById('sd-info-bar').innerHTML =
+    'Viewing: <strong>' + label + ' candles</strong>' +
+    ' &nbsp;·&nbsp; Highlighted candle = bias source (df[-2])' +
+    ' &nbsp;·&nbsp; ' + candles.length + ' candles total';
+
+  // Bias block — reuse existing sd-bias-block element
+  const bc = biasCandle;
+  const isBull = bc ? bc.close > bc.open : null;
+  const bCls   = isBull === null ? 'misaligned' : isBull ? 'bullish' : 'bearish';
+  const bIcon  = isBull === null ? '⚡' : isBull ? '↑' : '↓';
+  const bLabel = isBull === null ? 'No data' : isBull ? 'Bullish' : 'Bearish';
+  document.getElementById('sd-bias-block').innerHTML =
+    '<div class="bias-cell">' +
+      '<div class="bias-cell-label">' + label + ' Bias Candle</div>' +
+      '<div class="bias-cell-val ' + bCls + '">' + bIcon + ' ' + bLabel + '</div>' +
+      (bc ? '<div style="font-size:9px;color:var(--muted);margin-top:3px">O ' + fmtPrice(bc.open) + ' → C ' + fmtPrice(bc.close) + '</div>' : '') +
+    '</div>';
+  document.getElementById('sd-bias-verdict').innerHTML = '';
+
+  // Show all candles as a simple list
+  const rows = [...candles].reverse().map((c, i) => {
+    const isBullC = c.close > c.open;
+    const col     = isBullC ? 'var(--pass)' : 'var(--red)';
+    const dir     = isBullC ? '▲' : '▼';
+    const highlight = c.bias_candle ? 'background:rgba(200,168,75,0.08);border-left:2px solid #c8a84b;' : '';
+    const tag       = c.bias_candle ? ' <span style="font-size:9px;color:#c8a84b;margin-left:4px">← bias</span>' : '';
+    return '<div style="padding:5px 8px;' + highlight + 'border-bottom:1px solid var(--border);font-size:10px">' +
+      '<span style="color:var(--muted);margin-right:8px">' + fmtTime(c.time) + '</span>' +
+      '<span style="color:' + col + ';margin-right:6px">' + dir + '</span>' +
+      'O ' + fmtPrice(c.open) + '  C ' + fmtPrice(c.close) +
+      '  H ' + fmtPrice(c.high) + '  L ' + fmtPrice(c.low) +
+      tag +
+    '</div>';
+  }).join('');
+
+  document.getElementById('sd-zone-list').innerHTML =
+    '<div class="section-header"><span>' + label + ' Candles</span><span class="section-count">' + candles.length + '</span></div>' +
+    rows;
 }
 
 function renderSD(data) {
