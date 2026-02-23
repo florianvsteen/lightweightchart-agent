@@ -29,6 +29,8 @@ PAIRS = {
                 "asian_range_pct":    0.001,   # ~44pts at 44,000
                 "london_range_pct":   0.002,   # ~88pts at 44,000
                 "new_york_range_pct": 0.003,   # ~132pts at 44,000
+                "valid_sessions":     ["london", "new_york"],
+                "alert_cooldown_minutes": 15,
             },
         },
     },
@@ -51,6 +53,8 @@ PAIRS = {
                 "asian_range_pct":    0.0008,  # Asian: ~26pt box max
                 "london_range_pct":   0.001,    # London: ~42pt box max
                 "new_york_range_pct": 0.0025,   # NY: ~52pt box max
+                "valid_sessions":     ["london", "new_york"],
+                "alert_cooldown_minutes": 15,
             },
         },
     },
@@ -73,6 +77,8 @@ PAIRS = {
                 "asian_range_pct":    0.0015,  # Asian: ~$4.5 box max
                 "london_range_pct":   0.002,   # London: ~$6 box max
                 "new_york_range_pct": 0.003,   # NY: ~$9 box max
+                "valid_sessions":     ["london", "new_york"],
+                "alert_cooldown_minutes": 15,
             },
         },
     },
@@ -159,6 +165,8 @@ PAIRS = {
                 "asian_range_pct":    0.002,
                 "london_range_pct":   0.003,
                 "new_york_range_pct": 0.004,
+                "valid_sessions":     ["london", "new_york"],
+                "alert_cooldown_minutes": 15,
             },
         },
     },
