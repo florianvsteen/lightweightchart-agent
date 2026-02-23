@@ -72,7 +72,8 @@ class PairServer:
         self.detector_names = config.get("detectors", [])
         self.detector_params = config.get("detector_params", {})
         self.default_interval = config.get("default_interval", self.interval)
-        self.always_open = config.get("always_open", False)
+        self.always_open = config.get("always_open", False)  # deprecated
+        self.market_timing = config.get("market_timing", "FOREX")
         self._config = config  # keep full config for provider-specific lookups
 
         # Resolve ticker based on active provider.
@@ -102,9 +103,6 @@ class PairServer:
         self.last_active_zone: dict[str, dict] = {}
 
         # ── Restore cooldown state after restart ──────────────────────────
-        # If we're still within a cooldown window when the process restarts,
-        # rebuild the cooldown zone in last_active_zone so _api_data serves
-        # the correct state immediately without waiting for a detection cycle.
         for det_name in config.get("detectors", []):
             if det_name == "accumulation":
                 alert_ts = self.last_alerted.get(f"{det_name}_alert_ts", 0)
@@ -116,16 +114,16 @@ class PairServer:
                     if int(time.time()) < cooldown_until:
                         saved_zone = self.last_alerted.get(f"{det_name}_cooldown_zone", {})
                         self.last_active_zone[det_name] = {
-                            "detector":      "accumulation",
-                            "status":        "cooldown",
+                            "detector":       "accumulation",
+                            "status":         "cooldown",
                             "cooldown_until": int(cooldown_until),
-                            "is_active":     False,
-                            "start":         saved_zone.get("start", 0),
-                            "end":           saved_zone.get("end", 0),
-                            "top":           saved_zone.get("top", 0),
-                            "bottom":        saved_zone.get("bottom", 0),
+                            "is_active":      False,
+                            "start":          saved_zone.get("start", 0),
+                            "end":            saved_zone.get("end", 0),
+                            "top":            saved_zone.get("top", 0),
+                            "bottom":         saved_zone.get("bottom", 0),
                         }
-                        print(f"[{pair_id}] Cooldown restored from disk — expires in "
+                        print(f"[{pair_id}] Cooldown restored — expires in "
                               f"{int((cooldown_until - time.time()) / 60)}m")
 
         # Per-request DataFrame cache (cleared each cycle)
@@ -236,11 +234,12 @@ class PairServer:
                 results[name] = None
             else:
                 try:
-                    # When using MetaTrader, swap the ticker in supply_demand params
-                    if name == "supply_demand" and _provider == "metatrader":
-                        mt5_ticker = self._config.get("mt5_ticker")
-                        if mt5_ticker:
-                            params["ticker"] = mt5_ticker
+                    # Always inject resolved ticker for supply_demand
+                    if name == "supply_demand":
+                        params["ticker"] = self.ticker
+                    # Pass market_timing so detectors use correct session windows
+                    if name in ("accumulation", "supply_demand"):
+                        params["market_timing"] = self.market_timing
                     results[name] = fn(df, **params)
                 except Exception as e:
                     print(f"[ERROR] Detector '{name}' failed: {e}")
@@ -249,9 +248,8 @@ class PairServer:
 
     def _process_alerts(self, detector_results: dict):
         """Check results and fire Discord alerts on breakout."""
-        # Never send alerts during the weekend market halt (Fri 23:00 – Mon 01:00 UTC)
-        from detectors.accumulation import is_weekend_halt
-        if is_weekend_halt(always_open=self.always_open):
+        from sessions import is_weekend_halt
+        if is_weekend_halt(self.market_timing):
             return
 
         for name, result in detector_results.items():
@@ -266,6 +264,20 @@ class PairServer:
                         self._save_alerted()
 
                 prev = self.last_active_zone.get(name)
+                prev_status = (prev or {}).get("status")
+
+                # ── Cooldown guard ─────────────────────────────────────
+                # During cooldown, block all detector output so a new zone
+                # cannot override the cooldown state.
+                if prev_status == "cooldown":
+                    if int(time.time()) < (prev or {}).get("cooldown_until", 0):
+                        continue  # still cooling down — skip all transitions
+                    else:
+                        # Expired — clear and fall through to normal logic
+                        self.last_active_zone[name] = None
+                        prev        = None
+                        prev_status = None
+
                 zone = result if (result and isinstance(result, dict)) else None
                 is_active_found = (
                     zone is not None
@@ -276,8 +288,7 @@ class PairServer:
                 # ── State machine ──────────────────────────────────────
                 # looking   → active    (zone formed, breakout candle still inside)
                 # active    → confirmed (impulsive breakout — alert dispatched)
-                # confirmed → looking   (next cycle, reset)
-                prev_status = (prev or {}).get("status")
+                # confirmed → cooldown  (next cycle, hold until timer expires)
 
                 if is_active_found:
                     # Zone alive — keep tracking
