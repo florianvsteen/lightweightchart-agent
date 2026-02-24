@@ -1,1418 +1,803 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Debug — {{ label }}</title>
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg:      #131316;
-    --surface: #1a1a1f;
-    --border:  #252530;
-    --text:    #c8c8d8;
-    --muted:   #55556a;
-    --accent:  #5af0c4;
-    --red:     #f05a7e;
-    --yellow:  #f0c45a;
-    --blue:    #5a9ef0;
-    --orange:  #f0904a;
-    --pass:    #5af0c4;
-    --purple:  #a070f0;
-  }
-  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
-    font-family: 'Space Mono', 'Menlo', monospace; font-size: 12px; }
-  #layout { display: flex; height: 100vh; flex-direction: column; }
-  #main   { display: flex; flex: 1; min-height: 0; }
+    <title>{{ label }} — Chart Agent</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #1e1e1f;
+            color: #d1d4dc;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 16px;
+            gap: 12px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-shrink: 0;
+        }
+        header h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+        }
+        #detector-statuses {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .detector-status {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: #1a1d2e;
+            border: 1px solid #2b2b43;
+            border-radius: 5px;
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            transition: border-color 0.4s, background 0.4s;
+        }
+        .detector-status .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: background 0.4s;
+        }
+        .detector-status .label-text { transition: color 0.4s; }
 
-  /* ── Mode switcher bar ── */
-  #modebar {
-    display: flex; align-items: center; gap: 0; padding: 0 14px;
-    border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg);
-  }
-  #modebar h1 { font-size: 12px; color: #fff; margin-right: 18px; white-space: nowrap; letter-spacing: 0.04em; }
-  .mode-btn {
-    padding: 10px 16px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
-    cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
-    transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none;
-    font-family: inherit; white-space: nowrap;
-  }
-  .mode-btn:hover  { color: var(--text); }
-  .mode-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .mode-btn.sd-btn.active  { color: var(--blue);   border-bottom-color: var(--blue); }
-  .mode-btn.fvg-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
-  .mode-spacer { flex: 1; }
-  #tag-mode { font-size: 9px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
-    color: var(--muted); white-space: nowrap; letter-spacing: 0.08em; text-transform: uppercase; }
+        .detector-status.state-looking { border-color: #2b2b43; }
+        .detector-status.state-looking .indicator { background: #444; }
+        .detector-status.state-looking .label-text { color: #666; }
 
-  #pair-switcher {
-    padding: 3px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
-    cursor: pointer; color: var(--accent); border: 1px solid var(--accent);
-    border-radius: 3px; background: rgba(90,240,196,0.06);
-    font-family: inherit; margin-right: 10px; max-width: 200px;
-  }
-  #pair-switcher option { background: var(--surface); color: var(--text); text-transform: uppercase; }
+        .detector-status.state-potential { border-color: #555; }
+        .detector-status.state-potential .indicator {
+            background: #aaa;
+            box-shadow: 0 0 5px rgba(180,180,180,0.4);
+        }
+        .detector-status.state-potential .label-text { color: #bbb; }
 
-  /* ── Timeframe switcher ── */
-  #tf-bar { display: flex; gap: 3px; align-items: center; margin-right: 10px; }
-  .tf-btn {
-    padding: 3px 10px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-    cursor: pointer; color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
-    background: var(--surface); font-family: inherit; transition: all 0.15s;
-  }
-  .tf-btn:hover  { border-color: var(--text); color: var(--text); }
-  .tf-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(240,196,90,0.06); }
-  .tf-btn.tf-bias { border-color: #2a2a1a; color: #60604a; }
-  .tf-btn.tf-bias:hover { border-color: #c8a84b; color: #c8a84b; }
-  .tf-btn.tf-bias.active { border-color: #c8a84b; color: #c8a84b; background: rgba(200,168,75,0.06); }
+        .detector-status.state-found { border-color: #888; background: #1e2030; }
+        .detector-status.state-found .indicator {
+            background: #ccc;
+            box-shadow: 0 0 8px rgba(220,220,220,0.6);
+        }
+        .detector-status.state-found .label-text { color: #e0e0e0; font-weight: 600; }
 
-  /* ── Left: chart ── */
-  #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  #topbar { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
-    border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
-  .tag { font-size: 10px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
-    color: var(--muted); white-space: nowrap; }
-  .tag.session { border-color: #5a9ef0; color: #5a9ef0; }
-  .tag.replay  { border-color: var(--red); color: var(--red); }
-  #btn-group { display: flex; gap: 6px; margin-left: auto; }
-  .rbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
-    color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit;
-    padding: 3px 10px; transition: all 0.15s; white-space: nowrap; }
-  .rbtn:hover  { border-color: var(--accent); color: var(--accent); }
-  .rbtn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.06); }
-  .rbtn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
+        .detector-status.state-offline { border-color: #2b2b43; }
+        .detector-status.state-offline .indicator { background: #333; }
+        .detector-status.state-offline .label-text { color: #444; font-style: italic; }
 
-  #chart-wrap { flex: 1; position: relative; min-height: 0; }
-  #chart { width: 100%; height: 100%; }
-  #cursor-line { position: absolute; top: 0; bottom: 0; width: 1px;
-    background: rgba(240,90,126,0.6); pointer-events: none; display: none; z-index: 10; }
+        .detector-status.state-cooldown { border-color: #b8860b; background: #1e1c12; }
+        .detector-status.state-cooldown .indicator {
+            background: #d4a017;
+            box-shadow: 0 0 6px rgba(212,160,23,0.5);
+        }
+        .detector-status.state-cooldown .label-text { color: #c9a227; font-weight: 600; }
 
-  #scrubber-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px;
-    border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
-  #scrubber { flex: 1; accent-color: var(--accent); cursor: pointer; height: 4px; }
-  #scrub-label { font-size: 10px; color: var(--muted); min-width: 110px; text-align: right; white-space: nowrap; }
-  #scrub-ts    { font-size: 10px; color: var(--muted); min-width: 120px; white-space: nowrap; }
-  #replay-speed { width: 60px; font-size: 10px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 3px; color: var(--text);
-    padding: 2px 5px; font-family: inherit; }
-  #replay-banner { display: none; padding: 4px 14px; font-size: 10px; color: var(--red);
-    background: rgba(240,90,126,0.07); border-bottom: 1px solid rgba(240,90,126,0.2);
-    letter-spacing: 0.06em; }
+        /* ── Weekend closed overlay ── */
+        #weekend-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 10, 12, 0.88);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+        }
+        #weekend-overlay.visible { display: flex; }
+        #weekend-overlay .wk-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #e0e0e0;
+            letter-spacing: 0.08em;
+        }
+        #weekend-overlay .wk-sub {
+            font-size: 0.8rem;
+            color: #555;
+        }
+        #weekend-overlay .wk-countdown {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #3a3a5a;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.05em;
+        }
+        #weekend-overlay .wk-hint {
+            font-size: 0.68rem;
+            color: #333;
+        }
+        #interval-bar {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+        .tf-btn {
+            background: none;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            color: #666;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-family: inherit;
+            padding: 3px 9px;
+            transition: all 0.2s;
+        }
+        .tf-btn:hover { border-color: #888; color: #bbb; }
+        .tf-btn.active { border-color: #d4d0d0; color: #d4d0d0; font-weight: 600; }
 
-  /* ── Right panel ── */
-  #right { width: 360px; flex-shrink: 0; display: flex; flex-direction: column;
-    border-left: 1px solid var(--border); overflow: hidden; }
+        /* ── Session badge ── */
+        #session-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 0.75rem;
+            color: #666;
+            white-space: nowrap;
+        }
+        #session-badge .session-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #444;
+        }
+        #session-badge.inactive { border-color: #444; color: #555; }
+        #session-badge.inactive .session-dot { background: #444; }
+        #session-badge.asian    { border-color: #c8a84b; color: #c8a84b; }
+        #session-badge.asian    .session-dot { background: #c8a84b; box-shadow: 0 0 5px rgba(200,168,75,0.5); }
+        #session-badge.london   { border-color: #4b9ecd; color: #4b9ecd; }
+        #session-badge.london   .session-dot { background: #4b9ecd; box-shadow: 0 0 5px rgba(75,158,205,0.5); }
+        #session-badge.new_york { border-color: #6abf7b; color: #6abf7b; }
+        #session-badge.new_york .session-dot { background: #6abf7b; box-shadow: 0 0 5px rgba(106,191,123,0.5); }
 
-  /* ── Accum tabs ── */
-  #right-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .rtab { flex: 1; padding: 8px 4px; text-align: center; font-size: 10px; letter-spacing: 0.08em;
-    text-transform: uppercase; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
-    transition: all 0.15s; }
-  .rtab.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .rtab-panel { display: none; flex: 1; overflow-y: auto; padding: 10px; height: 100%; }
-  .rtab-panel.active { display: block; }
+        /* ── Bias badge ── */
+        #bias-badge {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 0.75rem;
+            color: #666;
+            white-space: nowrap;
+        }
+        #bias-badge .bias-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #444;
+        }
+        #bias-badge.bullish  { border-color: #4caf82; color: #4caf82; }
+        #bias-badge.bullish  .bias-dot { background: #4caf82; box-shadow: 0 0 5px rgba(76,175,130,0.5); }
+        #bias-badge.bearish  { border-color: #cf6679; color: #cf6679; }
+        #bias-badge.bearish  .bias-dot { background: #cf6679; box-shadow: 0 0 5px rgba(207,102,121,0.5); }
+        #bias-badge.misaligned { border-color: #888; color: #666; }
+        #bias-badge.misaligned .bias-dot { background: #555; }
 
-  /* ── Stat cards ── */
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; }
-  .stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3px; }
-  .stat-val { font-size: 18px; font-weight: 700; color: #fff; }
-  .stat-val.green  { color: var(--pass); }
-  .stat-val.red    { color: var(--red); }
-  .stat-val.yellow { color: var(--yellow); }
-  .stat-val.sm     { font-size: 14px; }
-
-  /* ── Reject bars ── */
-  .reject-list { margin-top: 10px; }
-  .reject-row { padding: 5px 8px; border-radius: 3px; margin-bottom: 3px;
-    background: var(--surface); border-left: 3px solid; }
-  .reject-row.range   { border-color: var(--yellow); }
-  .reject-row.slope   { border-color: var(--blue); }
-  .reject-row.adx     { border-color: var(--red); }
-  .reject-row.chop    { border-color: #a070f0; }
-  .reject-row.touchpoints { border-color: var(--orange); }
-  .reject-row.v_shape { border-color: var(--muted); }
-  .reject-label { font-size: 10px; color: var(--text); }
-  .reject-count { font-size: 12px; font-weight: 700; color: #fff; }
-  .reject-bar      { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
-  .reject-bar-fill { height: 100%; border-radius: 2px; }
-
-  /* ── Window list ── */
-  #window-search { width: 100%; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 3px; color: var(--text); padding: 5px 8px; font-family: inherit;
-    font-size: 11px; margin-bottom: 8px; }
-  #window-search:focus { outline: none; border-color: var(--accent); }
-  .win-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 3px;
-    margin-bottom: 2px; cursor: pointer; border: 1px solid transparent; transition: all 0.1s; }
-  .win-row:hover    { border-color: var(--border); background: var(--surface); }
-  .win-row.selected { border-color: var(--accent); background: rgba(90,240,196,0.04); }
-  .win-row.pass-row { border-left: 3px solid var(--pass); }
-  .win-row.fail-row { border-left: 3px solid #333; }
-  .win-num    { width: 28px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
-  .win-status { font-size: 10px; flex: 1; }
-  .win-status.pass { color: var(--pass); }
-  .win-status.fail { color: var(--muted); }
-  .win-chop  { font-size: 10px; color: var(--muted); width: 42px; text-align: right; flex-shrink: 0; }
-  .win-extra { font-size: 9px; color: var(--muted); width: 54px; text-align: right; flex-shrink: 0; }
-
-  /* ── Detail panel ── */
-  #detail-title { font-size: 11px; color: var(--accent); margin-bottom: 10px; padding-bottom: 6px;
-    border-bottom: 1px solid var(--border); }
-  .detail-row { display: flex; justify-content: space-between; padding: 4px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.04); }
-  .detail-key { color: var(--muted); font-size: 10px; }
-  .detail-val { font-size: 10px; font-weight: 600; }
-  .detail-val.pass    { color: var(--pass); }
-  .detail-val.fail    { color: var(--red); }
-  .detail-val.neutral { color: var(--text); }
-  .bar-track { height: 3px; background: var(--border); border-radius: 2px; flex: 1; margin-left: 10px; }
-  .bar-fill  { height: 100%; border-radius: 2px; max-width: 100%; }
-
-  /* ── S&D panel ── */
-  .sd-section-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em;
-    color: var(--muted); margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
-  .bias-block { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; }
-  .bias-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; }
-  .bias-cell-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
-  .bias-cell-val { font-size: 13px; font-weight: 700; margin-top: 2px; }
-  .bias-cell-val.bullish   { color: var(--pass); }
-  .bias-cell-val.bearish   { color: var(--red); }
-  .bias-cell-val.misaligned{ color: var(--muted); }
-
-  .zone-row { padding: 7px 10px; border-radius: 3px; margin-bottom: 4px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); transition: all 0.1s; }
-  .zone-row:hover { border-color: var(--blue); }
-  .zone-row.selected-zone { border-color: var(--yellow) !important; background: rgba(240,196,90,0.05); }
-  .zone-row.demand-row   { border-left: 3px solid var(--blue); }
-  .zone-row.supply-row   { border-left: 3px solid var(--red); }
-  .zone-row.rejected-row { border-left: 3px solid #2a2a3a; }
-  .zone-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
-  .zone-type-badge { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 6px;
-    border-radius: 2px; border: 1px solid; }
-  .zone-type-badge.demand { border-color: rgba(90,158,240,0.5); color: var(--blue); }
-  .zone-type-badge.supply { border-color: rgba(240,90,126,0.5); color: var(--red); }
-  .zone-type-badge.reject { border-color: #333; color: var(--muted); }
-  .zone-time { font-size: 9px; color: var(--muted); }
-  .zone-range { font-size: 11px; color: var(--text); font-weight: 600; }
-  .zone-reject-reason { font-size: 9px; color: var(--muted); margin-top: 2px; font-style: italic; }
-
-  /* ── FVG panel ── */
-  .fvg-row { padding: 7px 10px; border-radius: 3px; margin-bottom: 4px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); transition: all 0.1s; }
-  .fvg-row:hover { border-color: var(--orange); }
-  .fvg-row.selected-fvg  { border-color: var(--yellow) !important; background: rgba(240,196,90,0.05); }
-  .fvg-row.pass-fvg { border-left: 3px solid var(--orange); }
-  .fvg-row.fail-fvg { border-left: 3px solid #2a2a3a; }
-  .fvg-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
-  .fvg-badge { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 6px;
-    border-radius: 2px; border: 1px solid; }
-  .fvg-badge.bullish { border-color: rgba(90,158,240,0.5); color: var(--blue); }
-  .fvg-badge.bearish { border-color: rgba(240,90,126,0.5); color: var(--red); }
-  .fvg-badge.no-fvg  { border-color: #333; color: var(--muted); }
-  .fvg-detail-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 6px; }
-  .fvg-candle-cell { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 5px 6px; }
-  .fvg-candle-label { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px; }
-  .fvg-candle-hl { font-size: 10px; color: var(--text); }
-  .fvg-gap-line { margin: 5px 0; padding: 4px 8px; font-size: 10px; border-radius: 2px; border: 1px dashed; }
-  .fvg-gap-line.gap-exists  { border-color: var(--orange); color: var(--orange); }
-  .fvg-gap-line.gap-missing { border-color: #333; color: var(--muted); }
-
-  /* ── Shared helpers ── */
-  .panel-empty { padding: 20px 10px; text-align: center; color: var(--muted); font-size: 11px; }
-  .panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
-  .section-header { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;
-    margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center; }
-  .section-count { font-size: 10px; color: var(--text); font-weight: 700; }
-  .info-bar { font-size: 9px; color: var(--muted); padding: 4px 6px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 3px; margin-bottom: 8px; }
-  .info-bar strong { color: var(--orange); }
-
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-</style>
+        #chart-container {
+            flex: 1;
+            border: 1px solid #2b2b43;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #chart { width: 100%; height: 100%; }
+    </style>
 </head>
 <body>
-<div id="layout">
-
-  <!-- ── Mode + TF switcher bar ── -->
-  <div id="modebar">
-    <h1>⚙ {{ label }}</h1>
-    <button class="mode-btn active"  id="mode-accum" onclick="switchMode('accum')">① Accumulation</button>
-    <button class="mode-btn sd-btn"  id="mode-sd"    onclick="switchMode('sd')">② Supply &amp; Demand</button>
-    <button class="mode-btn fvg-btn" id="mode-fvg"   onclick="switchMode('fvg')">③ Fair Value Gap</button>
-    <span class="mode-spacer"></span>
-    <select id="pair-switcher" onchange="switchPair(this.value)" title="Switch pair">
-      {% for p in pairs %}
-      <option value="{{ p.id }}" data-port="{{ p.port }}" {% if p.id == pair_id %}selected{% endif %}>{{ p.id }} — {{ p.label }}</option>
-      {% endfor %}
-    </select>
-    <div id="tf-bar">
-      <button class="tf-btn active" data-tf="1m"  onclick="switchTF('1m')">1m</button>
-      <button class="tf-btn"        data-tf="15m" onclick="switchTF('15m')">15m</button>
-      <button class="tf-btn"        data-tf="30m" onclick="switchTF('30m')">30m</button>
-      <button class="tf-btn tf-bias" data-tf="1D" onclick="switchTF('1D')">1D</button>
-      <button class="tf-btn tf-bias" data-tf="1W" onclick="switchTF('1W')">1W</button>
-    </div>
-    <span id="tag-mode">accumulation</span>
-  </div>
-
-  <div id="main">
-    <!-- ── LEFT: Chart ── -->
-    <div id="left">
-      <div id="topbar">
-        <span class="tag session" id="tag-session">loading…</span>
-        <span class="tag" id="tag-info">…</span>
-        <span class="tag replay" id="tag-replay" style="display:none">⏮ REPLAY</span>
-        <div id="btn-group">
-          <button class="rbtn active" id="btn-live">Live</button>
-          <button class="rbtn" id="btn-replay">⏮ Replay</button>
-          <button class="rbtn" id="btn-prev" disabled>◀</button>
-          <button class="rbtn" id="btn-play" disabled>▶</button>
-          <button class="rbtn" id="btn-next" disabled>▶|</button>
-          <select id="replay-speed" disabled>
-            <option value="600">0.5×</option>
-            <option value="300" selected>1×</option>
-            <option value="150">2×</option>
-            <option value="60">4×</option>
-          </select>
-          <button class="rbtn" id="btn-refresh" onclick="refreshCurrentMode()">⟳ Refresh</button>
+    <header>
+        <h1>{{ label }}</h1>
+        <div id="detector-statuses">
+            <!-- Status badges injected by JS -->
         </div>
-      </div>
-      <div id="replay-banner">⏮ REPLAY MODE — click any candle or drag the scrubber to seek</div>
-      <div id="chart-wrap">
+        <div id="session-badge">
+            <span class="session-dot"></span>
+            <span id="session-label">--</span>
+        </div>
+        <div id="bias-badge">
+            <span class="bias-dot"></span>
+            <span id="bias-label">--</span>
+        </div>
+        <div id="interval-bar">
+            <button class="tf-btn active" data-interval="1m">1m</button>
+            <button class="tf-btn" data-interval="5m">5m</button>
+            <button class="tf-btn" data-interval="15m">15m</button>
+            <button class="tf-btn" data-interval="30m">30m</button>
+            <button class="tf-btn" data-interval="1h">1h</button>
+        </div>
+    </header>
+
+    <div id="chart-container">
         <div id="chart"></div>
-        <div id="cursor-line"></div>
-      </div>
-      <div id="scrubber-row" style="visibility:hidden">
-        <input type="range" id="scrubber" min="0" value="0" step="1" disabled />
-        <span id="scrub-ts">—</span>
-        <span id="scrub-label">candle — / —</span>
-        <button class="rbtn" id="btn-analyze" disabled>▶ Run Detector</button>
-      </div>
     </div>
 
-    <!-- ── RIGHT: Panel (one per mode) ── -->
-    <div id="right">
+    <!-- Weekend closed overlay -->
+    <div id="weekend-overlay">
+        <div class="wk-title">⛔ Market Closed</div>
+        <div class="wk-sub" id="wk-sub">Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC</div>
+        <div class="wk-countdown" id="wk-countdown">00:00:00</div>
+        <div class="wk-hint" id="wk-hint">Resumes Monday 01:00 UTC (Asian session open)</div>
+    </div>
 
-      <!-- ① ACCUMULATION -->
-      <div id="panel-accum" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
-        <div id="right-tabs">
-          <div class="rtab active" data-tab="summary">Summary</div>
-          <div class="rtab" data-tab="windows">Windows</div>
-          <div class="rtab" data-tab="detail">Detail</div>
-        </div>
-        <div id="tab-summary" class="rtab-panel active">
-          <div class="stat-grid" id="stat-grid"></div>
-          <div class="reject-list" id="reject-list"></div>
-        </div>
-        <div id="tab-windows" class="rtab-panel">
-          <input id="window-search" placeholder="Filter: pass / fail / range / slope / adx…" />
-          <div id="window-list"></div>
-        </div>
-        <div id="tab-detail" class="rtab-panel">
-          <div id="detail-title">← click a window row</div>
-          <div id="detail-body"></div>
-        </div>
-      </div>
+    <script>
+        const PAIR_ID = "{{ pair_id }}";
+        const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
+        const TIMEZONE = "{{ timezone }}";
 
-      <!-- ② SUPPLY & DEMAND -->
-      <div id="panel-sd" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
-        <div class="panel-scroll">
-          <div id="sd-loading" class="panel-empty">Click ⟳ Refresh to load S&amp;D analysis</div>
-          <div id="sd-content" style="display:none">
-            <div class="sd-section-title">Bias (Daily + Weekly)</div>
-            <div class="bias-block" id="sd-bias-block"></div>
-            <div id="sd-bias-verdict"></div>
-            <div class="sd-section-title" style="margin-top:14px">Zone Candidates</div>
-            <div id="sd-info-bar" class="info-bar" style="display:none"></div>
-            <div id="sd-zone-list"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ③ FAIR VALUE GAP -->
-      <div id="panel-fvg" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
-        <div class="panel-scroll">
-          <div id="fvg-loading" class="panel-empty">Click ⟳ Refresh to run FVG analysis</div>
-          <div id="fvg-content" style="display:none">
-            <div class="sd-section-title">Fair Value Gap Scanner</div>
-            <div id="fvg-info-bar" class="info-bar" style="display:none"></div>
-            <div id="fvg-stats" style="margin-bottom:10px"></div>
-            <div id="fvg-list"></div>
-          </div>
-        </div>
-      </div>
-
-    </div><!-- #right -->
-  </div><!-- #main -->
-</div><!-- #layout -->
-
-<script>
-// ── Constants injected by Flask ───────────────────────────────────────────────
-const PAIR_ID  = {{ pair_id | tojson }};
-const TIMEZONE = {{ timezone | tojson }};
-const CURRENT_PORT = {{ port }};
-
-function switchPair(pairId) {
-  const isProxy = window.location.pathname.startsWith('/proxy/');
-  if (isProxy) {
-    window.location.href = window.location.origin + '/proxy/' + pairId + '/debug';
-  } else {
-    const opt = document.querySelector('#pair-switcher option[value="' + pairId + '"]');
-    const port = opt ? opt.dataset.port : null;
-    if (port) window.location.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/debug';
-  }
-}
-
-// ── Timezone helper ───────────────────────────────────────────────────────────
-function getTzOffset(tz) {
-  try {
-    const now = new Date();
-    return (new Date(now.toLocaleString('en-US',{timeZone:tz})) - new Date(now.toLocaleString('en-US',{timeZone:'UTC'}))) / 1000;
-  } catch(e) { return 0; }
-}
-const TZ_OFFSET = getTzOffset(TIMEZONE);
-function shiftTime(ts) { return ts + TZ_OFFSET; }
-function fmtTime(ts)   { return new Date((ts + TZ_OFFSET)*1000).toISOString().replace('T',' ').slice(0,16); }
-function fmtPrice(v, decimals) {
-  if (v == null) return '—';
-  const d = decimals != null ? decimals : (v > 100 ? 2 : 5);
-  return v.toFixed(d);
-}
-
-// ── App State ─────────────────────────────────────────────────────────────────
-let currentMode = 'accum';
-let currentTF   = '1m';
-let liveData    = null;
-let replayData  = null;
-let replayMode  = false;
-let replayIdx   = 0;
-let replayTimer = null;
-let selectedWindow = null;
-let overlaySeriesList = [];
-let sdData  = null;
-let fvgData = null;
-let biasData = null;
-
-// ── Chart setup ───────────────────────────────────────────────────────────────
-const chartContainer = document.getElementById('chart');
-const chart = LightweightCharts.createChart(chartContainer, {
-  layout:    { background: { color: '#131316' }, textColor: '#c8c8d8' },
-  grid:      { vertLines: { visible: false }, horzLines: { visible: false } },
-  timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#252530' },
-  crosshair: { mode: 1 },
-});
-const candleSeries = chart.addCandlestickSeries({
-  upColor:'#d4d0d0', downColor:'#068c76',
-  wickUpColor:'#d4d0d0', wickDownColor:'#068c76',
-  borderVisible: false,
-});
-window.addEventListener('resize', () => chart.applyOptions({
-  width: chartContainer.clientWidth, height: chartContainer.clientHeight,
-}));
-chart.subscribeClick(param => {
-  if (!param.time) return;
-
-  if (replayMode && liveData && currentMode === 'accum') {
-    const rawTime = param.time - TZ_OFFSET;
-    const idx = liveData.candles.findIndex(c => c.time === rawTime);
-    if (idx >= 0) seekTo(idx + 1, false);
-    return;
-  }
-
-  if (currentMode === 'sd' && sdData?.zones) {
-    const clickedTs = param.time - TZ_OFFSET;
-    const zones = sdData.zones;
-    let bestIdx  = -1;
-    let bestDist = Infinity;
-
-    zones.forEach((z, i) => {
-      const dist = Math.abs((z.start || 0) - clickedTs);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
-    });
-
-    const src = sdData.candles;
-    const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 1800;
-    if (bestIdx >= 0 && bestDist < intervalSecs * 5) {
-      selectZone(bestIdx);
-    }
-    return;
-  }
-
-  if (currentMode === 'fvg' && fvgData?.candidates) {
-    const clickedTs = param.time - TZ_OFFSET;
-    const withFvg    = fvgData.candidates.filter(c => c.has_fvg);
-    const withoutFvg = fvgData.candidates.filter(c => !c.has_fvg);
-    let bestIdx  = -1;
-    let bestDist = Infinity;
-
-    withFvg.forEach((c, i) => {
-      const dist = Math.abs((c.candle_n?.time || 0) - clickedTs);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
-    });
-    withoutFvg.forEach((c, i) => {
-      const dist = Math.abs((c.candle_n?.time || 0) - clickedTs);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i + 1000; }
-    });
-
-    const src = fvgData.candles;
-    const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
-    if (bestIdx >= 0 && bestDist < intervalSecs * 5) {
-      selectFvg(bestIdx);
-    }
-    return;
-  }
-});
-
-// ── Overlay helpers ───────────────────────────────────────────────────────────
-function clearOverlays() {
-  overlaySeriesList.forEach(s => { try { chart.removeSeries(s); } catch(e){} });
-  overlaySeriesList = [];
-}
-
-function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
-  if (top == null || bottom == null || top === bottom) return;
-
-  const toRgba = (color, alpha) => {
-    const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-    return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
-  };
-
-  const s = shiftTime(startTs), e = shiftTime(endTs);
-
-  const lOpts = {
-    lineWidth: 1, lineStyle: 0,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-  };
-
-  const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
-  tl.setData([{ time: s, value: top }, { time: e, value: top }]);
-
-  const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
-  bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
-
-  const fl = chart.addBaselineSeries({
-    baseValue: { type: 'price', price: bottom },
-    topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
-    topLineColor:     'rgba(0,0,0,0)',
-    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
-    bottomLineColor:  'rgba(0,0,0,0)',
-    lineWidth: 0,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-  });
-  fl.setData([{ time: s, value: top }, { time: e, value: top }]);
-
-  overlaySeriesList.push(tl, bl, fl);
-}
-
-function drawVLine(ts, color) {
-  const activeCandleData = (currentMode === 'fvg' && fvgData?.candles)
-    ? fvgData.candles
-    : (currentMode === 'sd' && sdData?.candles)
-    ? sdData.candles
-    : liveData?.candles;
-  if (!activeCandleData?.length) return;
-  const prices = activeCandleData.flatMap(c => [c.high, c.low]);
-  const minP = Math.min(...prices) * 0.999;
-  const maxP = Math.max(...prices) * 1.001;
-  const s = chart.addLineSeries({ color, lineWidth: 1, lineStyle: 2,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-  s.setData([{ time: shiftTime(ts), value: minP }, { time: shiftTime(ts), value: maxP }]);
-  overlaySeriesList.push(s);
-}
-
-function renderChart(candles) {
-  candleSeries.setData(candles.map(c => ({...c, time: shiftTime(c.time)})));
-  chart.timeScale().fitContent();
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// MODE + TF SWITCHING
-// ═════════════════════════════════════════════════════════════════════════════
-
-function switchMode(mode) {
-  currentMode = mode;
-  ['accum','sd','fvg'].forEach(m => {
-    document.getElementById('mode-' + m).classList.toggle('active', m === mode);
-    document.getElementById('panel-' + m).style.display = m === mode ? 'flex' : 'none';
-  });
-  const labels = { accum: 'accumulation', sd: 'supply & demand', fvg: 'fair value gap' };
-  document.getElementById('tag-mode').textContent = labels[mode];
-  clearOverlays();
-
-  const replayIds = ['btn-replay','btn-prev','btn-play','btn-next','replay-speed','btn-analyze'];
-  replayIds.forEach(id => {
-    document.getElementById(id).style.display = mode === 'accum' ? '' : 'none';
-  });
-  document.getElementById('scrubber-row').style.visibility = (mode === 'accum' && replayMode) ? 'visible' : 'hidden';
-
-  if (mode === 'accum') {
-    if (replayMode) exitReplayMode();
-    if (liveData) { renderChart(liveData.candles); updateTopbarAccum(liveData, false); }
-    else loadLiveData();
-  } else if (mode === 'sd') {
-    document.getElementById('tag-session').textContent = 'S/D MODE';
-    document.getElementById('tag-info').textContent = currentTF + ' · supply & demand';
-    if (currentTF === '1D' || currentTF === '1W') {
-      if (biasData) renderBias(biasData);
-      else loadBias(currentTF);
-    } else {
-      if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); }
-      else loadSD();
-    }
-  } else if (mode === 'fvg') {
-    document.getElementById('tag-session').textContent = 'FVG MODE';
-    document.getElementById('tag-info').textContent = currentTF + ' · fair value gap';
-    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles); renderFVG(fvgData); }
-    else loadFVG();
-  }
-}
-
-function switchTF(tf) {
-  currentTF = tf;
-  document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
-  sdData  = null;
-  fvgData = null;
-  liveData = null;
-
-  if (tf === '1D' || tf === '1W') {
-    if (currentMode !== 'sd') switchMode('sd');
-    else loadBias(tf);
-    return;
-  }
-  refreshCurrentMode();
-}
-
-function refreshCurrentMode() {
-  if (currentMode === 'accum') loadLiveData();
-  else if (currentMode === 'sd') {
-    if (currentTF === '1D' || currentTF === '1W') { biasData = null; loadBias(currentTF); }
-    else loadSD();
-  }
-  else if (currentMode === 'fvg') loadFVG();
-}
-
-function showLoading(mode) {
-  if (mode === 'sd') {
-    document.getElementById('sd-loading').textContent = 'Click ⟳ Refresh to load S&D analysis';
-    document.getElementById('sd-loading').style.display = '';
-    document.getElementById('sd-content').style.display = 'none';
-  } else if (mode === 'fvg') {
-    document.getElementById('fvg-loading').textContent = 'Click ⟳ Refresh to run FVG analysis';
-    document.getElementById('fvg-loading').style.display = '';
-    document.getElementById('fvg-content').style.display = 'none';
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ① ACCUMULATION
-// ═════════════════════════════════════════════════════════════════════════════
-
-function updateTopbarAccum(d, isReplay) {
-  document.getElementById('tag-session').textContent =
-    d.session ? d.session.replace('_',' ').toUpperCase() : 'OUT OF SESSION';
-  document.getElementById('tag-info').textContent =
-    currentTF + ' · ' + d.passed + ' / ' + d.windows_checked + ' passed';
-  document.getElementById('tag-replay').style.display = isReplay ? '' : 'none';
-}
-
-async function loadLiveData() {
-  if (replayMode) return;
-  document.getElementById('btn-replay').disabled = true;
-  try {
-    const res = await fetch('/debug/data?interval=' + currentTF);
-    liveData = await res.json();
-    if (!liveData.candles || liveData.candles.length === 0) {
-      document.getElementById('stat-grid').innerHTML =
-        '<div class="stat-card"><div class="stat-val red">' +
-        (liveData.error || 'No data available') + '</div></div>';
-      return;
-    }
-    renderChart(liveData.candles);
-    renderSummary(liveData);
-    renderWindowList(liveData.windows);
-    if (currentMode === 'accum') {
-      updateTopbarAccum(liveData, false);
-      clearOverlays();
-      if (selectedWindow == null) {
-        drawWindowOverlay(liveData.best_zone || null, liveData);
-        drawSecondaryZone(liveData.secondary_zone);
-      }
-    }
-    const sc = document.getElementById('scrubber');
-    sc.max   = liveData.candles.length - 1;
-    sc.value = liveData.candles.length - 1;
-    document.getElementById('btn-replay').disabled = false;
-  } catch(e) {
-    console.error('loadLiveData:', e);
-  }
-}
-
-let replayFetchCtrl = null;
-async function fetchReplay(idx) {
-  if (replayFetchCtrl) replayFetchCtrl.abort();
-  replayFetchCtrl = new AbortController();
-  const btn = document.getElementById('btn-analyze');
-  btn.textContent = '⏳…'; btn.disabled = true;
-  try {
-    const res = await fetch('/debug/replay?idx=' + idx, { signal: replayFetchCtrl.signal });
-    const data = await res.json();
-    if (data.error) return;
-    replayData = data;
-    renderSummary(replayData);
-    renderWindowList(replayData.windows || []);
-    updateTopbarAccum(replayData, true);
-    clearOverlays();
-    if (selectedWindow == null && replayData.best_zone) {
-      drawWindowOverlay(replayData.best_zone, replayData);
-      drawSecondaryZone(replayData.secondary_zone);
-    } else if (selectedWindow != null) {
-      const w = (replayData.windows || []).find(x => x.window === selectedWindow);
-      drawWindowOverlay(w || null, replayData);
-    } else drawWindowOverlay(null, replayData);
-  } catch(e) {
-    if (e.name !== 'AbortError') console.error('Replay fetch:', e);
-  } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
-}
-
-let _replayDisplayedCount = 0;
-
-async function seekTo(idx, isStep) {
-  const total = liveData.candles.length;
-  idx = Math.max(18, Math.min(idx, total));
-  replayIdx = idx;
-  const slice = liveData.candles.slice(0, idx);
-
-  if (isStep) {
-    const isForward = idx === _replayDisplayedCount + 1;
-    if (isForward) {
-      const curr = liveData.candles[idx - 1];
-      candleSeries.update({...curr, time: shiftTime(curr.time)});
-    } else {
-      const logicalRange = chart.timeScale().getVisibleLogicalRange();
-      candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-      if (logicalRange) chart.timeScale().setVisibleLogicalRange(logicalRange);
-    }
-  } else {
-    candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-    chart.timeScale().fitContent();
-  }
-
-  _replayDisplayedCount = idx;
-
-  const sc = document.getElementById('scrubber');
-  sc.value = idx - 1;
-  const last = slice[slice.length - 1];
-  document.getElementById('scrub-ts').textContent =
-    last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
-  document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + total;
-}
-
-function renderSummary(d) {
-  const total    = d.windows_checked || 1;
-  const passRate = Math.round((d.passed / total) * 100);
-  const stats = [
-    { label:'Candles',   val: d.idx || d.candles?.length || '—', cls:'neutral' },
-    { label:'Windows',   val: d.windows_checked,                  cls:'neutral' },
-    { label:'Passed',    val: d.passed,                           cls: d.passed > 0 ? 'green' : 'red' },
-    { label:'Pass Rate', val: passRate + '%',                     cls: passRate > 10 ? 'green' : 'yellow' },
-  ];
-  document.getElementById('stat-grid').innerHTML = stats.map(s =>
-    '<div class="stat-card"><div class="stat-label">' + s.label + '</div>' +
-    '<div class="stat-val ' + s.cls + '">' + s.val + '</div></div>'
-  ).join('');
-
-  const bo = d.breakout_candle;
-  const bHtml = bo ? (() => {
-    const isBull = bo.close > bo.open;
-    const bCol   = isBull ? 'var(--pass)' : 'var(--red)';
-    const bDir   = isBull ? '▲ BULL' : '▼ BEAR';
-
-    const passingWindows = (d.windows || []).filter(w => w.pass && w.broke_out);
-    const confirmed = passingWindows.filter(w => w.is_confirmed);
-    const impStatus = passingWindows.length === 0
-      ? 'no breakout on any passing window'
-      : confirmed.length > 0
-        ? confirmed.length + ' / ' + passingWindows.length + ' windows confirmed (impulsive)'
-        : '✗ 0 / ' + passingWindows.length + ' — not impulsive enough';
-    const impCol = confirmed.length > 0 ? 'var(--pass)' : 'var(--red)';
-
-    return '<div style="margin:10px 0;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Last Closed Candle — Breakout Check (df[-2])</div>' +
-      '<div style="background:var(--bg);border:1px solid ' + bCol + ';border-radius:3px;padding:6px 8px;margin-bottom:6px">' +
-        '<div style="font-size:10px;color:' + bCol + ';font-weight:700;margin-bottom:3px">' + bDir + '</div>' +
-        '<div style="font-size:10px">O ' + fmtPrice(bo.open) + '  C ' + fmtPrice(bo.close) + '  H ' + fmtPrice(bo.high) + '  L ' + fmtPrice(bo.low) + '</div>' +
-        '<div style="font-size:9px;color:var(--muted);margin-top:2px">body: ' + fmtPrice(Math.abs(bo.close - bo.open)) + '</div>' +
-      '</div>' +
-      '<div style="font-size:10px;color:' + impCol + '">' + impStatus + '</div>' +
-    '</div>';
-  })() : '';
-
-  document.getElementById('reject-list').innerHTML =
-    bHtml +
-    '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;margin-top:10px">Rejection Reasons</div>' +
-    (() => {
-      const reasons  = d.rejection_summary || {};
-      const sorted   = Object.entries(reasons).sort((a,b) => b[1]-a[1]);
-      const maxCnt   = sorted.length ? sorted[0][1] : 1;
-      const colorMap = { range:'#f0c45a', slope:'#5a9ef0', adx:'#f05a7e', chop:'#a070f0', touchpoints:'#f0904a', v_shape:'#666' };
-      return sorted.map(([key, cnt]) =>
-        '<div class="reject-row ' + key + '">' +
-          '<div style="display:flex;justify-content:space-between">' +
-            '<span class="reject-label">' + key + '</span>' +
-            '<span class="reject-count">' + cnt + '</span>' +
-          '</div>' +
-          '<div class="reject-bar"><div class="reject-bar-fill" style="width:' +
-            Math.round(cnt/maxCnt*100) + '%;background:' + (colorMap[key]||'#666') + '"></div></div>' +
-        '</div>'
-      ).join('');
-    })();
-}
-
-function getActiveWindows() {
-  return replayMode && replayData ? replayData.windows : (liveData?.windows || []);
-}
-
-function renderWindowList(windows, filter) {
-  filter = (filter || '').toLowerCase().trim();
-  const filtered = windows.filter(w => {
-    if (!filter) return true;
-    if (filter === 'pass') return w.pass;
-    if (filter === 'fail') return !w.pass;
-    if (filter === 'confirmed') return w.is_confirmed;
-    if (filter === 'breakout')  return w.broke_out;
-    if (filter === 'active')   return w.is_active;
-    if (filter === 'touchpoints') return w.min_touchpoints > 0 && w.touchpoints < w.min_touchpoints;
-    return (w.reject || '').toLowerCase().includes(filter);
-  });
-  document.getElementById('window-list').innerHTML = filtered.map(w => {
-    const cls   = w.pass ? 'pass-row' : 'fail-row';
-    const stCls = w.pass ? 'pass' : 'fail';
-    const label = w.pass ? '✓ pass' : (w.reject||'?').split(' ')[0];
-
-    let boTag = '';
-    if (w.pass) {
-      if (w.is_active) {
-        boTag = '<span style="font-size:9px;color:var(--yellow);margin-left:4px">● active</span>';
-      } else if (w.broke_out) {
-        const dir = w.broke_up ? '↑' : '↓';
-        if (w.is_confirmed) {
-          boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
-                  '<span style="font-size:9px;color:var(--pass);margin-left:4px">✓ confirmed</span>';
-        } else {
-          boTag = '<span style="font-size:9px;color:var(--muted);margin-left:4px">' + dir + ' broke</span>' +
-                  '<span style="font-size:9px;color:var(--red);margin-left:4px">✗ not impulsive</span>';
+        // ── Timezone offset ───────────────────────────────────────────
+        // LightweightCharts 4.x doesn't support timezone config directly.
+        // We shift timestamps by the container's UTC offset so the chart
+        // displays times in the correct local timezone.
+        function getTzOffsetSeconds(tz) {
+            try {
+                const now = new Date();
+                // Get UTC time and local time in the target timezone
+                const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
+                const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
+                const diff   = (new Date(tzStr) - new Date(utcStr)) / 1000;
+                return diff;
+            } catch(e) {
+                return 0;
+            }
         }
-      }
-    }
-
-    return '<div class="win-row ' + cls + '" data-win="' + w.window + '" onclick="selectWindow(' + w.window + ')">' +
-      '<span class="win-num">' + w.window + '</span>' +
-      '<span class="win-status ' + stCls + '">' + label + '</span>' +
-      boTag +
-      '<span class="win-chop" style="margin-left:auto">chop ' + w.chop + '</span>' +
-      (w.touchpoints != null ? '<span class="win-extra" style="color:' + (w.min_touchpoints>0&&w.touchpoints<w.min_touchpoints?'var(--red)':'var(--muted)') + '" title="touchpoints">tp ' + w.touchpoints + '</span>' : '') +
-      '</div>';
-  }).join('');
-  if (selectedWindow != null) {
-    const el = document.querySelector('[data-win="' + selectedWindow + '"]');
-    if (el) el.classList.add('selected');
-  }
-}
-
-document.getElementById('window-search').addEventListener('input', e => {
-  renderWindowList(getActiveWindows(), e.target.value);
-});
-
-function selectWindow(windowSize) {
-  selectedWindow = windowSize;
-  document.querySelectorAll('.win-row').forEach(el => el.classList.remove('selected'));
-  const el = document.querySelector('[data-win="' + windowSize + '"]');
-  if (el) el.classList.add('selected');
-  const w = getActiveWindows().find(x => x.window === windowSize);
-  if (!w) return;
-
-  document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelector('[data-tab="detail"]').classList.add('active');
-  document.getElementById('tab-detail').classList.add('active');
-
-  let titleSuffix = w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase();
-  if (w.pass && w.is_active)    titleSuffix += ' · ● ACTIVE';
-  else if (w.pass && w.broke_out) titleSuffix += w.is_confirmed ? ' · ✓ CONFIRMED' : ' · ✗ NOT IMPULSIVE';
-  document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
-
-  const rows = [
-    { key:'Range %',  val:(w.range_pct*100).toFixed(4)+'%', limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max':'no limit', pass:!w.range_limit||w.range_pct<=w.range_limit, ratio:w.range_limit?w.range_pct/w.range_limit:0.5 },
-    { key:'Slope',    val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,                      ratio:w.slope/w.slope_limit },
-    { key:'Chop',     val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                               ratio:w.chop/0.44 },
-    { key:'ADX',      val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit,            ratio:w.adx!=null?w.adx/w.adx_limit:0 },
-    { key:'ADX<10',      val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
-    { key:'Touchpoints', val:(w.touchpoints??'—')+(w.min_touchpoints>0?' / '+w.min_touchpoints+' req':''), limit: w.min_touchpoints>0?'≥'+w.min_touchpoints:'disabled', pass: w.min_touchpoints>0?(w.touchpoints>=w.min_touchpoints):null, ratio: w.min_touchpoints>0?(w.touchpoints/w.min_touchpoints):0 },
-    { key:'Top',      val:w.top,        limit:'', pass:null, ratio:0 },
-    { key:'Bottom',   val:w.bottom,     limit:'', pass:null, ratio:0 },
-  ];
-
-  const accumHtml = rows.map(r => {
-    const cls    = r.pass===null?'neutral':r.pass?'pass':'fail';
-    const barW   = Math.min(100, Math.round((r.ratio||0)*100));
-    const barCol = r.pass===null?'#444':r.pass?'var(--pass)':'var(--red)';
-    return '<div class="detail-row">' +
-        '<span class="detail-key">' + r.key + '</span>' +
-        '<div style="display:flex;align-items:center;flex:1;justify-content:flex-end;gap:6px">' +
-          (r.ratio>0?'<div class="bar-track"><div class="bar-fill" style="width:'+barW+'%;background:'+barCol+'"></div></div>':'') +
-          '<span class="detail-val ' + cls + '">' + r.val + '</span>' +
-        '</div></div>' +
-        (r.limit?'<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: '+r.limit+'</div>':'');
-  }).join('');
-
-  let breakoutHtml = '';
-  if (w.pass) {
-    const activeData = replayMode ? replayData : liveData;
-    const bo = activeData?.breakout_candle;
-
-    if (w.is_active) {
-      breakoutHtml =
-        '<div style="margin-top:10px;padding:8px 10px;background:rgba(240,196,90,0.05);border:1px solid rgba(240,196,90,0.2);border-radius:4px">' +
-          '<div style="font-size:9px;color:var(--yellow);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">● Zone Active</div>' +
-          '<div style="font-size:10px;color:var(--muted)">Last closed candle (df[-2]) is still inside the box. Waiting for breakout.</div>' +
-        '</div>';
-    } else if (w.broke_out) {
-      const dir    = w.broke_up ? '↑ BULLISH BREAKOUT' : '↓ BEARISH BREAKOUT';
-      const dirCol = w.broke_up ? 'var(--pass)' : 'var(--red)';
-      const impCol = w.is_confirmed ? 'var(--pass)' : 'var(--red)';
-      const impTxt = w.is_confirmed ? '✓ CONFIRMED — IMPULSIVE' : '✗ NOT CONFIRMED — NOT IMPULSIVE';
-      const impSub = w.is_confirmed
-        ? 'Body ' + fmtPrice(Math.abs(bo ? bo.close - bo.open : 0)) + ' vs avg window body ' + fmtPrice(w.avg_body) + ' (ratio ' + (w.impulse_ratio ?? '—') + '×)'
-        : 'Breakout body (' + fmtPrice(Math.abs(bo ? bo.close - bo.open : 0)) + ') ≤ avg window body (' + fmtPrice(w.avg_body) + ') — not impulsive';
-
-      breakoutHtml =
-        '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-2])</div>' +
-          '<div style="font-size:10px;color:' + dirCol + ';font-weight:700;margin-bottom:6px">' + dir + '</div>' +
-          '<div style="background:var(--bg);border:1px solid ' + dirCol + ';border-radius:3px;padding:5px 8px;margin-bottom:8px">' +
-            '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">O ' + (bo ? fmtPrice(bo.open) : '—') +
-              '  C ' + (bo ? fmtPrice(bo.close) : '—') + '  H ' + (bo ? fmtPrice(bo.high) : '—') + '  L ' + (bo ? fmtPrice(bo.low) : '—') + '</div>' +
-            '<div style="font-size:9px;color:var(--muted)">body: ' + (bo ? fmtPrice(Math.abs(bo.close - bo.open)) : '—') + '</div>' +
-          '</div>' +
-          '<div style="padding:5px 8px;border-radius:3px;border:1px solid ' + impCol + ';background:rgba(0,0,0,0.2)">' +
-            '<div style="font-size:10px;color:' + impCol + ';font-weight:700;margin-bottom:2px">' + impTxt + '</div>' +
-            '<div style="font-size:9px;color:var(--muted)">' + impSub + '</div>' +
-          '</div>' +
-        '</div>';
-    }
-  }
-
-  document.getElementById('detail-body').innerHTML = accumHtml + breakoutHtml;
-
-  const activeData = replayMode ? replayData : liveData;
-  drawWindowOverlay(w, activeData);
-}
-
-function drawSecondaryZone(z) {
-  if (!z || z.top == null || z.bottom == null) return;
-  const endTs = z.end || z.start;
-  drawBox(z.start_ts || z.start, z.end_ts || endTs, z.top, z.bottom, 'rgba(240,180,60,0.55)', 0.04);
-}
-
-function drawWindowOverlay(w, data) {
-  clearOverlays();
-  if (!w?.start_ts) return;
-
-  const col  = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
-  const fill = w.pass ? 0.06 : 0.04;
-  drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
-
-  if (!w.broke_out || !data) return;
-  const bo = data.breakout_candle;
-  if (!bo) return;
-
-  const src = data.candles;
-  const intervalSecs = (src?.length > 1) ? (src[1].time - src[0].time) : 60;
-
-  drawVLine(bo.time, w.is_confirmed ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.5)');
-
-  const bCol = w.is_confirmed
-    ? 'rgba(90,240,196,0.8)'
-    : 'rgba(240,90,126,0.6)';
-  drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.15);
-}
-
-// Replay
-function enterReplayMode() {
-  replayMode = true; selectedWindow = null;
-  const total = liveData.candles.length;
-  replayIdx = total;
-  _replayDisplayedCount = total;
-  document.getElementById('btn-live').classList.remove('active');
-  document.getElementById('btn-replay').classList.add('active');
-  ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = false);
-  document.getElementById('replay-speed').disabled = false;
-  document.getElementById('scrubber').disabled   = false;
-  document.getElementById('btn-analyze').disabled = false;
-  document.getElementById('scrubber').max = total - 1;
-  document.getElementById('scrubber').value = total - 1;
-  document.getElementById('replay-banner').style.display = '';
-  const scrubRow = document.getElementById('scrubber-row');
-  scrubRow.style.visibility = 'visible';
-  const last = liveData.candles[total - 1];
-  document.getElementById('scrub-ts').textContent =
-    last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
-  document.getElementById('scrub-label').textContent = 'candle ' + total + ' / ' + total;
-}
-
-function exitReplayMode() {
-  stopPlay(); replayMode = false; replayData = null; selectedWindow = null;
-  _replayDisplayedCount = 0;
-  document.getElementById('btn-live').classList.add('active');
-  document.getElementById('btn-replay').classList.remove('active');
-  ['btn-prev','btn-play','btn-next'].forEach(id => document.getElementById(id).disabled = true);
-  document.getElementById('replay-speed').disabled = true;
-  document.getElementById('scrubber').disabled     = true;
-  document.getElementById('btn-analyze').disabled  = true;
-  document.getElementById('replay-banner').style.display = 'none';
-  document.getElementById('scrubber-row').style.visibility = 'hidden';
-  document.getElementById('tag-replay').style.display    = 'none';
-  clearOverlays();
-  renderChart(liveData.candles);
-  renderSummary(liveData);
-  renderWindowList(liveData.windows);
-  updateTopbarAccum(liveData, false);
-  const sc = document.getElementById('scrubber');
-  sc.value = liveData.candles.length - 1;
-  document.getElementById('scrub-label').textContent = 'candle — / —';
-  document.getElementById('scrub-ts').textContent    = '—';
-}
-
-function startPlay() {
-  const speed = parseInt(document.getElementById('replay-speed').value);
-  document.getElementById('btn-play').textContent = '⏸';
-  replayTimer = setInterval(async () => {
-    if (replayIdx >= liveData.candles.length) { stopPlay(); return; }
-    replayIdx++;
-    await seekTo(replayIdx, true);
-  }, speed);
-}
-function stopPlay() {
-  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
-  document.getElementById('btn-play').textContent = '▶';
-}
-
-document.getElementById('btn-live').addEventListener('click', exitReplayMode);
-document.getElementById('btn-replay').addEventListener('click', () => { if(!replayMode && liveData) enterReplayMode(); });
-document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
-document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, true); });
-document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
-document.getElementById('btn-analyze').addEventListener('click', () => { if(replayMode) fetchReplay(replayIdx); });
-document.getElementById('scrubber').addEventListener('input', function() {
-  if (!replayMode) return;
-  stopPlay();
-  const idx = parseInt(this.value) + 1;
-  const slice = liveData.candles.slice(0, idx);
-  candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-  const last = slice[slice.length-1];
-  document.getElementById('scrub-ts').textContent = last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
-  document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + liveData.candles.length;
-  replayIdx = idx;
-  clearOverlays();
-});
-document.querySelectorAll('.rtab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.rtab-panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ② SUPPLY & DEMAND
-// ═════════════════════════════════════════════════════════════════════════════
-
-async function loadSD() {
-  document.getElementById('sd-loading').textContent = '⟳ Loading S&D analysis (' + currentTF + ')…';
-  document.getElementById('sd-loading').style.display = '';
-  document.getElementById('sd-content').style.display = 'none';
-  try {
-    const res = await fetch('/debug/sd?interval=' + currentTF);
-    sdData = await res.json();
-    if (sdData.error) {
-      document.getElementById('sd-loading').textContent = '✗ Error: ' + sdData.error;
-      return;
-    }
-    if (sdData.candles?.length) renderChart(sdData.candles);
-    renderSD(sdData);
-  } catch(e) {
-    document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
-  }
-}
-
-async function loadBias(tf) {
-  document.getElementById('sd-loading').textContent = '⟳ Loading bias candles…';
-  document.getElementById('sd-loading').style.display = '';
-  document.getElementById('sd-content').style.display = 'none';
-  try {
-    const res = await fetch('/debug/sd/bias');
-    biasData = await res.json();
-    if (biasData.error) {
-      document.getElementById('sd-loading').textContent = '✗ Error: ' + biasData.error;
-      return;
-    }
-    renderBias(tf || currentTF);
-  } catch(e) {
-    document.getElementById('sd-loading').textContent = '✗ Fetch failed: ' + e.message;
-  }
-}
-
-function renderBias(tf) {
-  if (!biasData) return;
-  document.getElementById('sd-loading').style.display = 'none';
-  document.getElementById('sd-content').style.display = '';
-
-  const candles = tf === '1W' ? biasData.weekly_candles : biasData.daily_candles;
-  const label   = tf === '1W' ? 'Weekly' : 'Daily';
-
-  if (!candles || !candles.length) {
-    document.getElementById('sd-loading').textContent = '✗ No ' + label + ' candles returned';
-    document.getElementById('sd-loading').style.display = '';
-    document.getElementById('sd-content').style.display = 'none';
-    return;
-  }
-
-  renderChart(candles);
-  clearOverlays();
-
-  const biasCandle = candles.find(c => c.bias_candle);
-  if (biasCandle) {
-    const isBull = biasCandle.close > biasCandle.open;
-    const col    = isBull ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.7)';
-    const barSecs = tf === '1W' ? 604800 : 86400;
-    drawBox(biasCandle.time, biasCandle.time + barSecs, biasCandle.high, biasCandle.low, col, 0.12);
-  }
-
-  document.getElementById('tag-session').textContent = label.toUpperCase() + ' BIAS';
-  document.getElementById('tag-info').textContent    = label + ' · ' + candles.length + ' candles';
-
-  document.getElementById('sd-info-bar').style.display = '';
-  document.getElementById('sd-info-bar').innerHTML =
-    'Viewing: <strong>' + label + ' candles</strong>' +
-    ' &nbsp;·&nbsp; Highlighted candle = bias source (df[-2])' +
-    ' &nbsp;·&nbsp; ' + candles.length + ' candles total';
-
-  const bc = biasCandle;
-  const isBull = bc ? bc.close > bc.open : null;
-  const bCls   = isBull === null ? 'misaligned' : isBull ? 'bullish' : 'bearish';
-  const bIcon  = isBull === null ? '⚡' : isBull ? '↑' : '↓';
-  const bLabel = isBull === null ? 'No data' : isBull ? 'Bullish' : 'Bearish';
-  document.getElementById('sd-bias-block').innerHTML =
-    '<div class="bias-cell">' +
-      '<div class="bias-cell-label">' + label + ' Bias Candle</div>' +
-      '<div class="bias-cell-val ' + bCls + '">' + bIcon + ' ' + bLabel + '</div>' +
-      (bc ? '<div style="font-size:9px;color:var(--muted);margin-top:3px">O ' + fmtPrice(bc.open) + ' → C ' + fmtPrice(bc.close) + '</div>' : '') +
-    '</div>';
-  document.getElementById('sd-bias-verdict').innerHTML = '';
-
-  const rows = [...candles].reverse().map((c, i) => {
-    const isBullC = c.close > c.open;
-    const col     = isBullC ? 'var(--pass)' : 'var(--red)';
-    const dir     = isBullC ? '▲' : '▼';
-    const highlight = c.bias_candle ? 'background:rgba(200,168,75,0.08);border-left:2px solid #c8a84b;' : '';
-    const tag       = c.bias_candle ? ' <span style="font-size:9px;color:#c8a84b;margin-left:4px">← bias</span>' : '';
-    return '<div style="padding:5px 8px;' + highlight + 'border-bottom:1px solid var(--border);font-size:10px">' +
-      '<span style="color:var(--muted);margin-right:8px">' + fmtTime(c.time) + '</span>' +
-      '<span style="color:' + col + ';margin-right:6px">' + dir + '</span>' +
-      'O ' + fmtPrice(c.open) + '  C ' + fmtPrice(c.close) +
-      '  H ' + fmtPrice(c.high) + '  L ' + fmtPrice(c.low) +
-      tag +
-    '</div>';
-  }).join('');
-
-  document.getElementById('sd-zone-list').innerHTML =
-    '<div class="section-header"><span>' + label + ' Candles</span><span class="section-count">' + candles.length + '</span></div>' +
-    rows;
-}
-
-function renderSD(data) {
-  document.getElementById('sd-loading').style.display  = 'none';
-  document.getElementById('sd-content').style.display  = '';
-
-  document.getElementById('tag-session').textContent = 'S/D ANALYSIS';
-  const bias = data.bias || {};
-
-  // ── FIX: server returns active zones in data.zones ──
-  const zones = data.zones || [];
-  const activeCount = zones.length;
-
-  document.getElementById('tag-info').textContent =
-    currentTF + ' · bias: ' + (bias.bias||'—') + ' · ' + activeCount + ' active zones';
-
-  // Info bar
-  const infoBar = document.getElementById('sd-info-bar');
-  infoBar.style.display = '';
-  infoBar.innerHTML = 'Timeframe: <strong>' + currentTF + '</strong>' +
-    ' &nbsp;·&nbsp; Avg body: <strong>' + fmtPrice(data.avg_body) + '</strong>' +
-    ' &nbsp;·&nbsp; Looking for: <strong>' + (data.look_for || 'none (bias misaligned)') + '</strong>';
-
-  // Bias block
-  const bIcon = b => b==='bullish'?'↑':b==='bearish'?'↓':'⚡';
-  const bCls  = b => b==='bullish'?'bullish':b==='bearish'?'bearish':'misaligned';
-  document.getElementById('sd-bias-block').innerHTML =
-    '<div class="bias-cell">' +
-      '<div class="bias-cell-label">Daily</div>' +
-      '<div class="bias-cell-val ' + bCls(bias.daily_bias) + '">' + bIcon(bias.daily_bias) + ' ' + (bias.daily_bias||'—') + '</div>' +
-      '<div style="font-size:9px;color:var(--muted);margin-top:3px">O ' + fmtPrice(bias.daily_open) + ' → C ' + fmtPrice(bias.daily_close) + '</div>' +
-    '</div>' +
-    '<div class="bias-cell">' +
-      '<div class="bias-cell-label">Weekly</div>' +
-      '<div class="bias-cell-val ' + bCls(bias.weekly_bias) + '">' + bIcon(bias.weekly_bias) + ' ' + (bias.weekly_bias||'—') + '</div>' +
-      '<div style="font-size:9px;color:var(--muted);margin-top:3px">O ' + fmtPrice(bias.weekly_open) + ' → C ' + fmtPrice(bias.weekly_close) + '</div>' +
-    '</div>';
-
-  const verdictEl = document.getElementById('sd-bias-verdict');
-  if (bias.bias === 'misaligned') {
-    verdictEl.innerHTML = '<div style="padding:6px 10px;background:rgba(240,90,126,0.07);border:1px solid rgba(240,90,126,0.2);border-radius:3px;font-size:10px;color:var(--red);margin-bottom:8px">✗ Bias misaligned — no zones detected</div>';
-  } else {
-    const col = bias.bias==='bullish'?'var(--pass)':'var(--red)';
-    verdictEl.innerHTML = '<div style="padding:6px 10px;background:rgba(90,240,196,0.05);border:1px solid rgba(90,240,196,0.15);border-radius:3px;font-size:10px;color:' + col + ';margin-bottom:8px">✓ Aligned ' + bias.bias + ' — scanning for <strong>' + (data.look_for||'').toUpperCase() + '</strong></div>';
-  }
-
-  if (!zones.length) {
-    document.getElementById('sd-zone-list').innerHTML = '<div class="panel-empty">No active zones found</div>';
-    clearOverlays();
-    return;
-  }
-
-  document.getElementById('sd-zone-list').innerHTML =
-    '<div class="section-header"><span>Active Zones</span><span class="section-count">' + zones.length + '</span></div>' +
-    zones.map((z, i) => renderZoneRow(z, i)).join('');
-
-  // Draw active zones on chart
-  clearOverlays();
-  zones.forEach(z => {
-    const col = z.type==='demand' ? 'rgba(90,158,240,0.7)' : 'rgba(240,90,126,0.7)';
-    drawBox(z.start, z.end, z.top, z.bottom, col, 0.07);
-  });
-}
-
-function renderZoneRow(z, idx) {
-  const rowClass  = (z.type || 'supply') + '-row';
-  const badgeCls  = z.type || 'supply';
-  const badgeTxt  = (z.type || '?').toUpperCase();
-  const timeStr   = z.start ? fmtTime(z.start) : '—';
-  return '<div class="zone-row ' + rowClass + '" id="zone-row-' + idx + '" onclick="selectZone(' + idx + ')">' +
-    '<div class="zone-top-row">' +
-      '<span class="zone-type-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
-      '<span class="zone-time">' + timeStr + '</span>' +
-    '</div>' +
-    '<div class="zone-range">' + fmtPrice(z.bottom) + ' – ' + fmtPrice(z.top) + '</div>' +
-    (z.session ? '<div style="font-size:9px;color:var(--muted);margin-top:2px">session: ' + z.session + '</div>' : '') +
-  '</div>';
-}
-
-function selectZone(idx) {
-  document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
-  const el = document.getElementById('zone-row-' + idx);
-  if (el) {
-    el.classList.add('selected-zone');
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-
-  const zones = sdData?.zones || [];
-  const z = zones[idx];
-  if (!z) return;
-
-  clearOverlays();
-
-  // Redraw all zones dimmed
-  zones.forEach(az => {
-    const col = az.type==='demand' ? 'rgba(90,158,240,0.25)' : 'rgba(240,90,126,0.25)';
-    drawBox(az.start, az.end, az.top, az.bottom, col, 0.03);
-  });
-
-  // Highlight selected
-  const selCol = z.type==='demand' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-  drawBox(z.start, z.end, z.top, z.bottom, selCol, 0.15);
-
-  if (z.start) drawVLine(z.start, 'rgba(240,196,90,0.6)');
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ③ FAIR VALUE GAP
-// ═════════════════════════════════════════════════════════════════════════════
-
-async function loadFVG() {
-  document.getElementById('fvg-loading').textContent = '⟳ Scanning for FVG patterns (' + currentTF + ')…';
-  document.getElementById('fvg-loading').style.display = '';
-  document.getElementById('fvg-content').style.display = 'none';
-  try {
-    const res = await fetch('/debug/fvg?interval=' + currentTF);
-    fvgData = await res.json();
-    if (fvgData.error) {
-      document.getElementById('fvg-loading').textContent = '✗ Error: ' + fvgData.error;
-      return;
-    }
-    if (fvgData.candles?.length) renderChart(fvgData.candles);
-    renderFVG(fvgData);
-  } catch(e) {
-    document.getElementById('fvg-loading').textContent = '✗ Fetch failed: ' + e.message;
-  }
-}
-
-function renderFVG(data) {
-  document.getElementById('fvg-loading').style.display = 'none';
-  document.getElementById('fvg-content').style.display = '';
-
-  const minGap    = data.min_gap_pct      || 0.0001;
-  const impBody   = data.impulse_body_pct || 0.60;
-
-  document.getElementById('tag-session').textContent = 'FVG ANALYSIS';
-  document.getElementById('tag-info').textContent =
-    currentTF + ' · ' + (data.passed||0) + ' FVGs / ' + (data.total||0) + ' scanned';
-
-  const infoBar = document.getElementById('fvg-info-bar');
-  infoBar.style.display = '';
-  infoBar.innerHTML =
-    'Min gap: <strong>' + (minGap*100).toFixed(3) + '%</strong>' +
-    ' &nbsp;·&nbsp; Min body: <strong>' + (impBody*100).toFixed(0) + '%</strong>' +
-    ' &nbsp;·&nbsp; Direction must match impulse';
-
-  document.getElementById('fvg-stats').innerHTML =
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">' +
-      [
-        {l:'Scanned', v:data.total||0,   c:'neutral'},
-        {l:'FVG ✓',   v:data.passed||0,  c:(data.passed||0)>0?'green':'red'},
-        {l:'Bullish', v:data.bullish||0, c:'neutral'},
-        {l:'Bearish', v:data.bearish||0, c:'neutral'},
-      ].map(s => '<div class="stat-card"><div class="stat-label">' + s.l + '</div><div class="stat-val sm ' + s.c + '">' + s.v + '</div></div>').join('') +
-    '</div>';
-
-  const candidates = data.candidates || [];
-  if (!candidates.length) {
-    document.getElementById('fvg-list').innerHTML = '<div class="panel-empty">No candidates found</div>';
-    return;
-  }
-
-  const withFvg    = candidates.filter(c => c.has_fvg);
-  const withoutFvg = candidates.filter(c => !c.has_fvg);
-
-  document.getElementById('fvg-list').innerHTML =
-    '<div class="section-header" style="margin-top:10px">' +
-      '<span>FVG Confirmed</span><span class="section-count">' + withFvg.length + '</span>' +
-    '</div>' +
-    withFvg.map((c,i) => renderFvgRow(c, i)).join('') +
-    '<div class="section-header" style="margin-top:12px">' +
-      '<span>Rejected</span><span class="section-count">' + withoutFvg.length + '</span>' +
-    '</div>' +
-    withoutFvg.slice(0, 40).map((c,i) => renderFvgRow(c, i + 1000)).join('') +
-    (withoutFvg.length > 40 ? '<div class="panel-empty" style="font-size:9px">… ' + (withoutFvg.length-40) + ' more</div>' : '');
-
-  clearOverlays();
-  withFvg.forEach(c => {
-    if (c.gap_top == null) return;
-    const col = c.fvg_type==='bullish' ? 'rgba(90,158,240,0.6)' : 'rgba(240,90,126,0.6)';
-    const ss = c.candle_nm1?.time || c.candle_n?.time;
-    const se = c.candle_np1 ? c.candle_np1.time + 60 : (c.candle_n?.time || 0) + 180;
-    if (ss && se) drawBox(ss, se, c.gap_top, c.gap_bottom, col, 0.15);
-  });
-}
-
-function renderFvgRow(c, idx) {
-  const hasFvg   = c.has_fvg;
-  const rowCls   = hasFvg ? 'pass-fvg' : 'fail-fvg';
-  const badgeCls = c.fvg_type || 'no-fvg';
-  const badgeTxt = hasFvg ? (c.fvg_type||'FVG').toUpperCase() : 'NO FVG';
-  const timeStr  = c.candle_n?.time ? fmtTime(c.candle_n.time) : '—';
-  const impCol   = (c.body_ratio||0) >= 0.6 ? 'var(--pass)' : 'var(--muted)';
-  const borderCol = hasFvg
-    ? (c.fvg_type==='bullish' ? 'rgba(90,158,240,0.4)' : 'rgba(240,90,126,0.4)')
-    : 'var(--border)';
-
-  const gapHtml = hasFvg
-    ? '<div class="fvg-gap-line gap-exists">gap: ' + fmtPrice(c.gap_bottom) + ' → ' + fmtPrice(c.gap_top) + ' <span style="color:var(--muted)">(' + ((c.gap_pct||0)*100).toFixed(4) + '%)</span></div>'
-    : '<div class="fvg-gap-line gap-missing">✗ ' + (c.reject_reason||'no gap') + '</div>';
-
-  return '<div class="fvg-row ' + rowCls + '" id="fvg-row-' + idx + '" onclick="selectFvg(' + idx + ')">' +
-    '<div class="fvg-top-row">' +
-      '<span class="fvg-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
-      '<span class="zone-time">' + timeStr + '</span>' +
-    '</div>' +
-    gapHtml +
-    '<div class="fvg-detail-grid">' +
-      '<div class="fvg-candle-cell">' +
-        '<div class="fvg-candle-label">N-1 (prev)</div>' +
-        '<div class="fvg-candle-hl">H ' + fmtPrice(c.candle_nm1?.high) + '</div>' +
-        '<div class="fvg-candle-hl">L ' + fmtPrice(c.candle_nm1?.low)  + '</div>' +
-      '</div>' +
-      '<div class="fvg-candle-cell" style="border-color:' + borderCol + '">' +
-        '<div class="fvg-candle-label">N (impulse)</div>' +
-        '<div class="fvg-candle-hl">H ' + fmtPrice(c.candle_n?.high) + '</div>' +
-        '<div class="fvg-candle-hl">L ' + fmtPrice(c.candle_n?.low)  + '</div>' +
-        '<div class="fvg-candle-hl" style="color:' + impCol + ';font-size:8px">body ' + ((c.body_ratio||0)*100).toFixed(0) + '%</div>' +
-      '</div>' +
-      '<div class="fvg-candle-cell">' +
-        '<div class="fvg-candle-label">N+1 (after)</div>' +
-        '<div class="fvg-candle-hl">H ' + fmtPrice(c.candle_np1?.high) + '</div>' +
-        '<div class="fvg-candle-hl">L ' + fmtPrice(c.candle_np1?.low)  + '</div>' +
-      '</div>' +
-    '</div>' +
-  '</div>';
-}
-
-function selectFvg(idx) {
-  document.querySelectorAll('.fvg-row').forEach(r => r.classList.remove('selected-fvg'));
-  const el = document.getElementById('fvg-row-' + idx);
-  if (el) {
-    el.classList.add('selected-fvg');
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-
-  if (!fvgData?.candidates) return;
-  const withFvg    = fvgData.candidates.filter(c => c.has_fvg);
-  const withoutFvg = fvgData.candidates.filter(c => !c.has_fvg);
-  const c = idx < 1000 ? withFvg[idx] : withoutFvg[idx - 1000];
-  if (!c?.candle_n) return;
-
-  clearOverlays();
-
-  withFvg.forEach(x => {
-    if (!x.gap_top) return;
-    const col = x.fvg_type==='bullish' ? 'rgba(90,158,240,0.12)' : 'rgba(240,90,126,0.12)';
-    const ss  = x.candle_nm1?.time || x.candle_n.time;
-    const se  = x.candle_np1 ? x.candle_np1.time + 60 : x.candle_n.time + 180;
-    drawBox(ss, se, x.gap_top, x.gap_bottom, col, 0.04);
-  });
-
-  const tn   = c.candle_n.time;
-  const tnm1 = c.candle_nm1?.time;
-  const tnp1 = c.candle_np1?.time;
-
-  if (tnm1) drawVLine(tnm1, 'rgba(240,196,90,0.3)');
-  drawVLine(tn,  'rgba(240,196,90,0.7)');
-  if (tnp1) drawVLine(tnp1, 'rgba(240,196,90,0.3)');
-
-  const colBright = c.fvg_type==='bullish' ? 'rgba(90,158,240,0.8)'
-                  : c.fvg_type==='bearish' ? 'rgba(240,90,126,0.8)'
-                  : 'rgba(180,180,180,0.6)';
-  drawBox(tn, tn + 60, c.candle_n.high, c.candle_n.low, colBright, 0.12);
-
-  if (c.has_fvg && c.gap_top != null) {
-    const gapCol  = c.fvg_type==='bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-    const spanS   = tnm1 || tn - 60;
-    const spanE   = tnp1 ? tnp1 + 60 : tn + 180;
-    drawBox(spanS, spanE, c.gap_top, c.gap_bottom, gapCol, 0.30);
-  } else {
-    const nm1H = c.candle_nm1?.high, nm1L = c.candle_nm1?.low;
-    const np1H = c.candle_np1?.high, np1L = c.candle_np1?.low;
-    if (nm1H && tnm1) drawBox(tnm1, tnm1 + 30, nm1H, nm1L, 'rgba(240,196,90,0.5)', 0.08);
-    if (np1H && tnp1) drawBox(tnp1, tnp1 + 30, np1H, np1L, 'rgba(240,196,90,0.5)', 0.08);
-  }
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-loadLiveData();
-setInterval(() => { if (!replayMode && currentMode === 'accum') loadLiveData(); }, 30000);
-</script>
+        const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
+
+        function shiftTime(ts) {
+            return ts + TZ_OFFSET;
+        }
+        let currentInterval = "{{ default_interval }}";
+
+        // ── Session clock ─────────────────────────────────────────────
+        // Sessions are defined in UTC — same for everyone worldwide.
+        // The browser converts UTC start times to local time for the countdown.
+        const SESSION_LABELS = {
+            asian:    'Asian',
+            london:   'London',
+            new_york: 'New York',
+        };
+
+        // Session windows in UTC hours
+        // Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
+        // London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
+        // New York: 13:00 – 19:00 UTC  (15:00 – 20:00 CET)
+        const SESSION_WINDOWS_UTC = [
+            { name: 'asian',    start: 1,  end: 7  },
+            { name: 'london',   start: 8,  end: 12 },
+            { name: 'new_york', start: 13, end: 19 },
+        ];
+
+        function getCurrentSession() {
+            const hour = new Date().getUTCHours();
+            for (const s of SESSION_WINDOWS_UTC) {
+                if (hour >= s.start && hour < s.end) return s.name;
+            }
+            return null;
+        }
+
+        function getNextSession() {
+            const now     = new Date();
+            const utcHour = now.getUTCHours();
+            // Find next session start in UTC
+            let next = SESSION_WINDOWS_UTC.find(s => s.start > utcHour);
+            if (!next) next = SESSION_WINDOWS_UTC[0];  // wrap to tomorrow
+            // Build a Date for the next session start in UTC
+            const target = new Date(now);
+            target.setUTCHours(next.start, 0, 0, 0);
+            if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
+            const diffMs = target - now;
+            const diffH  = Math.floor(diffMs / 3600000);
+            const diffM  = Math.floor((diffMs % 3600000) / 60000);
+            const diffS  = Math.floor((diffMs % 60000) / 1000);
+            const pad    = n => String(n).padStart(2, '0');
+            return {
+                name:      next.name,
+                countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}`,
+            };
+        }
+
+        function updateSessionBadge() {
+            const session = getCurrentSession();
+            const badge   = document.getElementById('session-badge');
+            if (session) {
+                badge.className = session;
+                document.getElementById('session-label').textContent = SESSION_LABELS[session] + ' Session';
+            } else {
+                const next = getNextSession();
+                badge.className = 'inactive';
+                document.getElementById('session-label').textContent =
+                    SESSION_LABELS[next.name] + ' opens in ' + next.countdown;
+            }
+        }
+
+        updateSessionBadge();
+        setInterval(updateSessionBadge, 1000);
+
+        // ── Interval buttons ─────────────────────────────────────────
+        // Activate correct button on page load
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            if (btn.dataset.interval === currentInterval) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentInterval = btn.dataset.interval;
+                loadData();
+            });
+        });
+
+        // ── Chart Setup ──────────────────────────────────────────────
+        const container = document.getElementById('chart');
+        const chart = LightweightCharts.createChart(container, {
+            layout: { background: { color: '#1e1e1f' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+            timeScale: { timeVisible: true, borderColor: '#2B2B43' },
+        });
+
+        // Price axis precision: forex pairs need 5 decimal places,
+        // gold needs 2, index futures need 0.
+        function getPriceFormat(pairId) {
+            const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
+            if (forex5.includes(pairId))     return { type: 'price', precision: 5, minMove: 0.00001 };
+            if (pairId === 'XAUUSD')         return { type: 'price', precision: 2, minMove: 0.01   };
+            if (pairId === 'BTCUSD')         return { type: 'price', precision: 0, minMove: 1       };
+            /* US30, US100, other futures */ return { type: 'price', precision: 0, minMove: 1       };
+        }
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor:       '#d4d0d0',
+            downColor:     '#068c76',
+            wickUpColor:   '#d4d0d0',
+            wickDownColor: '#068c76',
+            borderVisible: false,
+            wickVisible:   true,
+            priceFormat:   getPriceFormat(PAIR_ID),
+        });
+
+        // ── Status Badge helpers ──────────────────────────────────────
+        const statusContainer = document.getElementById('detector-statuses');
+        const statusEls = {};
+
+        const STATUS_CONFIG = {
+            // accumulation
+            looking:              { label: 'Looking for accumulation',         css: 'state-looking'   },
+            potential:            { label: 'Potential accumulation forming',    css: 'state-potential' },
+            active:               { label: 'Accumulation forming',              css: 'state-potential' },
+            found:                { label: 'Accumulation found',                css: 'state-found'     },
+            confirmed:            { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
+            cooldown:             { label: 'Cooldown — resuming in …',          css: 'state-cooldown'  },
+            out_of_session:       { label: 'Out of session',                    css: 'state-offline'   },
+            open_not_in_session:  { label: 'Open — not in session',             css: 'state-looking'   },
+            weekend_closed:       { label: 'Market closed — weekend',           css: 'state-offline'   },
+            // supply_demand
+            sd_found:        { label: 'Supply/Demand zones found',         css: 'state-found'    },
+            sd_none:         { label: 'No S/D zones found',                css: 'state-looking'  },
+            sd_misaligned:   { label: 'Bias misaligned — not looking',     css: 'state-offline'  },
+            sd_bullish:      { label: 'Bias bullish — seeking demand',     css: 'state-found'    },
+            sd_bearish:      { label: 'Bias bearish — seeking supply',     css: 'state-found'    },
+            sd_weekend:      { label: 'Market closed — weekend',           css: 'state-offline'  },
+        };
+
+        // ── Weekend check (client-side) ───────────────────────────────
+        function isWeekendHalt() {
+            if (ALWAYS_OPEN) return false;   // 24/7 markets (e.g. Bitcoin) — never halt
+            const now = new Date();
+            const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Fri,6=Sat
+            const hour = now.getUTCHours();
+            if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
+            if (dow === 6) return true;                  // All Saturday
+            if (dow === 0 && hour < 22) return true;     // Sun < 22:00
+            return false;
+        }
+
+        function getWeekendCountdown() {
+            // Returns countdown string to Sunday 22:00 UTC (earliest market reopen)
+            const now = new Date();
+            const target = new Date(now);
+            const dow = now.getUTCDay();
+            // Find next Sunday 22:00 UTC
+            let daysUntilSun = (0 - dow + 7) % 7;
+            if (daysUntilSun === 0 && now.getUTCHours() >= 22) daysUntilSun = 7; // already past Sun 22:00
+            target.setUTCDate(target.getUTCDate() + daysUntilSun);
+            target.setUTCHours(22, 0, 0, 0);
+            const diff = target - now;
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+
+        function ensureStatusEl(detectorName) {
+            if (statusEls[detectorName]) return statusEls[detectorName];
+            const el = document.createElement('div');
+            el.className = 'detector-status state-looking';
+            el.innerHTML = `<span class="indicator"></span><span class="label-text"></span>`;
+            statusContainer.appendChild(el);
+            statusEls[detectorName] = el;
+            return el;
+        }
+
+        function setStatus(detectorName, state) {
+            const el = ensureStatusEl(detectorName);
+            const cfg = STATUS_CONFIG[state] || STATUS_CONFIG.looking;
+            el.className = `detector-status ${cfg.css}`;
+            el.querySelector('.label-text').textContent = cfg.label;
+        }
+
+        // ── Detector Overlay Renderers ────────────────────────────────
+        const detectorRenderers = {
+            accumulation: renderAccumulation,
+            supply_demand: renderSupplyDemand,
+        };
+
+        const activeSeries = {};
+
+        function renderAccumulation(chart, zone) {
+            const isFound    = zone.status === 'found' || zone.status === 'confirmed';
+            const isCooldown = zone.status === 'cooldown';
+            // Don't render if status is looking/potential without valid zone coords
+            if (!zone.top || !zone.bottom || !zone.start) return [];
+
+            const allSeries = [];
+
+            // ── Accumulation box ─────────────────────────────────────────────
+            // Normal found/active: grey outline
+            // Cooldown: amber outline + subtle amber fill to signal paused state
+            let lineAlpha, lineColor, lineStyle;
+            if (isCooldown) {
+                lineAlpha = 0.60;
+                lineColor = `rgba(212, 160, 23, ${lineAlpha})`;
+                lineStyle = 1;  // dashed
+            } else {
+                lineAlpha = isFound ? 0.55 : 0.28;
+                lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
+                lineStyle = isFound ? 0 : 2;
+            }
+            const seriesOpts = { color: lineColor, lineWidth: 1, lineStyle,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
+            const topLine = chart.addLineSeries(seriesOpts);
+            topLine.setData([
+                { time: shiftTime(zone.start), value: zone.top },
+                { time: shiftTime(zone.end),   value: zone.top },
+            ]);
+            const bottomLine = chart.addLineSeries(seriesOpts);
+            bottomLine.setData([
+                { time: shiftTime(zone.start), value: zone.bottom },
+                { time: shiftTime(zone.end),   value: zone.bottom },
+            ]);
+            const leftLine = chart.addLineSeries(seriesOpts);
+            leftLine.setData([
+                { time: shiftTime(zone.start), value: zone.top },
+                { time: shiftTime(zone.start), value: zone.bottom },
+            ]);
+            const rightLine = chart.addLineSeries(seriesOpts);
+            rightLine.setData([
+                { time: shiftTime(zone.end), value: zone.top },
+                { time: shiftTime(zone.end), value: zone.bottom },
+            ]);
+            allSeries.push(topLine, bottomLine, leftLine, rightLine);
+
+            // ── Cooldown: amber fill inside the box ───────────────────────────
+            if (isCooldown) {
+                const cooldownFill = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: zone.bottom },
+                    topFillColor1: 'rgba(212, 160, 23, 0.07)',
+                    topFillColor2: 'rgba(212, 160, 23, 0.07)',
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                cooldownFill.setData([
+                    { time: shiftTime(zone.start), value: zone.top },
+                    { time: shiftTime(zone.end),   value: zone.top },
+                ]);
+                allSeries.push(cooldownFill);
+            }
+
+            // ── FVG breakout candle zone: filled box (like supply/demand) ───
+            const fvg = zone.fvg_candle;
+            if (fvg && fvg.top != null && fvg.bottom != null && fvg.time != null) {
+                const isBullish = fvg.fvg_type === 'bullish';
+                // Use same colors as supply/demand zones
+                const fvgColor = isBullish ? 'rgba(70, 130, 220, 0.55)' : 'rgba(220, 100, 50, 0.55)';
+                const fvgFill  = isBullish ? 'rgba(70, 130, 220, 0.12)' : 'rgba(220, 100, 50, 0.12)';
+                const fvgOpts = { color: fvgColor, lineWidth: 1, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
+                // Use zone.end as the right edge (current candle) so the box stays visible
+                const fvgEnd = shiftTime(zone.end);
+                const fvgStart = shiftTime(fvg.time);
+
+                const fTop = chart.addLineSeries(fvgOpts);
+                fTop.setData([{ time: fvgStart, value: fvg.top }, { time: fvgEnd, value: fvg.top }]);
+                const fBot = chart.addLineSeries(fvgOpts);
+                fBot.setData([{ time: fvgStart, value: fvg.bottom }, { time: fvgEnd, value: fvg.bottom }]);
+                const fLeft = chart.addLineSeries(fvgOpts);
+                fLeft.setData([{ time: fvgStart, value: fvg.top }, { time: fvgStart, value: fvg.bottom }]);
+                const fRight = chart.addLineSeries(fvgOpts);
+                fRight.setData([{ time: fvgEnd, value: fvg.top }, { time: fvgEnd, value: fvg.bottom }]);
+                const fFill = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: fvg.bottom },
+                    topFillColor1: fvgFill, topFillColor2: fvgFill,
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                fFill.setData([{ time: fvgStart, value: fvg.top }, { time: fvgEnd, value: fvg.top }]);
+                allSeries.push(fTop, fBot, fLeft, fRight, fFill);
+            }
+
+            return allSeries;
+        }
+
+        function updateBiasBadge(bias) {
+            const badge = document.getElementById('bias-badge');
+            const label = document.getElementById('bias-label');
+            if (!bias) { badge.style.display = 'none'; return; }
+            badge.style.display = 'flex';
+            badge.className = bias.bias;
+            if (bias.bias === 'bullish') {
+                label.textContent = '↑ Bullish Bias (D+W)';
+            } else if (bias.bias === 'bearish') {
+                label.textContent = '↓ Bearish Bias (D+W)';
+            } else {
+                label.textContent = '⚡ Bias Misaligned';
+            }
+        }
+
+        function renderSupplyDemand(chart, result) {
+            const allSeries = [];
+            // Handle new {bias, zones} structure
+            const allZones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
+            const zones = allZones;
+            const bias  = result && result.bias ? result.bias : null;
+
+            updateBiasBadge(bias);
+
+            if (!zones.length) return allSeries;
+
+            // If a highlight param is set (Playwright screenshot mode), dim non-highlighted zones
+            const urlParams = new URLSearchParams(window.location.search);
+            const highlightTs = urlParams.get('highlight') ? parseInt(urlParams.get('highlight')) : null;
+
+            zones.forEach(zone => {
+                const isDemand   = zone.type === 'demand';
+                const isHighlighted = !highlightTs || zone.start === highlightTs;
+
+                // Highlighted zone: full opacity. Others: dimmed.
+                const color = isDemand
+                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.9)' : 'rgba(70, 130, 220, 0.15)')
+                    : (isHighlighted ? 'rgba(220, 100, 50, 0.9)'  : 'rgba(220, 100, 50, 0.15)');
+                const fill  = isDemand
+                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.18)' : 'rgba(70, 130, 220, 0.03)')
+                    : (isHighlighted ? 'rgba(220, 100, 50, 0.18)' : 'rgba(220, 100, 50, 0.03)');
+                const lineWidth = isHighlighted ? 2 : 1;
+
+                const topLine = chart.addLineSeries({
+                    color, lineWidth, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                topLine.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
+
+                const bottomLine = chart.addLineSeries({
+                    color, lineWidth, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                bottomLine.setData([{ time: shiftTime(zone.start), value: zone.bottom }, { time: shiftTime(zone.end), value: zone.bottom }]);
+
+                const fillSeries = chart.addBaselineSeries({
+                    baseValue: { type: 'price', price: zone.bottom },
+                    topFillColor1: fill, topFillColor2: fill,
+                    topLineColor: 'rgba(0,0,0,0)',
+                    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                    bottomLineColor: 'rgba(0,0,0,0)',
+                    lineWidth: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+                fillSeries.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
+
+                allSeries.push(topLine, bottomLine, fillSeries);
+            });
+
+            return allSeries;
+        }
+
+        // ── Cooldown countdown timer ──────────────────────────────────────
+        // Runs a 1-second interval that updates the status badge label with a live
+        // countdown, then clears the box and resets to 'looking' when time is up.
+        let _cooldownTimer    = null;
+        let _cooldownUntilTs  = 0;
+
+        function startCooldownTimer(cooldownUntilEpoch) {
+            // If already tracking this same cooldown, just update the label — don't restart.
+            if (_cooldownTimer && _cooldownUntilTs === cooldownUntilEpoch) {
+                _updateCooldownLabel();
+                return;
+            }
+            stopCooldownTimer();
+            _cooldownUntilTs = cooldownUntilEpoch;
+            _updateCooldownLabel();
+            _cooldownTimer = setInterval(() => {
+                const remaining = _cooldownUntilTs - Math.floor(Date.now() / 1000);
+                if (remaining <= 0) {
+                    stopCooldownTimer();
+                    // Cooldown expired — clear the box and go back to looking state
+                    for (const [, seriesList] of Object.entries(activeSeries)) {
+                        (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+                    }
+                    Object.keys(activeSeries).forEach(k => delete activeSeries[k]);
+                    setStatus('accumulation', 'looking');
+                    return;
+                }
+                _updateCooldownLabel();
+            }, 1000);
+        }
+
+        function stopCooldownTimer() {
+            if (_cooldownTimer) { clearInterval(_cooldownTimer); _cooldownTimer = null; }
+            _cooldownUntilTs = 0;
+        }
+
+        function _updateCooldownLabel() {
+            const remaining = Math.max(0, _cooldownUntilTs - Math.floor(Date.now() / 1000));
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            const pad = n => String(n).padStart(2, '0');
+            const el = ensureStatusEl('accumulation');
+            el.className = 'detector-status state-cooldown';
+            el.querySelector('.label-text').textContent =
+                `Cooldown — resuming in ${pad(m)}:${pad(s)}`;
+        }
+
+        // ── Data Loop ─────────────────────────────────────────────────
+        function showClosedOverlay(reason) {
+            const overlay = document.getElementById('weekend-overlay');
+            const sub     = document.getElementById('wk-sub');
+            const hint    = document.getElementById('wk-hint');
+            const cd      = document.getElementById('wk-countdown');
+            if (reason === 'weekend') {
+                sub.textContent  = 'Weekend halt — Fri 23:00 UTC to Sun 22:00 UTC';
+                hint.textContent = 'Resumes Sunday 22:00 UTC (forex market open)';
+                cd.textContent   = getWeekendCountdown();
+                cd.style.display = '';
+            } else {
+                sub.textContent  = 'No market data available — exchange may be closed';
+                hint.textContent = 'Chart will resume automatically when data is available';
+                cd.style.display = 'none';
+            }
+            overlay.classList.add('visible');
+        }
+
+        function hideClosedOverlay() {
+            document.getElementById('weekend-overlay').classList.remove('visible');
+        }
+
+        function checkWeekendOverlay() {
+            if (isWeekendHalt()) {
+                showClosedOverlay('weekend');
+                return true;
+            }
+            return false;
+        }
+
+        function loadData() {
+            if (isWeekendHalt()) {
+                showClosedOverlay('weekend');
+                return;
+            }
+            fetch(`/api/data?interval=${currentInterval}`)
+                .then(res => res.text())
+                .then(raw => {
+                    let data;
+                    try { data = JSON.parse(raw); } catch(e) {
+                        console.error('[loadData] Server returned non-JSON:', raw.substring(0, 300));
+                        return;
+                    }
+                    if (!data.candles || data.candles.length === 0) {
+                        showClosedOverlay('no_data');
+                        return;
+                    }
+                    hideClosedOverlay();
+
+                    // Clear existing candle data before loading new interval to avoid
+                    // timestamp ordering conflicts in LightweightCharts
+                    candleSeries.setData([]);
+                    const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
+                    candleSeries.setData(shifted);
+                    candleSeries.setData(shifted);
+
+                    for (const [name, seriesList] of Object.entries(activeSeries)) {
+                        (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+                        delete activeSeries[name];
+                    }
+
+                    const detectors = data.detectors || {};
+                    for (const [name, result] of Object.entries(detectors)) {
+                        const renderer = detectorRenderers[name];
+                        if (result && renderer) {
+                            activeSeries[name] = renderer(chart, result);
+                            // Supply/demand returns an array — pick status from first zone
+                            if (name === 'supply_demand') {
+                                const bias  = result.bias  || {};
+                                const zones = result.zones || [];
+                                updateBiasBadge(bias);
+                                if (bias.bias === 'misaligned') {
+                                    setStatus(name, 'sd_misaligned');
+                                } else if (zones.length > 0) {
+                                    setStatus(name, 'sd_found');
+                                } else if (bias.bias === 'bullish') {
+                                    setStatus(name, 'sd_bullish');
+                                } else if (bias.bias === 'bearish') {
+                                    setStatus(name, 'sd_bearish');
+                                } else {
+                                    setStatus(name, 'sd_none');
+                                }
+                            } else if (name === 'accumulation') {
+                                const s = result.status;
+                                if (s === 'weekend') {
+                                    // Always-open markets (BTC) should never hit this now,
+                                    // but guard just in case
+                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
+                                    stopCooldownTimer();
+                                } else if (s === 'cooldown') {
+                                    startCooldownTimer(result.cooldown_until);
+                                } else if (s === 'confirmed') {
+                                    setStatus(name, 'confirmed');
+                                    stopCooldownTimer();
+                                } else if (s === 'active') {
+                                    setStatus(name, 'active');
+                                    stopCooldownTimer();
+                                } else if (s === 'found' || s === 'potential') {
+                                    setStatus(name, s);
+                                    stopCooldownTimer();
+                                } else if (s === 'out_of_session') {
+                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                                    stopCooldownTimer();
+                                } else {
+                                    setStatus(name, 'looking');
+                                    stopCooldownTimer();
+                                }
+                            } else {
+                                setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
+                            }
+                        } else {
+                            ensureStatusEl(name);
+                            if (name === 'supply_demand') {
+                                updateBiasBadge(null);
+                                setStatus(name, 'sd_none');
+                            } else {
+                                // null = out of session (or no data)
+                                setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                            }
+                        }
+                    }
+                })
+                .catch(err => console.error('Fetch error:', err));
+        }
+
+        setInterval(() => { loadData(); }, 2000);
+        loadData();
+
+        window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
+    </script>
 </body>
 </html>
