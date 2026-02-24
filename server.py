@@ -980,10 +980,11 @@ class PairServer:
             avg_body = float(np.mean(bodies))
     
             candidates = []
-            for z in result.get("candidates", []):
+            for z in result.get("zones", []):
                 candidates.append({
                     **z,
-                    "end":      int(df.index[-1].timestamp()),
+                    "is_active": True,
+                    "end": int(df.index[-1].timestamp()),
                     "avg_body": round(avg_body, 6),
                 })
     
