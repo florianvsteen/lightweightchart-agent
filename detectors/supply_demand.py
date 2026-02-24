@@ -241,11 +241,25 @@ def detect(
             top    = h
             bottom = l
 
-            # ── Invalidation: check if any candle CLOSED inside the zone ──
-            # after formation. Supply zone is invalid if any close >= bottom
-            # (entered the zone from below). Demand zone is invalid if any
-            # close <= top (entered the zone from above).
-            if _zone_touched(closes, zone_type, top, bottom, i, last_closed_idx):
+            # New Mitigation Logic: Full body close check
+            mitigated = False
+            # We start checking from the candle after the impulse move (i+2)
+            for m_idx in range(i + 2, len(df)):
+                m_open  = opens[m_idx]
+                m_close = closes[m_idx]
+                
+                if zone_type == "demand":
+                    # Demand is mitigated only if the FULL BODY closes below the bottom
+                    if m_open < bottom and m_close < bottom:
+                        mitigated = True
+                        break
+                else:  # supply
+                    # Supply is mitigated only if the FULL BODY closes above the top
+                    if m_open > top and m_close > top:
+                        mitigated = True
+                        break
+
+            if mitigated:
                 continue
 
             zones.append({
