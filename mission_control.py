@@ -1,14 +1,10 @@
 """
 mission_control.py — Mission Control dashboard server.
 
-Runs on port 5010 (separate from all pair servers).
+Runs on port 6767 (separate from all pair servers).
 Serves the dashboard HTML and proxies /proxy/<pair_id>/api/data
 to each pair's internal port so there are zero CORS issues.
 
-Usage:
-    python mission_control.py
-
-Then open: http://localhost:6767
 """
 
 import requests
