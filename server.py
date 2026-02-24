@@ -1077,34 +1077,34 @@ class PairServer:
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
     def _debug_sd_bias(self):
-    """Return daily and weekly candles for bias visualization."""
-    try:
-        from detectors.supply_demand import _get_bias
-
-        bias_info = _get_bias(self.ticker)
-
-        df_d = _provider_get_bias_df(self.ticker, "5d", "1d").dropna()
-        df_w = _provider_get_bias_df(self.ticker, "3mo", "1wk").dropna()
-
-        def to_candles(df, mark_bias=True):
-            rows = []
-            for i, (idx, r) in enumerate(df.iterrows()):
-                rows.append({
-                    "time":       int(idx.timestamp()),
-                    "open":       round(float(r["Open"]), 5),
-                    "high":       round(float(r["High"]), 5),
-                    "low":        round(float(r["Low"]), 5),
-                    "close":      round(float(r["Close"]), 5),
-                    "bias_candle": mark_bias and i == len(df) - 2,
-                })
-            return rows
-
-        return jsonify({
-            "pair":           self.pair_id,
-            "bias":           bias_info,
-            "daily_candles":  to_candles(df_d),
-            "weekly_candles": to_candles(df_w),
-        })
+        """Return daily and weekly candles for bias visualization."""
+        try:
+            from detectors.supply_demand import _get_bias
+    
+            bias_info = _get_bias(self.ticker)
+    
+            df_d = _provider_get_bias_df(self.ticker, "5d", "1d").dropna()
+            df_w = _provider_get_bias_df(self.ticker, "3mo", "1wk").dropna()
+    
+            def to_candles(df, mark_bias=True):
+                rows = []
+                for i, (idx, r) in enumerate(df.iterrows()):
+                    rows.append({
+                        "time":       int(idx.timestamp()),
+                        "open":       round(float(r["Open"]), 5),
+                        "high":       round(float(r["High"]), 5),
+                        "low":        round(float(r["Low"]), 5),
+                        "close":      round(float(r["Close"]), 5),
+                        "bias_candle": mark_bias and i == len(df) - 2,
+                    })
+                return rows
+    
+            return jsonify({
+                "pair":           self.pair_id,
+                "bias":           bias_info,
+                "daily_candles":  to_candles(df_d),
+                "weekly_candles": to_candles(df_w),
+            })
 
     except Exception as e:
         import traceback
