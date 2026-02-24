@@ -1145,7 +1145,9 @@ function renderSD(data) {
   // ── FIX: server returns active zones in data.zones ──
   const zones = data.zones || [];
   const activeCount = zones.length;
-
+  const candidates = data.candidates || [];
+  const rejected   = candidates.filter(c => !c.is_active);
+ 
   document.getElementById('tag-info').textContent =
     currentTF + ' · bias: ' + (bias.bias||'—') + ' · ' + activeCount + ' active zones';
 
@@ -1187,7 +1189,9 @@ function renderSD(data) {
 
   document.getElementById('sd-zone-list').innerHTML =
     '<div class="section-header"><span>Active Zones</span><span class="section-count">' + zones.length + '</span></div>' +
-    zones.map((z, i) => renderZoneRow(z, i)).join('');
+    zones.map((z, i) => renderZoneRow(z, i, true)).join('') +
+    '<div class="section-header" style="margin-top:12px"><span>Rejected Candidates</span><span class="section-count">' + rejected.length + '</span></div>' +
+    rejected.map((z, i) => renderZoneRow(z, i + 1000, false)).join('');
 
   // Draw active zones on chart
   clearOverlays();
@@ -1197,45 +1201,42 @@ function renderSD(data) {
   });
 }
 
-function renderZoneRow(z, idx) {
-  const rowClass  = (z.type || 'supply') + '-row';
-  const badgeCls  = z.type || 'supply';
-  const badgeTxt  = (z.type || '?').toUpperCase();
-  const timeStr   = z.start ? fmtTime(z.start) : '—';
-  return '<div class="zone-row ' + rowClass + '" id="zone-row-' + idx + '" onclick="selectZone(' + idx + ')">' +
+function renderZoneRow(z, idx, isActive) {
+  const rowClass = isActive ? (z.type || 'supply') + '-row' : 'rejected-row';
+  const badgeCls = isActive ? (z.type || 'supply') : 'reject';
+  const badgeTxt = isActive ? (z.type || '?').toUpperCase() : 'REJECTED';
+  const timeStr  = z.start ? fmtTime(z.start) : '—';
+  return '<div class="zone-row ' + rowClass + '" id="zone-row-' + idx + '" onclick="selectZone(' + idx + ', ' + isActive + ')">' +
     '<div class="zone-top-row">' +
       '<span class="zone-type-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
       '<span class="zone-time">' + timeStr + '</span>' +
     '</div>' +
     '<div class="zone-range">' + fmtPrice(z.bottom) + ' – ' + fmtPrice(z.top) + '</div>' +
+    (z.reject_reason ? '<div class="zone-reject-reason">✗ ' + z.reject_reason + '</div>' : '') +
     (z.session ? '<div style="font-size:9px;color:var(--muted);margin-top:2px">session: ' + z.session + '</div>' : '') +
   '</div>';
 }
 
-function selectZone(idx) {
+function selectZone(idx, isActive) {
   document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
   const el = document.getElementById('zone-row-' + idx);
-  if (el) {
-    el.classList.add('selected-zone');
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
+  if (el) { el.classList.add('selected-zone'); el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
 
-  const zones = sdData?.zones || [];
-  const z = zones[idx];
+  const zones      = sdData?.zones      || [];
+  const candidates = sdData?.candidates || [];
+  const rejected   = candidates.filter(c => !c.is_active);
+  const z = idx < 1000 ? zones[idx] : rejected[idx - 1000];
   if (!z) return;
 
   clearOverlays();
-
-  // Redraw all zones dimmed
   zones.forEach(az => {
     const col = az.type==='demand' ? 'rgba(90,158,240,0.25)' : 'rgba(240,90,126,0.25)';
     drawBox(az.start, az.end, az.top, az.bottom, col, 0.03);
   });
 
-  // Highlight selected
   const selCol = z.type==='demand' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-  drawBox(z.start, z.end, z.top, z.bottom, selCol, 0.15);
-
+  const endTs  = z.end || (z.start + 3600);
+  drawBox(z.start, endTs, z.top, z.bottom, selCol, 0.15);
   if (z.start) drawVLine(z.start, 'rgba(240,196,90,0.6)');
 }
 
