@@ -227,7 +227,7 @@ def detect(
             if len(zones) >= max_zones:
                 break
 
-        result["zones"] = zones
+        result["candidates"] = zones
         return result
 
     except Exception as e:
