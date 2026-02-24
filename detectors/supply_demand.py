@@ -101,6 +101,7 @@ def detect(
     valid_sessions: list = None,
     market_timing: str = FOREX,
     yf_lock: threading.Lock = None,
+    debug: bool = False,
 ) -> dict:
     """
     Returns a dict with:
@@ -155,82 +156,82 @@ def detect(
         # len(df)-2 = last closed candle (can be impulse)
         # len(df)-3 = candle before that (can be indecision, with i+1 being the closed impulse)
         # So we scan indecision candidates up to len(df)-3 so impulse at i+1 is always closed.
+        candidates = []  # ← add before the loop
+
         for i in range(len(df) - 3, 0, -1):
             candle_ts = int(df.index[i].timestamp())
-
             if candle_ts < cutoff_ts:
                 break
 
-            # Indecision candle must be in session or one candle before session open
-            if not _in_session(candle_ts, valid_sessions, market_timing):
-                continue
-
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+            reject_reason = None
 
-            if not _is_indecision(o, h, l, c, wick_ratio):
-                continue
-
-            # Impulse check 1: body must be larger than avg body * multiplier
-            impulse_body  = abs(closes[i + 1] - opens[i + 1])
-            if impulse_body < avg_body * impulse_multiplier:
-                continue
-
-            # Impulse check 2: body must be >= 60% of total candle range (max 30% wicks)
-            impulse_range = highs[i + 1] - lows[i + 1]
-            if impulse_range > 0 and (impulse_body / impulse_range) < 0.60:
-                continue
+            if not _in_session(candle_ts, valid_sessions, market_timing):
+                reject_reason = f"session '{_candle_session_or_pre(candle_ts, market_timing)}' not in {valid_sessions}"
+            elif not _is_indecision(o, h, l, c, wick_ratio):
+                body = abs(c - o)
+                total_range = h - l
+                wick_frac = round((total_range - body) / total_range, 3) if total_range else 0
+                reject_reason = f"not indecision (wicks {wick_frac*100:.1f}% < {wick_ratio*100:.0f}%)"
+            else:
+                impulse_body  = abs(closes[i + 1] - opens[i + 1])
+                impulse_range = highs[i + 1] - lows[i + 1]
+                if impulse_body < avg_body * impulse_multiplier:
+                    reject_reason = f"impulse body {impulse_body:.5f} < avg×{impulse_multiplier} ({avg_body*impulse_multiplier:.5f})"
+                elif impulse_range > 0 and (impulse_body / impulse_range) < 0.60:
+                    reject_reason = f"impulse wicks too large (body {impulse_body/impulse_range*100:.1f}% of range)"
 
             impulse_bullish = closes[i + 1] > opens[i + 1]
             zone_type = "demand" if impulse_bullish else "supply"
 
-            if zone_type != look_for:
-                continue
+            if not reject_reason and look_for and zone_type != look_for:
+                reject_reason = f"wrong direction ({zone_type}) — bias requires {look_for}"
 
-            top    = h
-            bottom = l
-
-            # Replace your mitigation block temporarily
-            zone_mitigated = False
-            for j in range(i + 2, len(df) - 1):
-                body_top    = max(opens[j], closes[j])
-                body_bottom = min(opens[j], closes[j])
-            
-                if zone_type == "demand":
-                    if body_bottom <= bottom:
+            if not reject_reason:
+                zone_mitigated = False
+                for j in range(i + 2, len(df) - 1):
+                    body_top    = max(opens[j], closes[j])
+                    body_bottom = min(opens[j], closes[j])
+                    if zone_type == "demand" and body_bottom <= l:
                         zone_mitigated = True
                         break
-                else:  # supply
-                    if body_top >= top:
-                        print(f"[MITIGATED] supply zone {bottom:.5f}-{top:.5f} | candle[{j}] body_top={body_top:.5f} >= top={top:.5f}")
+                    elif zone_type == "supply" and body_top >= h:
                         zone_mitigated = True
                         break
-            
-            if not zone_mitigated:
-                print(f"[SURVIVED] {zone_type} zone {bottom:.5f}-{top:.5f} | checking {len(df)-1 - (i+2)} candles after impulse")
-                # Print the last few candle bodies for inspection
-                for j in range(max(i+2, len(df)-6), len(df)-1):
-                    print(f"  candle[{j}] body: {min(opens[j], closes[j]):.5f} - {max(opens[j], closes[j]):.5f}")
+                if zone_mitigated:
+                    reject_reason = f"mitigated — body closed {'below' if zone_type == 'demand' else 'above'} zone"
 
-            if zone_mitigated:
-                continue
+            is_active = reject_reason is None
 
-            status = "active"
+            if debug:
+                candidates.append({
+                    "type":          zone_type,
+                    "is_active":     is_active,
+                    "reject_reason": reject_reason,
+                    "session":       _candle_session_or_pre(candle_ts, market_timing),
+                    "start":         candle_ts,
+                    "end":           int(df.index[-1].timestamp()),
+                    "top":           float(h),
+                    "bottom":        float(l),
+                })
 
-            zones.append({
-                "type":      zone_type,
-                "status":    status,
-                "session":   _candle_session_or_pre(candle_ts, market_timing),
-                "is_active": status == "active",
-                "start":     candle_ts,
-                "end":       int(df.index[-1].timestamp()),
-                "top":       float(top),
-                "bottom":    float(bottom),
-            })
+            if is_active:
+                zones.append({
+                    "type":      zone_type,
+                    "status":    "active",
+                    "session":   _candle_session_or_pre(candle_ts, market_timing),
+                    "is_active": True,
+                    "start":     candle_ts,
+                    "end":       int(df.index[-1].timestamp()),
+                    "top":       float(h),
+                    "bottom":    float(l),
+                })
+                if len(zones) >= max_zones:
+                    break
 
-            if len(zones) >= max_zones:
-                break
-
-        result["zones"] = zones  # active zones only
+        result["zones"] = zones
+        if debug:
+            result["candidates"] = candidates
         return result
 
     except Exception as e:
