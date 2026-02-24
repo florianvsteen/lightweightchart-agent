@@ -909,7 +909,8 @@ class PairServer:
             df = self._get_df(detector_interval, cache)
 
             # Run the detector — this is the exact same call the background loop makes
-            result = detect(df, ticker=self.ticker, market_timing=self.market_timing, **params)
+            #result = detect(df, ticker=self.ticker, market_timing=self.market_timing, **params)
+            result = detect(df, ticker=self.ticker, market_timing=self.market_timing, debug=True, **params)
 
             # Normalise df for candle export
             if isinstance(df.columns, pd.MultiIndex):
@@ -947,12 +948,13 @@ class PairServer:
                 look_for = "supply"
 
             return jsonify({
-                "pair":     self.pair_id,
-                "bias":     bias,
-                "look_for": look_for,
-                "avg_body": round(avg_body, 6),
-                "zones":    zones,
-                "candles":  candles_sd,
+                "pair":       self.pair_id,
+                "bias":       bias,
+                "look_for":   look_for,
+                "avg_body":   round(avg_body, 6),
+                "zones":      zones,
+                "candidates": result.get("candidates", []),  # ← add this
+                "candles":    candles_sd,
             })
 
         except Exception as e:
