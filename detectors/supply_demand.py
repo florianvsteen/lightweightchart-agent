@@ -190,12 +190,12 @@ def detect(
             bottom = l
 
             if zone_type == "demand":
-                # Remove if wick has touched the zone (low at or below zone top)
-                if lows[-2] <= top:
+                # Remove if a candle body has closed below the zone bottom
+                if min(opens[-2], closes[-2]) <= bottom:
                     continue
             else:  # supply
-                # Remove if wick has touched the zone (high at or above zone bottom)
-                if highs[-2] >= bottom:
+                # Remove if a candle body has closed above the zone top
+                if max(opens[-2], closes[-2]) >= top:
                     continue
 
             status = "active"
