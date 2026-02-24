@@ -267,8 +267,6 @@ class PairServer:
                 prev_status = (prev or {}).get("status")
 
                 # ── Cooldown guard ─────────────────────────────────────
-                # During cooldown, block all detector output so a new zone
-                # cannot override the cooldown state.
                 if prev_status == "cooldown":
                     if int(time.time()) < (prev or {}).get("cooldown_until", 0):
                         continue  # still cooling down — skip all transitions
@@ -285,13 +283,7 @@ class PairServer:
                     and zone.get("status") == "active"
                 )
 
-                # ── State machine ──────────────────────────────────────
-                # looking   → active    (zone formed, breakout candle still inside)
-                # active    → confirmed (impulsive breakout — alert dispatched)
-                # confirmed → cooldown  (next cycle, hold until timer expires)
-
                 if is_active_found:
-                    # Zone alive — keep tracking
                     zone_start = zone["start"]
                     already_alerted = self.last_alerted.get(name, 0)
                     if zone_start != already_alerted:
@@ -302,8 +294,6 @@ class PairServer:
                     or not zone.get("is_active")
                     or zone.get("status") in ("looking", "confirmed")
                 ):
-                    # Breakout detected this cycle. Mark "confirmed" so the browser
-                    # still renders the box for one more cycle while the screenshot runs.
                     zone_start = prev["start"]
                     already_alerted = self.last_alerted.get(name, 0)
                     if zone_start != already_alerted:
@@ -311,8 +301,6 @@ class PairServer:
                         confirmed_zone["status"] = "confirmed"
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
-                        # Save alert timestamp and zone geometry so cooldown
-                        # state can be fully restored after a restart.
                         self.last_alerted[f"{name}_alert_ts"] = int(time.time())
                         self.last_alerted[f"{name}_cooldown_zone"] = {
                             "start":  prev.get("start"),
@@ -328,8 +316,6 @@ class PairServer:
                         ).start()
 
                 elif prev_status == "confirmed":
-                    # Screenshot dispatched last cycle — transition to cooldown.
-                    # Keep zone in last_active_zone so _api_data can serve cooldown state.
                     cooldown_minutes = self.detector_params.get("accumulation", {}).get(
                         "alert_cooldown_minutes", 15
                     )
@@ -386,14 +372,7 @@ class PairServer:
     # ------------------------------------------------------------------ #
 
     def _min_poll_interval(self) -> float:
-        """
-        Return the minimum number of seconds between detection cycles for this pair.
-
-        Derived from the slowest detector timeframe configured — no point polling
-        more often than one candle period (e.g. a 15m candle only closes every 900s).
-        Falls back to DETECTION_INTERVAL (30s) for 1m pairs so they stay responsive.
-        """
-        max_seconds = DETECTION_INTERVAL  # default: 30s for 1m pairs
+        max_seconds = DETECTION_INTERVAL
         for name in self.detector_names:
             tf = self.detector_params.get(name, {}).get("timeframe", "1m")
             tf_secs = INTERVAL_SECONDS.get(tf, DETECTION_INTERVAL)
@@ -402,7 +381,6 @@ class PairServer:
         return float(max_seconds)
 
     def _detection_loop(self):
-        # Stagger startup so pairs don't all hit the provider simultaneously
         if self._stagger_seconds:
             time.sleep(self._stagger_seconds)
 
@@ -417,8 +395,6 @@ class PairServer:
             elapsed = now - self._last_detection_time
 
             if elapsed < min_interval:
-                # Not enough time has passed for a new candle to have closed.
-                # Sleep the remainder then re-check rather than running the detectors.
                 sleep_for = min(DETECTION_INTERVAL, min_interval - elapsed)
                 time.sleep(sleep_for)
                 continue
@@ -430,8 +406,6 @@ class PairServer:
                     self._process_alerts(results)
                 self._last_detection_time = time.time()
 
-                # Cache candles for every interval the browser may request
-                # (detector timeframe + default display interval + chart interval).
                 intervals_to_cache = set()
                 for name in self.detector_names:
                     tf = self.detector_params.get(name, {}).get("timeframe", self.interval)
@@ -471,27 +445,14 @@ class PairServer:
     # ------------------------------------------------------------------ #
 
     def _api_data(self):
-        """
-        Serve chart data to the browser — zero provider calls.
-
-        Reads detector results and candles from the cache that the background
-        detection loop populates on its own schedule. The browser is purely a
-        read path; it no longer drives any data fetching.
-
-        Cold-start fallback: if the background loop has not completed its first
-        cycle yet, a single live fetch is done so the chart is not blank.
-        """
         try:
             chart_interval = request.args.get("interval", self.interval)
 
-            # ── Read from cache (populated by background loop) ────────────
             with self._results_lock:
                 detector_results = dict(self._cached_detector_results)
                 candles = list(self._cached_candles.get(chart_interval, []))
 
-            # ── Cold-start fallback ───────────────────────────────────────
-            # Background loop has not run yet — do one live fetch so the
-            # browser does not show a blank chart on first load.
+            # Cold-start fallback
             if not candles:
                 try:
                     df_chart = self._fetch_df(chart_interval)
@@ -509,7 +470,6 @@ class PairServer:
                     candles = []
 
             if not detector_results:
-                # Detectors not ready yet — return candles only, no overlays
                 return jsonify({
                     "pair":      self.pair_id,
                     "label":     self.label,
@@ -517,9 +477,7 @@ class PairServer:
                     "detectors": {},
                 })
 
-            # ── Accumulation state overrides (in-memory only) ─────────────
-            # _process_alerts maintains last_active_zone with the correct status.
-            # During cooldown, block new zones and serve the cooldown state.
+            # Accumulation state overrides (in-memory only)
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
@@ -610,7 +568,6 @@ class PairServer:
             last_body_high    = max(last_closed_open, last_closed_close)
             last_body_low     = min(last_closed_open, last_closed_close)
 
-            # Export candle data for the chart
             candles = [
                 {
                     "time":  int(idx.timestamp()),
@@ -689,7 +646,6 @@ class PairServer:
                 key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
 
-            # Best zone: ADX<10 preferred, then lowest slope. Secondary = runner-up.
             def _rank_windows(ws):
                 low_adx = sorted(
                     [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
@@ -722,11 +678,6 @@ class PairServer:
             return jsonify({"error": str(e)}), 500
 
     def _debug_replay(self):
-        """
-        Run the accumulation detector against only the first `idx` candles.
-        Query param: idx=N (1-based candle index to replay up to)
-        """
-        # Read query param immediately while Flask request context is guaranteed active
         try:
             raw_idx = int(request.args.get("idx", -1))
         except Exception:
@@ -763,7 +714,6 @@ class PairServer:
             idx = raw_idx if raw_idx > 0 else total
             idx = max(min_candles + 3, min(idx, total))
 
-            # Slice the dataframe — this is what the detector would have seen at candle N
             df = full_df.iloc[:idx].copy()
 
             if isinstance(df.columns, pd.MultiIndex):
@@ -773,7 +723,6 @@ class PairServer:
                 df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
             df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-            # Determine session from the last candle's timestamp (not wall clock)
             last_ts = df.index[-1]
             if last_ts.tzinfo is None:
                 last_ts = last_ts.tz_localize('UTC')
@@ -786,17 +735,12 @@ class PairServer:
             elif 8 <= hour < 12: session = "london"
             elif 13 <= hour < 19: session = "new_york"
 
-            # Resolve effective range — fall back through session → generic → None
             session_range_key   = f"{session}_range_pct" if session else None
             effective_range_pct = (
                 params.get(session_range_key)
                 or params.get("max_range_pct")
             )
 
-            # Candle layout — must match accumulation.py exactly:
-            #   df[-1]  forming candle          — never touched
-            #   df[-2]  breakout/impulse candle — last fully closed
-            #   df[-3…] accumulation window     — windows end at df[-2] exclusive
             breakout_idx   = len(df) - 2
             last_accum_idx = len(df) - 3
             scan_start     = max(0, len(df) - lookback)
@@ -849,7 +793,6 @@ class PairServer:
                 broke_down = last_body_low  < l_min
                 broke_out  = broke_up or broke_down
 
-                # Impulse check: breakout body > avg window body
                 is_impulsive   = bo_body_size > avg_body if broke_out else False
                 impulse_ratio  = round(bo_body_size / avg_body, 2) if (broke_out and avg_body > 0) else None
                 is_confirmed   = broke_out and is_impulsive
@@ -900,7 +843,6 @@ class PairServer:
                 key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
 
-            # Best zone: ADX<10 preferred, then lowest slope. Secondary = runner-up.
             def _rank_windows(ws):
                 low_adx = sorted(
                     [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
@@ -945,68 +887,74 @@ class PairServer:
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
     def _debug_sd(self):
+        """
+        Return Supply & Demand analysis for the debug page.
+        Delegates entirely to supply_demand.detect() — single source of truth.
+        """
         try:
-            import pandas as pd
             import numpy as np
-            from detectors.supply_demand import detect, _get_bias, _candle_session_or_pre
-    
+            from detectors.supply_demand import detect
+
             interval = request.args.get("interval", None)
             cache = {}
             params = dict(self.detector_params.get("supply_demand", {}))
             params.pop("timeframe", None)
-    
+
             detector_interval = interval or self.detector_params.get("supply_demand", {}).get("timeframe", "30m")
             df = self._get_df(detector_interval, cache)
-    
-            result = detect(df, ticker=self.ticker, **params)
-    
-            # Build candles for the chart
+
+            # Run the detector — this is the exact same call the background loop makes
+            result = detect(df, ticker=self.ticker, market_timing=self.market_timing, **params)
+
+            # Normalise df for candle export
             if isinstance(df.columns, pd.MultiIndex):
+                df = df.copy()
                 df.columns = df.columns.get_level_values(0)
             df = df.loc[:, ~df.columns.duplicated()].copy()
             for col in ['Open', 'High', 'Low', 'Close']:
                 df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
             df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
-    
+
+            import numpy as np
+            bodies   = np.abs(df['Close'].values - df['Open'].values)
+            avg_body = float(np.mean(bodies))
+
             candles_sd = [
                 {"time": int(idx.timestamp()), "open": round(float(r["Open"]), 5),
                  "high": round(float(r["High"]), 5), "low": round(float(r["Low"]), 5),
                  "close": round(float(r["Close"]), 5)}
                 for idx, r in df.iterrows()
             ]
-    
-            # Enrich active zones with display fields the frontend expects
-            bodies   = np.abs(df['Close'].values - df['Open'].values)
-            avg_body = float(np.mean(bodies))
-    
-            candidates = []
-            for z in result.get("zones", []):
-                candidates.append({
-                    **z,
-                    "is_active": True,
-                    "end": int(df.index[-1].timestamp()),
-                    "avg_body": round(avg_body, 6),
-                })
-    
+
+            bias = result.get("bias", {})
+            zones = result.get("zones", [])
+
+            # Stamp each zone with the current chart end time so the box
+            # extends to the right edge of the chart
+            chart_end_ts = int(df.index[-1].timestamp())
+            for z in zones:
+                z["end"] = chart_end_ts
+
+            look_for = None
+            if bias.get("bias") == "bullish":
+                look_for = "demand"
+            elif bias.get("bias") == "bearish":
+                look_for = "supply"
+
             return jsonify({
-                "pair":       self.pair_id,
-                "bias":       result["bias"],
-                "look_for":   "demand" if result["bias"].get("bias") == "bullish" else
-                              "supply" if result["bias"].get("bias") == "bearish" else None,
-                "avg_body":   round(avg_body, 6),
-                "candidates": candidates,
-                "candles":    candles_sd,
+                "pair":     self.pair_id,
+                "bias":     bias,
+                "look_for": look_for,
+                "avg_body": round(avg_body, 6),
+                "zones":    zones,
+                "candles":  candles_sd,
             })
-    
+
         except Exception as e:
             import traceback
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
     def _debug_fvg(self):
-        """
-        Run the standalone FVG detector and return full candidate details.
-        Uses fvg.detect() which applies min_gap_pct and impulse_body_pct filters.
-        """
         try:
             import pandas as pd
             from detectors.fvg import detect as fvg_detect, _check_fvg, DEFAULT_MIN_GAP_PCT, DEFAULT_IMPULSE_BODY_PCT
@@ -1056,7 +1004,6 @@ class PairServer:
                 gap_pct_raw  = gap_size_raw / avg_p if avg_p > 0 else 0
 
                 reject_reason = None
-                # Zero-range candle guards (same as fvg.py)
                 if h_prev <= 0 or l_prev <= 0 or h_next <= 0 or l_next <= 0:
                     reject_reason = "zero/negative price in N-1 or N+1"
                 elif h_prev == l_prev:
@@ -1211,10 +1158,7 @@ class PairServer:
     def run(self):
         print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
 
-        # Start background detection loop in a daemon thread
         t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
         t.start()
 
-        # Start Flask (blocks this thread) — threaded so slow /debug/replay
-        # requests don't block concurrent requests for the HTML page or chart data
         self.app.run(host="0.0.0.0", port=self.port, use_reloader=False, threaded=True)
