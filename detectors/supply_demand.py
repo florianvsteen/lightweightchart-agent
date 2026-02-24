@@ -19,6 +19,12 @@ ZONE DETECTION:
   - Only zones created during valid_sessions are kept.
   - Zones up to max_age_days old are returned.
 
+INVALIDATION:
+  A zone is invalidated if any candle AFTER its formation closes inside it:
+  - Supply zone: any candle close >= zone bottom (closed above bottom = entered zone)
+  - Demand zone: any candle close <= zone top (closed below top = entered zone)
+  This scans all candles from zone formation index+2 (after the impulse) to df[-2].
+
 Session logic lives in sessions.py.
 
 NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
@@ -91,6 +97,53 @@ def _get_bias(ticker: str, yf_lock=None) -> dict:
         return {"bias": "misaligned", "reason": str(e)}
 
 
+def _zone_touched(
+    closes: np.ndarray,
+    zone_type: str,
+    zone_top: float,
+    zone_bottom: float,
+    formation_idx: int,
+    last_closed_idx: int,
+) -> bool:
+    """
+    Check if any candle body CLOSED inside the zone after its formation.
+
+    Scans candles from formation_idx+2 (candle after the impulse) up to and
+    including last_closed_idx (df[-2]).
+
+    Supply zone: invalidated if any close >= zone_bottom
+                 (price closed above the bottom edge = entered the zone)
+    Demand zone: invalidated if any close <= zone_top
+                 (price closed below the top edge = entered the zone)
+
+    Args:
+        closes:          full closes array from the dataframe
+        zone_type:       "supply" or "demand"
+        zone_top:        upper boundary of the zone
+        zone_bottom:     lower boundary of the zone
+        formation_idx:   index of the indecision candle (candle i)
+        last_closed_idx: index of df[-2] — last fully closed candle
+
+    Returns:
+        True if the zone has been touched/entered, False if still clean.
+    """
+    # Start scanning from the candle after the impulse (formation + 2)
+    scan_from = formation_idx + 2
+    scan_to   = last_closed_idx + 1   # +1 because slice is exclusive
+
+    if scan_from >= scan_to:
+        return False
+
+    post_closes = closes[scan_from:scan_to]
+
+    if zone_type == "supply":
+        # Any close at or above zone bottom = candle closed inside or above zone
+        return bool(np.any(post_closes >= zone_bottom))
+    else:  # demand
+        # Any close at or below zone top = candle closed inside or below zone
+        return bool(np.any(post_closes <= zone_top))
+
+
 def detect(
     df,
     ticker: str = None,
@@ -144,8 +197,7 @@ def detect(
         bodies    = np.abs(closes - opens)
         avg_body  = float(np.mean(bodies))
 
-        # Last fully closed candle for removal checks
-        last_closed_close = closes[-2]
+        last_closed_idx = len(df) - 2   # df[-2] — last fully closed candle
         now_ts     = datetime.now(timezone.utc).timestamp()
         cutoff_ts  = now_ts - (max_age_days * 86400)
 
@@ -189,22 +241,18 @@ def detect(
             top    = h
             bottom = l
 
-            if zone_type == "demand":
-                # Remove if wick has touched the zone (low at or below zone top)
-                if lows[-2] <= top:
-                    continue
-            else:  # supply
-                # Remove if wick has touched the zone (high at or above zone bottom)
-                if highs[-2] >= bottom:
-                    continue
-
-            status = "active"
+            # ── Invalidation: check if any candle CLOSED inside the zone ──
+            # after formation. Supply zone is invalid if any close >= bottom
+            # (entered the zone from below). Demand zone is invalid if any
+            # close <= top (entered the zone from above).
+            if _zone_touched(closes, zone_type, top, bottom, i, last_closed_idx):
+                continue
 
             zones.append({
                 "type":      zone_type,
-                "status":    status,
+                "status":    "active",
                 "session":   _candle_session_or_pre(candle_ts, market_timing),
-                "is_active": status == "active",
+                "is_active": True,
                 "start":     candle_ts,
                 "end":       int(df.index[-1].timestamp()),
                 "top":       float(top),
