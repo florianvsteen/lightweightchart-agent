@@ -190,27 +190,21 @@ def detect(
             bottom = l
             mitigated = False
 
-            # 3. MITIGATION CHECK: Scan all candles AFTER the impulse (i+2) to the current end
-            # We start at i+2 because i+1 is the impulse candle itself.
-            for j in range(i + 2, len(df)):
-                check_close = closes[j]
-                check_high = highs[j]
-                check_low = lows[j]
-
-                if zone_type == "demand":
-                    # Mitigated if a candle CLOSES below the zone bottom
-                    if check_close < zone_bottom:
-                        mitigated = True
-                        break
-                    # Optional: Also filter if price simply touches (wicks) the zone
-                    # if check_low <= zone_top: mitigated = True; break
+            # MITIGATION CHECK: Scan all candles from impulse (i+1) to the current end
+            # A zone is invalidated if a candle body closes past the zone boundary.
+            for j in range(i + 1, len(df)):
+                c_close = closes[j]
                 
-                else: # supply
-                    # Mitigated if a candle CLOSES above the zone top
-                    if check_close > zone_top:
+                if zone_type == "demand":
+                    # Mitigated if a candle CLOSES below the demand zone bottom
+                    if c_close < bottom:
                         mitigated = True
                         break
-                    # Optional: if check_high >= zone_bottom: mitigated = True; break
+                else:  # supply
+                    # Mitigated if a candle CLOSES above the supply zone top
+                    if c_close > top:
+                        mitigated = True
+                        break
 
             if mitigated:
                 continue
