@@ -189,8 +189,9 @@ def detect(
             top    = h
             bottom = l
 
+            # Replace your mitigation block temporarily
             zone_mitigated = False
-            for j in range(i + 2, len(df) - 1):  # skip live candle at [-1]
+            for j in range(i + 2, len(df) - 1):
                 body_top    = max(opens[j], closes[j])
                 body_bottom = min(opens[j], closes[j])
             
@@ -200,11 +201,15 @@ def detect(
                         break
                 else:  # supply
                     if body_top >= top:
+                        print(f"[MITIGATED] supply zone {bottom:.5f}-{top:.5f} | candle[{j}] body_top={body_top:.5f} >= top={top:.5f}")
                         zone_mitigated = True
                         break
             
-            if zone_mitigated:
-                continue
+            if not zone_mitigated:
+                print(f"[SURVIVED] {zone_type} zone {bottom:.5f}-{top:.5f} | checking {len(df)-1 - (i+2)} candles after impulse")
+                # Print the last few candle bodies for inspection
+                for j in range(max(i+2, len(df)-6), len(df)-1):
+                    print(f"  candle[{j}] body: {min(opens[j], closes[j]):.5f} - {max(opens[j], closes[j]):.5f}")
 
             status = "active"
 
