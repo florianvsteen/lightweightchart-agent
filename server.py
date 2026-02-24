@@ -202,6 +202,11 @@ class PairServer:
         _debug_fvg.__name__ = f"debug_fvg_{pair_id}"
         app.route("/debug/fvg")(_debug_fvg)
 
+        def _debug_sd_bias():
+            return self._debug_sd_bias()
+        _debug_sd_bias.__name__ = f"debug_sd_bias_{pair_id}"
+        app.route("/debug/sd/bias")(_debug_sd_bias)
+        
     # ------------------------------------------------------------------ #
     # Data fetching
     # ------------------------------------------------------------------ #
@@ -1071,6 +1076,40 @@ class PairServer:
             import traceback
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
+    def _debug_sd_bias(self):
+    """Return daily and weekly candles for bias visualization."""
+    try:
+        from detectors.supply_demand import _get_bias
+
+        bias_info = _get_bias(self.ticker)
+
+        df_d = _provider_get_bias_df(self.ticker, "5d", "1d").dropna()
+        df_w = _provider_get_bias_df(self.ticker, "3mo", "1wk").dropna()
+
+        def to_candles(df, mark_bias=True):
+            rows = []
+            for i, (idx, r) in enumerate(df.iterrows()):
+                rows.append({
+                    "time":       int(idx.timestamp()),
+                    "open":       round(float(r["Open"]), 5),
+                    "high":       round(float(r["High"]), 5),
+                    "low":        round(float(r["Low"]), 5),
+                    "close":      round(float(r["Close"]), 5),
+                    "bias_candle": mark_bias and i == len(df) - 2,
+                })
+            return rows
+
+        return jsonify({
+            "pair":           self.pair_id,
+            "bias":           bias_info,
+            "daily_candles":  to_candles(df_d),
+            "weekly_candles": to_candles(df_w),
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+    
     def _test_alert(self):
         test_zone = {
             "detector": "accumulation",
