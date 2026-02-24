@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -361,6 +360,7 @@ function switchPair(pairId) {
   if (isProxy) {
     window.location.href = window.location.origin + '/proxy/' + pairId + '/debug';
   } else {
+    // Direct port access — find the port from the select option's data-port attribute
     const opt = document.querySelector('#pair-switcher option[value="' + pairId + '"]');
     const port = opt ? opt.dataset.port : null;
     if (port) window.location.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/debug';
@@ -417,32 +417,45 @@ chart.subscribeClick(param => {
   if (!param.time) return;
 
   if (replayMode && liveData && currentMode === 'accum') {
+    // param.time is already TZ-shifted by the chart — undo that before matching raw UTC timestamps
     const rawTime = param.time - TZ_OFFSET;
     const idx = liveData.candles.findIndex(c => c.time === rawTime);
     if (idx >= 0) seekTo(idx + 1, false);
     return;
   }
 
-  if (currentMode === 'sd' && sdData?.zones) {
-    const clickedTs = param.time - TZ_OFFSET;
-    const zones = sdData.zones;
+  if (currentMode === 'sd' && sdData?.candidates) {
+    // SD mode: click a candle → find the zone whose start timestamp is closest
+    // to the clicked time and select it in the panel.
+    const clickedTs = param.time - TZ_OFFSET; // undo the shiftTime applied to chart
+    const candidates = sdData.candidates;
     let bestIdx  = -1;
+    let bestIsActive = false;
     let bestDist = Infinity;
 
-    zones.forEach((z, i) => {
+    const active   = candidates.filter(c => c.is_active);
+    const rejected = candidates.filter(c => !c.is_active);
+
+    active.forEach((z, i) => {
       const dist = Math.abs((z.start || 0) - clickedTs);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; bestIsActive = true; }
+    });
+    rejected.forEach((z, i) => {
+      const dist = Math.abs((z.start || 0) - clickedTs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i + 1000; bestIsActive = false; }
     });
 
+    // Only select if click was within ~5 candle-widths of a zone start
     const src = sdData.candles;
     const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 1800;
     if (bestIdx >= 0 && bestDist < intervalSecs * 5) {
-      selectZone(bestIdx);
+      selectZone(bestIdx, bestIsActive);
     }
     return;
   }
 
   if (currentMode === 'fvg' && fvgData?.candidates) {
+    // FVG mode: click a candle → find the FVG whose impulse candle is closest
     const clickedTs = param.time - TZ_OFFSET;
     const withFvg    = fvgData.candidates.filter(c => c.has_fvg);
     const withoutFvg = fvgData.candidates.filter(c => !c.has_fvg);
@@ -474,6 +487,18 @@ function clearOverlays() {
 }
 
 function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
+  // Draws a price zone rectangle using:
+  //   - top border:  horizontal LineSeries
+  //   - bottom border: horizontal LineSeries
+  //   - fill:        BaselineSeries (translucent band)
+  //   - left/right vertical edges: dashed LineSeries spanning the full chart
+  //     height, visually clipped by the fact they sit exactly at the box edges.
+  //
+  // NOTE: LightweightCharts has no rectangle primitive. Vertical LineSeries are
+  // impossible (same-timestamp points throw, duplicate times not allowed). We skip
+  // the vertical walls and use the horizontal borders + fill only, which is the
+  // standard TradingView zone style. The fill makes the box shape visually clear.
+
   if (top == null || bottom == null || top === bottom) return;
 
   const toRgba = (color, alpha) => {
@@ -488,12 +513,15 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   };
 
+  // Top horizontal border
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
 
+  // Bottom horizontal border
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
+  // Translucent fill
   const fl = chart.addBaselineSeries({
     baseValue: { type: 'price', price: bottom },
     topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
@@ -509,6 +537,7 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
 }
 
 function drawVLine(ts, color) {
+  // Derive visible price range from whichever dataset is currently on the chart
   const activeCandleData = (currentMode === 'fvg' && fvgData?.candles)
     ? fvgData.candles
     : (currentMode === 'sd' && sdData?.candles)
@@ -543,10 +572,12 @@ function switchMode(mode) {
   document.getElementById('tag-mode').textContent = labels[mode];
   clearOverlays();
 
+  // Replay controls only for accumulation
   const replayIds = ['btn-replay','btn-prev','btn-play','btn-next','replay-speed','btn-analyze'];
   replayIds.forEach(id => {
     document.getElementById(id).style.display = mode === 'accum' ? '' : 'none';
   });
+  // Scrubber row visibility controlled by replay mode only
   document.getElementById('scrubber-row').style.visibility = (mode === 'accum' && replayMode) ? 'visible' : 'hidden';
 
   if (mode === 'accum') {
@@ -574,10 +605,13 @@ function switchMode(mode) {
 function switchTF(tf) {
   currentTF = tf;
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
+  // Invalidate mode-specific cached data so next load fetches fresh
   sdData  = null;
   fvgData = null;
+  // Also reload accumulation data since TF affects it
   liveData = null;
 
+  // 1D / 1W are bias-only views — only meaningful in SD mode
   if (tf === '1D' || tf === '1W') {
     if (currentMode !== 'sd') switchMode('sd');
     else loadBias(tf);
@@ -678,7 +712,7 @@ async function fetchReplay(idx) {
   } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
 }
 
-let _replayDisplayedCount = 0;
+let _replayDisplayedCount = 0;  // tracks how many candles are currently on the chart
 
 async function seekTo(idx, isStep) {
   const total = liveData.candles.length;
@@ -687,16 +721,21 @@ async function seekTo(idx, isStep) {
   const slice = liveData.candles.slice(0, idx);
 
   if (isStep) {
+    // Always preserve the current viewport — never call fitContent on a step.
     const isForward = idx === _replayDisplayedCount + 1;
     if (isForward) {
+      // Single candle forward: use update() — doesn't touch the viewport at all
       const curr = liveData.candles[idx - 1];
       candleSeries.update({...curr, time: shiftTime(curr.time)});
     } else {
+      // Backward step: save the logical bar range (immune to price scale changes),
+      // setData, restore it. Then re-enable autoscale so the price axis stays live.
       const logicalRange = chart.timeScale().getVisibleLogicalRange();
       candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
       if (logicalRange) chart.timeScale().setVisibleLogicalRange(logicalRange);
     }
   } else {
+    // Full seek (scrubber drag or candle click): reframe to show the new slice
     candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
     chart.timeScale().fitContent();
   }
@@ -725,12 +764,14 @@ function renderSummary(d) {
     '<div class="stat-val ' + s.cls + '">' + s.val + '</div></div>'
   ).join('');
 
+  // ── Breakout candle block ──────────────────────────────────────────────────
   const bo = d.breakout_candle;
   const bHtml = bo ? (() => {
     const isBull = bo.close > bo.open;
     const bCol   = isBull ? 'var(--pass)' : 'var(--red)';
     const bDir   = isBull ? '▲ BULL' : '▼ BEAR';
 
+    // Impulse check summary across all passing windows
     const passingWindows = (d.windows || []).filter(w => w.pass && w.broke_out);
     const confirmed = passingWindows.filter(w => w.is_confirmed);
     const impStatus = passingWindows.length === 0
@@ -793,6 +834,7 @@ function renderWindowList(windows, filter) {
     const stCls = w.pass ? 'pass' : 'fail';
     const label = w.pass ? '✓ pass' : (w.reject||'?').split(' ')[0];
 
+    // Breakout + impulse indicator
     let boTag = '';
     if (w.pass) {
       if (w.is_active) {
@@ -840,11 +882,13 @@ function selectWindow(windowSize) {
   document.querySelector('[data-tab="detail"]').classList.add('active');
   document.getElementById('tab-detail').classList.add('active');
 
+  // Title: show pass/fail reason + breakout outcome
   let titleSuffix = w.pass ? '✓ PASS' : '✗ ' + (w.reject||'').split(' ')[0].toUpperCase();
   if (w.pass && w.is_active)    titleSuffix += ' · ● ACTIVE';
   else if (w.pass && w.broke_out) titleSuffix += w.is_confirmed ? ' · ✓ CONFIRMED' : ' · ✗ NOT IMPULSIVE';
   document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
+  // Accumulation quality rows
   const rows = [
     { key:'Range %',  val:(w.range_pct*100).toFixed(4)+'%', limit: w.range_limit ? (w.range_limit*100).toFixed(4)+'% max':'no limit', pass:!w.range_limit||w.range_pct<=w.range_limit, ratio:w.range_limit?w.range_pct/w.range_limit:0.5 },
     { key:'Slope',    val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,                      ratio:w.slope/w.slope_limit },
@@ -869,6 +913,7 @@ function selectWindow(windowSize) {
         (r.limit?'<div style="font-size:9px;color:var(--muted);padding:1px 0 5px 0;border-bottom:1px solid rgba(255,255,255,0.04)">limit: '+r.limit+'</div>':'');
   }).join('');
 
+  // Breakout + impulse section (only for passing windows)
   let breakoutHtml = '';
   if (w.pass) {
     const activeData = replayMode ? replayData : liveData;
@@ -908,12 +953,14 @@ function selectWindow(windowSize) {
 
   document.getElementById('detail-body').innerHTML = accumHtml + breakoutHtml;
 
+  // Use the data object that matches the current mode (live vs replay)
   const activeData = replayMode ? replayData : liveData;
   drawWindowOverlay(w, activeData);
 }
 
 function drawSecondaryZone(z) {
   if (!z || z.top == null || z.bottom == null) return;
+  // Draw as a muted amber/yellow box to distinguish from primary (green/teal)
   const endTs = z.end || z.start;
   drawBox(z.start_ts || z.start, z.end_ts || endTs, z.top, z.bottom, 'rgba(240,180,60,0.55)', 0.04);
 }
@@ -922,21 +969,26 @@ function drawWindowOverlay(w, data) {
   clearOverlays();
   if (!w?.start_ts) return;
 
+  // Accumulation box
   const col  = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
   const fill = w.pass ? 0.06 : 0.04;
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
 
+  // Only show breakout overlay if this window actually broke out
   if (!w.broke_out || !data) return;
   const bo = data.breakout_candle;
   if (!bo) return;
 
+  // Candle interval from data
   const src = data.candles;
   const intervalSecs = (src?.length > 1) ? (src[1].time - src[0].time) : 60;
 
+  // Vertical marker on breakout candle
   drawVLine(bo.time, w.is_confirmed ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.5)');
 
+  // Breakout candle body highlight — green if confirmed, red if not impulsive
   const bCol = w.is_confirmed
-    ? 'rgba(90,240,196,0.8)'
+    ? (bo.close > bo.open ? 'rgba(90,240,196,0.8)' : 'rgba(90,240,196,0.8)')
     : 'rgba(240,90,126,0.6)';
   drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.15);
 }
@@ -1082,17 +1134,21 @@ function renderBias(tf) {
     return;
   }
 
+  // Render candles on chart
   renderChart(candles);
   clearOverlays();
 
+  // Highlight the bias candle (second-to-last = previous completed)
   const biasCandle = candles.find(c => c.bias_candle);
   if (biasCandle) {
     const isBull = biasCandle.close > biasCandle.open;
     const col    = isBull ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.7)';
+    // Approximate bar width: 1 day or 7 days in seconds
     const barSecs = tf === '1W' ? 604800 : 86400;
     drawBox(biasCandle.time, biasCandle.time + barSecs, biasCandle.high, biasCandle.low, col, 0.12);
   }
 
+  // Build info panel in the sd-content area
   document.getElementById('tag-session').textContent = label.toUpperCase() + ' BIAS';
   document.getElementById('tag-info').textContent    = label + ' · ' + candles.length + ' candles';
 
@@ -1102,6 +1158,7 @@ function renderBias(tf) {
     ' &nbsp;·&nbsp; Highlighted candle = bias source (df[-2])' +
     ' &nbsp;·&nbsp; ' + candles.length + ' candles total';
 
+  // Bias block — reuse existing sd-bias-block element
   const bc = biasCandle;
   const isBull = bc ? bc.close > bc.open : null;
   const bCls   = isBull === null ? 'misaligned' : isBull ? 'bullish' : 'bearish';
@@ -1115,6 +1172,7 @@ function renderBias(tf) {
     '</div>';
   document.getElementById('sd-bias-verdict').innerHTML = '';
 
+  // Show all candles as a simple list
   const rows = [...candles].reverse().map((c, i) => {
     const isBullC = c.close > c.open;
     const col     = isBullC ? 'var(--pass)' : 'var(--red)';
@@ -1141,15 +1199,8 @@ function renderSD(data) {
 
   document.getElementById('tag-session').textContent = 'S/D ANALYSIS';
   const bias = data.bias || {};
-
-  // ── FIX: server returns active zones in data.zones ──
-  const zones = data.zones || [];
-  const activeCount = zones.length;
-  const candidates = data.candidates || [];
-  const rejected   = candidates.filter(c => !c.is_active);
- 
   document.getElementById('tag-info').textContent =
-    currentTF + ' · bias: ' + (bias.bias||'—') + ' · ' + activeCount + ' active zones';
+    currentTF + ' · bias: ' + (bias.bias||'—') + ' · ' + (data.candidates?.length||0) + ' candidates';
 
   // Info bar
   const infoBar = document.getElementById('sd-info-bar');
@@ -1181,31 +1232,34 @@ function renderSD(data) {
     verdictEl.innerHTML = '<div style="padding:6px 10px;background:rgba(90,240,196,0.05);border:1px solid rgba(90,240,196,0.15);border-radius:3px;font-size:10px;color:' + col + ';margin-bottom:8px">✓ Aligned ' + bias.bias + ' — scanning for <strong>' + (data.look_for||'').toUpperCase() + '</strong></div>';
   }
 
-  if (!zones.length) {
-    document.getElementById('sd-zone-list').innerHTML = '<div class="panel-empty">No active zones found</div>';
-    clearOverlays();
+  const candidates = data.candidates || [];
+  if (!candidates.length) {
+    document.getElementById('sd-zone-list').innerHTML = '<div class="panel-empty">No candidates in scan range</div>';
     return;
   }
 
+  const active   = candidates.filter(c => c.is_active);
+  const rejected = candidates.filter(c => !c.is_active);
+
   document.getElementById('sd-zone-list').innerHTML =
-    '<div class="section-header"><span>Active Zones</span><span class="section-count">' + zones.length + '</span></div>' +
-    zones.map((z, i) => renderZoneRow(z, i, true)).join('') +
+    '<div class="section-header"><span>Active Zones</span><span class="section-count">' + active.length + '</span></div>' +
+    active.map((z,i) => renderZoneRow(z, i, true)).join('') +
     '<div class="section-header" style="margin-top:12px"><span>Rejected Candidates</span><span class="section-count">' + rejected.length + '</span></div>' +
-    rejected.map((z, i) => renderZoneRow(z, i + 1000, false)).join('');
+    rejected.map((z,i) => renderZoneRow(z, i + 1000, false)).join('');
 
   // Draw active zones on chart
   clearOverlays();
-  zones.forEach(z => {
+  active.forEach(z => {
     const col = z.type==='demand' ? 'rgba(90,158,240,0.7)' : 'rgba(240,90,126,0.7)';
     drawBox(z.start, z.end, z.top, z.bottom, col, 0.07);
   });
 }
 
 function renderZoneRow(z, idx, isActive) {
-  const rowClass = isActive ? (z.type || 'supply') + '-row' : 'rejected-row';
-  const badgeCls = isActive ? (z.type || 'supply') : 'reject';
-  const badgeTxt = isActive ? (z.type || '?').toUpperCase() : 'REJECTED';
-  const timeStr  = z.start ? fmtTime(z.start) : '—';
+  const rowClass  = isActive ? (z.type||'reject') + '-row' : 'rejected-row';
+  const badgeCls  = isActive ? (z.type||'reject') : 'reject';
+  const badgeTxt  = isActive ? (z.type||'?').toUpperCase() : 'REJECTED';
+  const timeStr   = z.start ? fmtTime(z.start) : '—';
   return '<div class="zone-row ' + rowClass + '" id="zone-row-' + idx + '" onclick="selectZone(' + idx + ', ' + isActive + ')">' +
     '<div class="zone-top-row">' +
       '<span class="zone-type-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
@@ -1236,27 +1290,37 @@ function scrollToTime(ts) {
     chart.timeScale().setVisibleRange({ from: t - window, to: t + window });
   } catch(e) { /* ignore if chart not ready */ }
 }
- 
+
 function selectZone(idx, isActive) {
   document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
   const el = document.getElementById('zone-row-' + idx);
-  if (el) { el.classList.add('selected-zone'); el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  if (el) {
+    el.classList.add('selected-zone');
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
-  const zones      = sdData?.zones      || [];
-  const candidates = sdData?.candidates || [];
-  const rejected   = candidates.filter(c => !c.is_active);
-  const z = idx < 1000 ? zones[idx] : rejected[idx - 1000];
+  if (!sdData?.candidates) return;
+  const active   = sdData.candidates.filter(c => c.is_active);
+  const rejected = sdData.candidates.filter(c => !c.is_active);
+  const z = idx < 1000 ? active[idx] : rejected[idx - 1000];
   if (!z) return;
 
   clearOverlays();
-  zones.forEach(az => {
+
+  // Redraw all active zones dimmed
+  active.forEach(az => {
     const col = az.type==='demand' ? 'rgba(90,158,240,0.25)' : 'rgba(240,90,126,0.25)';
     drawBox(az.start, az.end, az.top, az.bottom, col, 0.03);
   });
 
-  const selCol = z.type==='demand' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
-  const endTs  = z.end || (z.start + 3600);
+  // Highlight selected zone — active or rejected both get a box
+  const selCol = z.type==='demand' ? 'rgba(90,158,240,0.9)' :
+                 z.type==='supply' ? 'rgba(240,90,126,0.9)' :
+                                     'rgba(240,196,90,0.7)';
+  const endTs = z.end || (z.start + 3600);
   drawBox(z.start, endTs, z.top, z.bottom, selCol, 0.15);
+
+  // Yellow vertical marker on the indecision candle
   if (z.start) drawVLine(z.start, 'rgba(240,196,90,0.6)');
 }
 
@@ -1293,6 +1357,7 @@ function renderFVG(data) {
   document.getElementById('tag-info').textContent =
     currentTF + ' · ' + (data.passed||0) + ' FVGs / ' + (data.total||0) + ' scanned';
 
+  // Info bar
   const infoBar = document.getElementById('fvg-info-bar');
   infoBar.style.display = '';
   infoBar.innerHTML =
@@ -1300,6 +1365,7 @@ function renderFVG(data) {
     ' &nbsp;·&nbsp; Min body: <strong>' + (impBody*100).toFixed(0) + '%</strong>' +
     ' &nbsp;·&nbsp; Direction must match impulse';
 
+  // Stats
   document.getElementById('fvg-stats').innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">' +
       [
@@ -1330,6 +1396,7 @@ function renderFVG(data) {
     withoutFvg.slice(0, 40).map((c,i) => renderFvgRow(c, i + 1000)).join('') +
     (withoutFvg.length > 40 ? '<div class="panel-empty" style="font-size:9px">… ' + (withoutFvg.length-40) + ' more</div>' : '');
 
+  // Draw all confirmed FVG gap zones on chart
   clearOverlays();
   withFvg.forEach(c => {
     if (c.gap_top == null) return;
@@ -1398,6 +1465,7 @@ function selectFvg(idx) {
 
   clearOverlays();
 
+  // All confirmed FVG gap zones dimmed
   withFvg.forEach(x => {
     if (!x.gap_top) return;
     const col = x.fvg_type==='bullish' ? 'rgba(90,158,240,0.12)' : 'rgba(240,90,126,0.12)';
@@ -1410,21 +1478,25 @@ function selectFvg(idx) {
   const tnm1 = c.candle_nm1?.time;
   const tnp1 = c.candle_np1?.time;
 
+  // Mark the 3-candle window
   if (tnm1) drawVLine(tnm1, 'rgba(240,196,90,0.3)');
   drawVLine(tn,  'rgba(240,196,90,0.7)');
   if (tnp1) drawVLine(tnp1, 'rgba(240,196,90,0.3)');
 
+  // Highlight the impulse candle
   const colBright = c.fvg_type==='bullish' ? 'rgba(90,158,240,0.8)'
                   : c.fvg_type==='bearish' ? 'rgba(240,90,126,0.8)'
                   : 'rgba(180,180,180,0.6)';
   drawBox(tn, tn + 60, c.candle_n.high, c.candle_n.low, colBright, 0.12);
 
+  // Draw the FVG gap zone (or show where the gap would be for rejected ones)
   if (c.has_fvg && c.gap_top != null) {
     const gapCol  = c.fvg_type==='bullish' ? 'rgba(90,158,240,0.9)' : 'rgba(240,90,126,0.9)';
     const spanS   = tnm1 || tn - 60;
     const spanE   = tnp1 ? tnp1 + 60 : tn + 180;
     drawBox(spanS, spanE, c.gap_top, c.gap_bottom, gapCol, 0.30);
   } else {
+    // For rejected: show the raw wicks of N-1 and N+1 so you can see why there's no gap
     const nm1H = c.candle_nm1?.high, nm1L = c.candle_nm1?.low;
     const np1H = c.candle_np1?.high, np1L = c.candle_np1?.low;
     if (nm1H && tnm1) drawBox(tnm1, tnm1 + 30, nm1H, nm1L, 'rgba(240,196,90,0.5)', 0.08);
