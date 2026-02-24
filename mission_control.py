@@ -8,7 +8,7 @@ to each pair's internal port so there are zero CORS issues.
 Usage:
     python mission_control.py
 
-Then open: http://localhost:5010
+Then open: http://localhost:6767
 """
 
 import requests
