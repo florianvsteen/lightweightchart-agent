@@ -189,14 +189,22 @@ def detect(
             top    = h
             bottom = l
 
-            if zone_type == "demand":
-                # Remove if a candle body has closed below the zone bottom
-                if min(opens[-2], closes[-2]) <= bottom:
-                    continue
-            else:  # supply
-                # Remove if a candle body has closed above the zone top
-                if max(opens[-2], closes[-2]) >= top:
-                    continue
+            zone_mitigated = False
+            for j in range(i + 2, len(df) - 1):  # skip live candle at [-1]
+                body_top    = max(opens[j], closes[j])
+                body_bottom = min(opens[j], closes[j])
+            
+                if zone_type == "demand":
+                    if body_bottom <= bottom:
+                        zone_mitigated = True
+                        break
+                else:  # supply
+                    if body_top >= top:
+                        zone_mitigated = True
+                        break
+            
+            if zone_mitigated:
+                continue
 
             status = "active"
 
