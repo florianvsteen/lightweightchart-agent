@@ -211,6 +211,9 @@ def detect(
                 for j in range(max(i+2, len(df)-6), len(df)-1):
                     print(f"  candle[{j}] body: {min(opens[j], closes[j]):.5f} - {max(opens[j], closes[j]):.5f}")
 
+            if zone_mitigated:
+                continue
+
             status = "active"
 
             zones.append({
