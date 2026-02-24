@@ -1105,10 +1105,9 @@ class PairServer:
                 "daily_candles":  to_candles(df_d),
                 "weekly_candles": to_candles(df_w),
             })
-
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
     
     def _test_alert(self):
         test_zone = {
