@@ -945,145 +945,58 @@ class PairServer:
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
     def _debug_sd(self):
-        """Return detailed Supply & Demand analysis JSON for the debug page."""
         try:
             import pandas as pd
             import numpy as np
-            from detectors.supply_demand import (
-                _get_bias, _is_indecision, _in_session, _candle_session_or_pre
-            )
-
+            from detectors.supply_demand import detect, _get_bias, _candle_session_or_pre
+    
             interval = request.args.get("interval", None)
             cache = {}
             params = dict(self.detector_params.get("supply_demand", {}))
             params.pop("timeframe", None)
-            ticker           = self.ticker  # already resolved to correct provider ticker in __init__
-            impulse_mult     = params.get("impulse_multiplier", 1.8)
-            wick_ratio       = params.get("wick_ratio", 0.6)
-            max_zones        = params.get("max_zones", 5)
-            max_age_days     = params.get("max_age_days", 3)
-            valid_sessions   = params.get("valid_sessions", ["london", "new_york"])
-
-            # Use requested interval or fall back to configured detector timeframe
+    
             detector_interval = interval or self.detector_params.get("supply_demand", {}).get("timeframe", "30m")
             df = self._get_df(detector_interval, cache)
-
-            # Get bias
-            bias_info = _get_bias(ticker)
+    
+            result = detect(df, ticker=self.ticker, **params)
+    
+            # Build candles for the chart
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             df = df.loc[:, ~df.columns.duplicated()].copy()
-            for col in ['Open','High','Low','Close']:
+            for col in ['Open', 'High', 'Low', 'Close']:
                 df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
-            df = df.dropna(subset=['Open','High','Low','Close'])
-
-            opens  = df['Open'].values.flatten().astype(float)
-            highs  = df['High'].values.flatten().astype(float)
-            lows   = df['Low'].values.flatten().astype(float)
-            closes = df['Close'].values.flatten().astype(float)
-            bodies = np.abs(closes - opens)
-            avg_body = float(np.mean(bodies))
-
-            from datetime import datetime, timezone
-            now_ts = datetime.now(timezone.utc).timestamp()
-            cutoff_ts = now_ts - (max_age_days * 86400)
-
-            last_close = closes[-2]
-            last_high  = highs[-2]
-            last_low   = lows[-2]
-
-            look_for = None
-            if bias_info["bias"] != "misaligned":
-                look_for = "demand" if bias_info["bias"] == "bullish" else "supply"
-
-            candidates = []
-
-            for i in range(len(df) - 3, 0, -1):
-                candle_ts = int(df.index[i].timestamp())
-                if candle_ts < cutoff_ts:
-                    break
-
-                o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-                session = _candle_session_or_pre(candle_ts)
-
-                reject_reason = None
-
-                # Session check
-                if not _in_session(candle_ts, valid_sessions):
-                    reject_reason = f"session '{session}' not in {valid_sessions}"
-
-                # Indecision check
-                if not reject_reason and not _is_indecision(o, h, l, c, wick_ratio):
-                    body = abs(c - o)
-                    total_range = h - l
-                    wick_frac = round((total_range - body) / total_range, 3) if total_range else 0
-                    reject_reason = f"not indecision (wicks {wick_frac*100:.1f}% < {wick_ratio*100:.0f}%)"
-
-                # Impulse body check
-                if not reject_reason:
-                    imp_body  = abs(closes[i+1] - opens[i+1])
-                    imp_range = highs[i+1] - lows[i+1]
-                    if imp_body < avg_body * impulse_mult:
-                        reject_reason = f"impulse body {imp_body:.5f} < avg×{impulse_mult} ({avg_body*impulse_mult:.5f})"
-                    elif imp_range > 0 and (imp_body / imp_range) < 0.60:
-                        reject_reason = f"impulse wicks too large (body {imp_body/imp_range*100:.1f}% of range)"
-
-                # Direction vs bias
-                impulse_bullish = closes[i+1] > opens[i+1]
-                zone_type = "demand" if impulse_bullish else "supply"
-                if not reject_reason and look_for and zone_type != look_for:
-                    reject_reason = f"wrong direction ({zone_type}) — bias requires {look_for}"
-
-                # Bias misaligned
-                if not reject_reason and not look_for:
-                    reject_reason = "bias misaligned — detection skipped"
-
-                # Touch check
-                if not reject_reason:
-                    if zone_type == "demand" and last_low <= h:
-                        reject_reason = f"demand zone touched/crossed (low {last_low:.5f} ≤ zone top {h:.5f})"
-                    elif zone_type == "supply" and last_high >= l:
-                        reject_reason = f"supply zone touched/crossed (high {last_high:.5f} ≥ zone bot {l:.5f})"
-
-                is_active = reject_reason is None
-
-                # Calculate impulse metrics for display
-                imp_body_val  = round(abs(closes[i+1] - opens[i+1]), 6) if i+1 < len(df) else None
-                imp_mult_used = round(imp_body_val / avg_body, 2) if imp_body_val and avg_body else None
-                body_size     = round(abs(c - o), 6)
-                total_range   = round(h - l, 6)
-                wick_pct      = round((total_range - body_size) / total_range * 100, 1) if total_range else 0
-
-                candidates.append({
-                    "start":         candle_ts,
-                    "end":           int(df.index[-1].timestamp()),
-                    "top":           float(h),
-                    "bottom":        float(l),
-                    "type":          zone_type,
-                    "session":       session,
-                    "is_active":     is_active,
-                    "reject_reason": reject_reason,
-                    "wick_pct":      wick_pct,
-                    "body_size":     body_size,
-                    "impulse_body":  imp_body_val,
-                    "impulse_mult":  imp_mult_used,
-                    "avg_body":      round(avg_body, 6),
-                })
-
+            df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+    
             candles_sd = [
-                {"time": int(idx.timestamp()), "open": round(float(r["Open"]),5),
-                 "high": round(float(r["High"]),5), "low": round(float(r["Low"]),5),
-                 "close": round(float(r["Close"]),5)}
+                {"time": int(idx.timestamp()), "open": round(float(r["Open"]), 5),
+                 "high": round(float(r["High"]), 5), "low": round(float(r["Low"]), 5),
+                 "close": round(float(r["Close"]), 5)}
                 for idx, r in df.iterrows()
             ]
+    
+            # Enrich active zones with display fields the frontend expects
+            bodies   = np.abs(df['Close'].values - df['Open'].values)
+            avg_body = float(np.mean(bodies))
+    
+            candidates = []
+            for z in result.get("candidates", []):
+                candidates.append({
+                    **z,
+                    "end":      int(df.index[-1].timestamp()),
+                    "avg_body": round(avg_body, 6),
+                })
+    
             return jsonify({
                 "pair":       self.pair_id,
-                "bias":       bias_info,
-                "look_for":   look_for,
+                "bias":       result["bias"],
+                "look_for":   "demand" if result["bias"].get("bias") == "bullish" else
+                              "supply" if result["bias"].get("bias") == "bearish" else None,
                 "avg_body":   round(avg_body, 6),
                 "candidates": candidates,
                 "candles":    candles_sd,
             })
+    
         except Exception as e:
             import traceback
             return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
