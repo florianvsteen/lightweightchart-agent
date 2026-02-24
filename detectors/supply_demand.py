@@ -188,36 +188,23 @@ def detect(
 
             top    = h
             bottom = l
-            mitigated = False
 
-            # 2. MITIGATION CHECK: Scan from the impulse candle (i+1) to the present
-            # A zone is dead if a candle BODY closes past the boundary.
-            for j in range(i + 1, len(df)):
-                current_close = closes[j]
-                
-                if zone_type == "demand":
-                    # Demand is dead if a candle closes BELOW the zone bottom
-                    if current_close < bottom:
-                        mitigated = True
-                        break
-                else:  # supply
-                    # Supply is dead if a candle closes ABOVE the zone top
-                    if current_close > top:
-                        mitigated = True
-                        break
-
-            # 3. Discard if it was ever breached
-            if mitigated:
-                continue
+            if zone_type == "demand":
+                # Remove if wick has touched the zone (low at or below zone top)
+                if lows[-2] <= top:
+                    continue
+            else:  # supply
+                # Remove if wick has touched the zone (high at or above zone bottom)
+                if highs[-2] >= bottom:
+                    continue
 
             status = "active"
 
-            # Only active, un-breached zones reach this point
             zones.append({
                 "type":      zone_type,
-                "status":    "active",
+                "status":    status,
                 "session":   _candle_session_or_pre(candle_ts, market_timing),
-                "is_active": True,
+                "is_active": status == "active",
                 "start":     candle_ts,
                 "end":       int(df.index[-1].timestamp()),
                 "top":       float(top),
