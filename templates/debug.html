@@ -1217,6 +1217,26 @@ function renderZoneRow(z, idx, isActive) {
   '</div>';
 }
 
+function scrollToTime(ts) {
+  // Scroll the chart so the given timestamp is centred in view.
+  // LightweightCharts v4 exposes setVisibleRange on the time scale.
+  if (!ts) return;
+  const t = shiftTime(ts);
+  // Show a window of ±40 candles worth of seconds around the target.
+  // We derive the candle interval from the active dataset.
+  const src = (currentMode === 'sd' && sdData?.candles)   ? sdData.candles
+            : (currentMode === 'fvg' && fvgData?.candles) ? fvgData.candles
+            : liveData?.candles;
+  let intervalSecs = 60; // default 1m
+  if (src && src.length > 1) {
+    intervalSecs = src[1].time - src[0].time;
+  }
+  const window = intervalSecs * 40;
+  try {
+    chart.timeScale().setVisibleRange({ from: t - window, to: t + window });
+  } catch(e) { /* ignore if chart not ready */ }
+}
+ 
 function selectZone(idx, isActive) {
   document.querySelectorAll('.zone-row').forEach(r => r.classList.remove('selected-zone'));
   const el = document.getElementById('zone-row-' + idx);
