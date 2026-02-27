@@ -28,6 +28,12 @@ Breakout validation — IMPULSIVE CANDLE:
     active    — valid zone, breakout candle still inside the box
     confirmed — valid zone + impulsive breakout outside the box
 
+Touchpoint counting (alternating):
+  A touch on the top boundary must be followed by a touch on the bottom
+  before the next top touch is counted, and vice versa. This ensures only
+  genuine bounces between the walls are counted, not repeated tags of the
+  same side. min_touchpoints is configured per-pair in config.py.
+
 Session hours and weekend halt logic live in sessions.py.
 """
 
@@ -78,28 +84,51 @@ def _count_touchpoints(
     tolerance: float = 0.0002,
 ) -> int:
     """
-    Count how many candle bodies touch the top or bottom boundary of the box.
+    Count alternating touches on the box top and bottom using candle bodies.
 
-    A body "touches" a boundary when its high is within `tolerance` (fraction of
-    box height) of box_top, or its low is within `tolerance` of box_bottom.
+    Rules:
+      - First touch can be on either the top or bottom.
+      - After a top touch, the next counted touch must be on the bottom.
+      - After a bottom touch, the next counted touch must be on the top.
+      - Consecutive touches on the same side are ignored until the opposite
+        side is touched — this ensures only genuine bounces are counted.
+      - A touch is registered when a body comes within `tolerance` of the
+        boundary (tolerance = box_height * 0.0002 by default).
+
+    Example with min_touchpoints=4:
+      top → bottom → top → bottom  =  4  ✓
+      top → top → bottom → top     =  3  (second top skipped until bottom seen)
 
     Args:
         body_highs: array of per-candle body tops  (max of open/close)
         body_lows:  array of per-candle body bottoms (min of open/close)
         box_top:    upper boundary of the accumulation box
         box_bottom: lower boundary of the accumulation box
-        tolerance:  fraction of box height used as proximity threshold (default 0.02%)
+        tolerance:  fraction of box height used as proximity threshold
 
     Returns:
-        Total number of distinct candle touches (top + bottom combined).
+        Total number of alternating touches.
     """
     box_height = box_top - box_bottom
     if box_height <= 0:
         return 0
     tol = box_height * tolerance
-    touches_top    = int(np.sum(body_highs >= box_top - tol))
-    touches_bottom = int(np.sum(body_lows  <= box_bottom + tol))
-    return touches_top + touches_bottom
+
+    last_side = None   # 'top' or 'bottom' — tracks which side was last counted
+    count = 0
+
+    for i in range(len(body_highs)):
+        touched_top    = body_highs[i] >= box_top    - tol
+        touched_bottom = body_lows[i]  <= box_bottom + tol
+
+        if touched_top and last_side != 'top':
+            last_side = 'top'
+            count += 1
+        elif touched_bottom and last_side != 'bottom':
+            last_side = 'bottom'
+            count += 1
+
+    return count
 
 
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
@@ -183,10 +212,14 @@ def detect(
         market_timing:          Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
         always_open:            Deprecated. Use market_timing=CRYPTO instead.
         alert_cooldown_minutes: Accepted for forward-compat; enforced by server, not here.
-        min_touchpoints:        Minimum number of candle body touches on box top/bottom
-                                required for the zone to be valid. 0 = disabled (default).
-                                Example: 6 means price must have bounced off the box
-                                walls at least 6 times total.
+        min_touchpoints:        Minimum number of alternating body touches required.
+                                Counted as: top → bottom → top → bottom...
+                                Each touch on the opposite wall increments the count.
+                                Repeated touches on the same wall are ignored until
+                                the opposite wall is tagged.
+                                0 = disabled (default). Configured per-pair in config.py.
+                                Example: 4 requires at least 2 top touches and 2 bottom
+                                touches in alternating order.
     """
     try:
         if is_weekend_halt(market_timing):
@@ -299,7 +332,7 @@ def detect(
             bodies = np.abs(closes - opens)
             avg_body = float(bodies.mean()) if len(bodies) > 0 else 0.0
 
-            # Touchpoints: count how many bodies touch the box walls
+            # Touchpoints: alternating bounces between box top and bottom
             touchpoints = _count_touchpoints(body_highs, body_lows, h_max, l_min)
             if min_touchpoints > 0 and touchpoints < min_touchpoints:
                 continue
@@ -361,13 +394,6 @@ def detect(
             return candidate
 
         # ── Price broke out — validate as IMPULSIVE ───────────────────────
-        #
-        # breakout candle = df[-2] (breakout_idx)
-        # Conditions for "confirmed":
-        #   1. Body exits the box (broke_up or broke_down)
-        #   2. Breakout body size > avg body size of candles in the window
-        #      — this confirms the move is impulsive, not just a wick poke
-
         box_top    = candidate["top"]
         box_bottom = candidate["bottom"]
         avg_body   = candidate["avg_body"]
@@ -376,7 +402,6 @@ def detect(
         broke_down = last_body_low  < box_bottom
 
         if not broke_up and not broke_down:
-            # Body still inside — active (is_active flag was wrong, re-check)
             candidate.pop("_window_start_idx", None)
             candidate["is_active"] = True
             candidate["status"]    = "active"
@@ -462,7 +487,6 @@ def explain_candle(
         return lines
 
     if status == "looking":
-        # detect() found no valid zone at all
         lines.append(
             "No valid accumulation zone found before this candle. "
             "The scan window either had no candidate zones, or all candidates "
@@ -474,7 +498,6 @@ def explain_candle(
     top    = result.get("top", 0)
     bot    = result.get("bottom", 0)
     adx    = result.get("adx")
-    chop   = result.get("slope")   # slope is in the result
     avg_body = result.get("avg_body", 0)
     touches  = result.get("touchpoints", 0)
 
@@ -483,7 +506,7 @@ def explain_candle(
     )
     if adx is not None:
         lines.append(
-            f"  ADX {adx:.1f}  ·  avg body {avg_body:.5f}  ·  touches {touches}"
+            f"  ADX {adx:.1f}  ·  avg body {avg_body:.5f}  ·  alternating touches {touches}"
         )
 
     if status in ("active", "found", "potential"):
@@ -509,8 +532,6 @@ def explain_candle(
         )
         return lines
 
-    # detect() returned something unexpected — broke out but wasn't impulsive
-    # (detect returns 'looking' in that case, handled above, but be safe)
     lines.append(
         f"Broke out of zone ({bot:.5f}–{top:.5f}) but not impulsive enough."
     )
