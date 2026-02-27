@@ -701,6 +701,7 @@
         }
 
         // ── Chart centering for screenshot mode (Playwright) ──────────
+        window._screenshotReady = false;
         let _screenshotCentered = false;
         function maybeCenterOnScreenshot(candles) {
             if (_screenshotCentered || !_screenshotCenterTs || !candles.length) return;
@@ -721,6 +722,9 @@
             try {
                 chart.timeScale().setVisibleLogicalRange({ from, to });
             } catch(e) {}
+
+            // Signal Playwright that centering is complete
+            window._screenshotReady = true;
         }
 
         // ── Data Loop ─────────────────────────────────────────────────
