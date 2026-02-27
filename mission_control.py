@@ -153,7 +153,7 @@ def proxy_api_candle_explain(pair_id):
         r = requests.get(url, timeout=15)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
-        return jsonify({"lines": [f"Error: {str(e)}]}"}), 502
+        return jsonify({"lines": [f"Error: {str(e)}"]}), 502
 
 
 @app.route("/proxy/<pair_id>/debug")
