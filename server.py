@@ -1321,7 +1321,7 @@ class PairServer:
         from werkzeug.middleware.proxy_fix import ProxyFix
         self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-        t = threading.Thread(target=self._detection_loop, daemon=True, name=f="detector-{self.pair_id}")
+        t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
         t.start()
 
         self.app.run(host="0.0.0.0", port=self.port, use_reloader=False, threaded=True)
