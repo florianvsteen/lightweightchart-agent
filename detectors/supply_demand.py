@@ -209,3 +209,97 @@ def detect(
     except Exception as e:
         print(f"[supply_demand] Detection error: {e}")
         return {"detector": "supply_demand", "bias": {"bias": "misaligned", "aligned": False, "reason": str(e)}, "zones": []}
+
+
+
+def explain_candle(
+    df,
+    ci: int,
+    params: dict,
+    market_timing: str = FOREX,
+    ticker: str = None,
+) -> list[str]:
+    """
+    Explain why candle at index `ci` is or isn't a valid S&D zone base candle.
+
+    Calls detect() with debug=True on a df sliced to ci+2, then finds the
+    candidate entry for candle[ci] in the debug candidates list and narrates it.
+    No detection logic is duplicated here.
+    """
+    if ci < 0 or ci + 2 > len(df):
+        return ["Candle index out of range."]
+
+    c = df.iloc[ci]
+    o, h, l, cl = float(c["Open"]), float(c["High"]), float(c["Low"]), float(c["Close"])
+    body        = abs(cl - o)
+    total_range = h - l
+    is_bull     = cl >= o
+
+    lines = []
+    lines.append(
+        f"{'Bullish' if is_bull else 'Bearish'} candle — "
+        f"body {body:.5f}  range {total_range:.5f}"
+    )
+
+    # Slice so detect() sees candle[ci] as the last evaluable base candidate
+    df_slice = df.iloc[: ci + 2]
+
+    result = detect(
+        df_slice,
+        ticker=ticker,
+        market_timing=market_timing,
+        debug=True,
+        **params,
+    )
+
+    bias_info     = result.get("bias", {})
+    bias          = bias_info.get("bias", "misaligned")
+    is_misaligned = bias == "misaligned"
+
+    if is_misaligned:
+        lines.append(
+            f"⚡ Bias misaligned (daily: {bias_info.get('daily_bias', '?')} / "
+            f"weekly: {bias_info.get('weekly_bias', '?')}) — "
+            "zone still detected but flagged lower confidence"
+        )
+    else:
+        lines.append(f"Bias: {bias}")
+
+    # Find this candle's entry in the debug candidates list
+    candle_ts  = int(df.index[ci].timestamp())
+    candidates = result.get("candidates", [])
+    candidate  = next((c for c in candidates if c["start"] == candle_ts), None)
+
+    if candidate is None:
+        lines.append(
+            "This candle was not evaluated — it may be outside the scan window "
+            "or too close to the edge of the data."
+        )
+        return lines
+
+    zone_type = candidate.get("type", "?")
+    is_active = candidate.get("is_active", False)
+    reason    = candidate.get("reject_reason")
+    session   = candidate.get("session", "?")
+
+    if is_active:
+        lines.append(f"✓ Valid {zone_type.upper()} zone base — session '{session}'.")
+        lines.append(f"  Zone: {candidate['bottom']:.5f}–{candidate['top']:.5f}")
+        if candidate.get("is_misaligned"):
+            lines.append("  ⚡ Flagged as lower-confidence (bias misaligned).")
+    else:
+        lines.append(f"Not a valid {zone_type} zone base:")
+        lines.append(f"  • {reason}")
+
+    # Always show the impulse numbers for context
+    if isinstance(df_slice.columns, pd.MultiIndex):
+        df_slice = df_slice.copy()
+        df_slice.columns = df_slice.columns.get_level_values(0)
+    bodies   = (df_slice["Close"] - df_slice["Open"]).abs()
+    avg_body = float(bodies.mean())
+    impulse_multiplier = params.get("impulse_multiplier", 1.8)
+    lines.append(
+        f"  avg body: {avg_body:.5f}  ·  this body: {body:.5f}  ·  "
+        f"impulse threshold: {avg_body * impulse_multiplier:.5f}"
+    )
+    return lines
