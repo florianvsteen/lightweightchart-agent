@@ -101,10 +101,7 @@
             color: #e0e0e0;
             letter-spacing: 0.08em;
         }
-        #weekend-overlay .wk-sub {
-            font-size: 0.8rem;
-            color: #555;
-        }
+        #weekend-overlay .wk-sub { font-size: 0.8rem; color: #555; }
         #weekend-overlay .wk-countdown {
             font-size: 2rem;
             font-weight: 700;
@@ -112,15 +109,9 @@
             font-variant-numeric: tabular-nums;
             letter-spacing: 0.05em;
         }
-        #weekend-overlay .wk-hint {
-            font-size: 0.68rem;
-            color: #333;
-        }
-        #interval-bar {
-            display: flex;
-            gap: 4px;
-            margin-left: auto;
-        }
+        #weekend-overlay .wk-hint { font-size: 0.68rem; color: #333; }
+
+        #interval-bar { display: flex; gap: 4px; margin-left: auto; }
         .tf-btn {
             background: none;
             border: 1px solid #2b2b43;
@@ -148,8 +139,7 @@
             white-space: nowrap;
         }
         #session-badge .session-dot {
-            width: 7px;
-            height: 7px;
+            width: 7px; height: 7px;
             border-radius: 50%;
             background: #444;
         }
@@ -174,17 +164,29 @@
             color: #666;
             white-space: nowrap;
         }
-        #bias-badge .bias-dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            background: #444;
-        }
+        #bias-badge .bias-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; }
+        #bias-badge.strong_bullish { border-color: #2ecc71; color: #2ecc71; background: rgba(46,204,113,0.06); }
+        #bias-badge.strong_bullish .bias-dot { background: #2ecc71; box-shadow: 0 0 7px rgba(46,204,113,0.7); }
         #bias-badge.bullish  { border-color: #4caf82; color: #4caf82; }
         #bias-badge.bullish  .bias-dot { background: #4caf82; box-shadow: 0 0 5px rgba(76,175,130,0.5); }
         #bias-badge.bearish  { border-color: #cf6679; color: #cf6679; }
         #bias-badge.bearish  .bias-dot { background: #cf6679; box-shadow: 0 0 5px rgba(207,102,121,0.5); }
+        #bias-badge.strong_bearish { border-color: #e74c3c; color: #e74c3c; background: rgba(231,76,60,0.06); }
+        #bias-badge.strong_bearish .bias-dot { background: #e74c3c; box-shadow: 0 0 7px rgba(231,76,60,0.7); }
         #bias-badge.misaligned { border-color: #888; color: #666; }
         #bias-badge.misaligned .bias-dot { background: #555; }
+
+        /* ── Misaligned warning banner ── */
+        #misaligned-banner {
+            display: none;
+            padding: 4px 12px;
+            background: rgba(240, 196, 90, 0.08);
+            border: 1px solid rgba(240, 196, 90, 0.3);
+            border-radius: 4px;
+            font-size: 0.72rem;
+            color: #c8a84b;
+            white-space: nowrap;
+        }
 
         #chart-container {
             flex: 1;
@@ -209,6 +211,7 @@
             <span class="bias-dot"></span>
             <span id="bias-label">--</span>
         </div>
+        <div id="misaligned-banner">⚡ Bias misaligned — lower confidence zones</div>
         <div id="interval-bar">
             <button class="tf-btn active" data-interval="1m">1m</button>
             <button class="tf-btn" data-interval="5m">5m</button>
@@ -225,9 +228,9 @@
     <!-- Weekend closed overlay -->
     <div id="weekend-overlay">
         <div class="wk-title">⛔ Market Closed</div>
-        <div class="wk-sub" id="wk-sub">Weekend halt — Fri 23:00 UTC to Mon 01:00 UTC</div>
+        <div class="wk-sub" id="wk-sub">Weekend halt — Fri 23:00 UTC to Sun 22:00 UTC</div>
         <div class="wk-countdown" id="wk-countdown">00:00:00</div>
-        <div class="wk-hint" id="wk-hint">Resumes Monday 01:00 UTC (Asian session open)</div>
+        <div class="wk-hint" id="wk-hint">Resumes Sunday 22:00 UTC (forex market open)</div>
     </div>
 
     <script>
@@ -235,42 +238,30 @@
         const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
         const TIMEZONE = "{{ timezone }}";
 
+        // ── URL params (used for Playwright screenshot mode) ──────────
+        const _urlParams = new URLSearchParams(window.location.search);
+        const _screenshotCenterTs = _urlParams.get('center') ? parseInt(_urlParams.get('center')) : null;
+
         // ── Timezone offset ───────────────────────────────────────────
-        // LightweightCharts 4.x doesn't support timezone config directly.
-        // We shift timestamps by the container's UTC offset so the chart
-        // displays times in the correct local timezone.
         function getTzOffsetSeconds(tz) {
             try {
                 const now = new Date();
-                // Get UTC time and local time in the target timezone
                 const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
                 const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
                 const diff   = (new Date(tzStr) - new Date(utcStr)) / 1000;
                 return diff;
-            } catch(e) {
-                return 0;
-            }
+            } catch(e) { return 0; }
         }
         const TZ_OFFSET = getTzOffsetSeconds(TIMEZONE);
 
-        function shiftTime(ts) {
-            return ts + TZ_OFFSET;
-        }
+        // Expose for Playwright screenshot centering
+        window._tzOffset = TZ_OFFSET;
+
+        function shiftTime(ts) { return ts + TZ_OFFSET; }
         let currentInterval = "{{ default_interval }}";
 
         // ── Session clock ─────────────────────────────────────────────
-        // Sessions are defined in UTC — same for everyone worldwide.
-        // The browser converts UTC start times to local time for the countdown.
-        const SESSION_LABELS = {
-            asian:    'Asian',
-            london:   'London',
-            new_york: 'New York',
-        };
-
-        // Session windows in UTC hours
-        // Asian:    01:00 – 07:00 UTC  (02:00 – 08:00 CET)
-        // London:   08:00 – 12:00 UTC  (09:00 – 13:00 CET)
-        // New York: 13:00 – 19:00 UTC  (15:00 – 20:00 CET)
+        const SESSION_LABELS = { asian: 'Asian', london: 'London', new_york: 'New York' };
         const SESSION_WINDOWS_UTC = [
             { name: 'asian',    start: 1,  end: 7  },
             { name: 'london',   start: 8,  end: 12 },
@@ -288,10 +279,8 @@
         function getNextSession() {
             const now     = new Date();
             const utcHour = now.getUTCHours();
-            // Find next session start in UTC
             let next = SESSION_WINDOWS_UTC.find(s => s.start > utcHour);
-            if (!next) next = SESSION_WINDOWS_UTC[0];  // wrap to tomorrow
-            // Build a Date for the next session start in UTC
+            if (!next) next = SESSION_WINDOWS_UTC[0];
             const target = new Date(now);
             target.setUTCHours(next.start, 0, 0, 0);
             if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
@@ -300,10 +289,7 @@
             const diffM  = Math.floor((diffMs % 3600000) / 60000);
             const diffS  = Math.floor((diffMs % 60000) / 1000);
             const pad    = n => String(n).padStart(2, '0');
-            return {
-                name:      next.name,
-                countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}`,
-            };
+            return { name: next.name, countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}` };
         }
 
         function updateSessionBadge() {
@@ -324,12 +310,10 @@
         setInterval(updateSessionBadge, 1000);
 
         // ── Interval buttons ─────────────────────────────────────────
-        // Activate correct button on page load
         document.querySelectorAll('.tf-btn').forEach(btn => {
             if (btn.dataset.interval === currentInterval) btn.classList.add('active');
             else btn.classList.remove('active');
         });
-
         document.querySelectorAll('.tf-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
@@ -347,14 +331,15 @@
             timeScale: { timeVisible: true, borderColor: '#2B2B43' },
         });
 
-        // Price axis precision: forex pairs need 5 decimal places,
-        // gold needs 2, index futures need 0.
+        // Expose chart reference for Playwright screenshot centering
+        window._chartRef = chart;
+
         function getPriceFormat(pairId) {
             const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
             if (forex5.includes(pairId))     return { type: 'price', precision: 5, minMove: 0.00001 };
             if (pairId === 'XAUUSD')         return { type: 'price', precision: 2, minMove: 0.01   };
             if (pairId === 'BTCUSD')         return { type: 'price', precision: 0, minMove: 1       };
-            /* US30, US100, other futures */ return { type: 'price', precision: 0, minMove: 1       };
+            return { type: 'price', precision: 0, minMove: 1 };
         }
 
         const candleSeries = chart.addCandlestickSeries({
@@ -372,45 +357,44 @@
         const statusEls = {};
 
         const STATUS_CONFIG = {
-            // accumulation
-            looking:              { label: 'Looking for accumulation',         css: 'state-looking'   },
-            potential:            { label: 'Potential accumulation forming',    css: 'state-potential' },
-            active:               { label: 'Accumulation forming',              css: 'state-potential' },
-            found:                { label: 'Accumulation found',                css: 'state-found'     },
-            confirmed:            { label: 'Accumulation confirmed — alerting', css: 'state-found'     },
-            cooldown:             { label: 'Cooldown — resuming in …',          css: 'state-cooldown'  },
-            out_of_session:       { label: 'Out of session',                    css: 'state-offline'   },
-            open_not_in_session:  { label: 'Open — not in session',             css: 'state-looking'   },
-            weekend_closed:       { label: 'Market closed — weekend',           css: 'state-offline'   },
-            // supply_demand
-            sd_found:        { label: 'Supply/Demand zones found',         css: 'state-found'    },
-            sd_none:         { label: 'No S/D zones found',                css: 'state-looking'  },
-            sd_misaligned:   { label: 'Bias misaligned — not looking',     css: 'state-offline'  },
-            sd_bullish:      { label: 'Bias bullish — seeking demand',     css: 'state-found'    },
-            sd_bearish:      { label: 'Bias bearish — seeking supply',     css: 'state-found'    },
-            sd_weekend:      { label: 'Market closed — weekend',           css: 'state-offline'  },
+            looking:              { label: 'Looking for accumulation',          css: 'state-looking'   },
+            potential:            { label: 'Potential accumulation forming',     css: 'state-potential' },
+            active:               { label: 'Accumulation forming',               css: 'state-potential' },
+            found:                { label: 'Accumulation found',                 css: 'state-found'     },
+            confirmed:            { label: 'Aggressor candle confirmed ✓',       css: 'state-found'     },
+            cooldown:             { label: 'Cooldown — resuming in …',           css: 'state-cooldown'  },
+            out_of_session:       { label: 'Out of session',                     css: 'state-offline'   },
+            open_not_in_session:  { label: 'Open — not in session',              css: 'state-looking'   },
+            weekend_closed:       { label: 'Market closed — weekend',            css: 'state-offline'   },
+            sd_found:             { label: 'Supply/Demand zones found',          css: 'state-found'     },
+            sd_misaligned_found:  { label: 'Zones found (bias misaligned ⚡)',   css: 'state-potential' },
+            sd_none:              { label: 'No S/D zones found',                 css: 'state-looking'   },
+            sd_misaligned:        { label: 'Bias misaligned — scanning both',    css: 'state-potential' },
+            sd_bullish:           { label: 'Bias bullish — seeking demand',      css: 'state-found'     },
+            sd_bearish:           { label: 'Bias bearish — seeking supply',      css: 'state-found'     },
+            sd_strong_bullish:    { label: 'Strong bullish — seeking demand ★',  css: 'state-found'     },
+            sd_strong_bearish:    { label: 'Strong bearish — seeking supply ★',  css: 'state-found'     },
+            sd_weekend:           { label: 'Market closed — weekend',            css: 'state-offline'   },
         };
 
-        // ── Weekend check (client-side) ───────────────────────────────
+        // ── Weekend check ─────────────────────────────────────────────
         function isWeekendHalt() {
-            if (ALWAYS_OPEN) return false;   // 24/7 markets (e.g. Bitcoin) — never halt
+            if (ALWAYS_OPEN) return false;
             const now = new Date();
-            const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Fri,6=Sat
+            const dow  = now.getUTCDay();
             const hour = now.getUTCHours();
-            if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
-            if (dow === 6) return true;                  // All Saturday
-            if (dow === 0 && hour < 22) return true;     // Sun < 22:00
+            if (dow === 5 && hour >= 23) return true;
+            if (dow === 6) return true;
+            if (dow === 0 && hour < 22) return true;
             return false;
         }
 
         function getWeekendCountdown() {
-            // Returns countdown string to Sunday 22:00 UTC (earliest market reopen)
             const now = new Date();
             const target = new Date(now);
             const dow = now.getUTCDay();
-            // Find next Sunday 22:00 UTC
             let daysUntilSun = (0 - dow + 7) % 7;
-            if (daysUntilSun === 0 && now.getUTCHours() >= 22) daysUntilSun = 7; // already past Sun 22:00
+            if (daysUntilSun === 0 && now.getUTCHours() >= 22) daysUntilSun = 7;
             target.setUTCDate(target.getUTCDate() + daysUntilSun);
             target.setUTCHours(22, 0, 0, 0);
             const diff = target - now;
@@ -438,9 +422,36 @@
             el.querySelector('.label-text').textContent = cfg.label;
         }
 
+        // ── Box drawing helper ────────────────────────────────────────
+        function drawFilledBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
+            const toRgba = (color, alpha) => {
+                const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+                return m ? `rgba(${m[1]},${m[2]},${m[3]},${alpha})` : color;
+            };
+            const s = shiftTime(startTs), e = shiftTime(endTs);
+            const lOpts = { color: lineColor, lineWidth: 1, lineStyle: 0,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+
+            const tl = chart.addLineSeries(lOpts);
+            tl.setData([{ time: s, value: top }, { time: e, value: top }]);
+            const bl = chart.addLineSeries(lOpts);
+            bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
+            const fl = chart.addBaselineSeries({
+                baseValue: { type: 'price', price: bottom },
+                topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
+                topLineColor: 'rgba(0,0,0,0)',
+                bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+                bottomLineColor: 'rgba(0,0,0,0)',
+                lineWidth: 0,
+                priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+            });
+            fl.setData([{ time: s, value: top }, { time: e, value: top }]);
+            return [tl, bl, fl];
+        }
+
         // ── Detector Overlay Renderers ────────────────────────────────
         const detectorRenderers = {
-            accumulation: renderAccumulation,
+            accumulation:  renderAccumulation,
             supply_demand: renderSupplyDemand,
         };
 
@@ -449,19 +460,16 @@
         function renderAccumulation(chart, zone) {
             const isFound    = zone.status === 'found' || zone.status === 'confirmed';
             const isCooldown = zone.status === 'cooldown';
-            // Don't render if status is looking/potential without valid zone coords
             if (!zone.top || !zone.bottom || !zone.start) return [];
 
             const allSeries = [];
 
-            // ── Accumulation box ─────────────────────────────────────────────
-            // Normal found/active: grey outline
-            // Cooldown: amber outline + subtle amber fill to signal paused state
+            // ── Accumulation box ─────────────────────────────────────
             let lineAlpha, lineColor, lineStyle;
             if (isCooldown) {
                 lineAlpha = 0.60;
                 lineColor = `rgba(212, 160, 23, ${lineAlpha})`;
-                lineStyle = 1;  // dashed
+                lineStyle = 1;
             } else {
                 lineAlpha = isFound ? 0.55 : 0.28;
                 lineColor = `rgba(200, 200, 200, ${lineAlpha})`;
@@ -492,7 +500,7 @@
             ]);
             allSeries.push(topLine, bottomLine, leftLine, rightLine);
 
-            // ── Cooldown: amber fill inside the box ───────────────────────────
+            // ── Cooldown fill ─────────────────────────────────────────
             if (isCooldown) {
                 const cooldownFill = chart.addBaselineSeries({
                     baseValue: { type: 'price', price: zone.bottom },
@@ -511,31 +519,64 @@
                 allSeries.push(cooldownFill);
             }
 
-            // ── FVG breakout candle zone: filled box (like supply/demand) ───
+            // ── Aggressor candle zone (breakout candle drawn as S&D-style zone) ──
+            // The breakout candle body is rendered as a highlighted filled box,
+            // similar to a supply/demand zone, to clearly show the impulse move.
+            const bc = zone.breakout_candle;
+            if (bc && bc.time != null) {
+                const isBullish = bc.close > bc.open;
+                // Orange/amber = aggressor (neutral — not demand/supply colour)
+                const aggrColor = isBullish
+                    ? 'rgba(240, 170, 50, 0.85)'   // amber-gold for bullish aggressor
+                    : 'rgba(240, 100, 50, 0.85)';   // orange-red for bearish aggressor
+                const aggrFill  = isBullish
+                    ? 'rgba(240, 170, 50, 0.18)'
+                    : 'rgba(240, 100, 50, 0.18)';
+
+                // Estimate candle width (1 candle = interval seconds; default 60s for 1m)
+                const candleWidthSecs = 60;
+                const aggrEnd = bc.time + candleWidthSecs;
+
+                // Draw as a zone using the candle HIGH and LOW (full range)
+                const aggrSeries = drawFilledBox(bc.time, aggrEnd, bc.high, bc.low, aggrColor, 0.18);
+                allSeries.push(...aggrSeries);
+
+                // Extra line at the body boundaries (open and close) for clarity
+                const bodyTop    = Math.max(bc.open, bc.close);
+                const bodyBottom = Math.min(bc.open, bc.close);
+                const bodyOpts   = { color: aggrColor, lineWidth: 2, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+                const btl = chart.addLineSeries(bodyOpts);
+                btl.setData([{ time: shiftTime(bc.time), value: bodyTop },
+                             { time: shiftTime(aggrEnd),  value: bodyTop }]);
+                const bbl = chart.addLineSeries(bodyOpts);
+                bbl.setData([{ time: shiftTime(bc.time), value: bodyBottom },
+                             { time: shiftTime(aggrEnd),  value: bodyBottom }]);
+                allSeries.push(btl, bbl);
+            }
+
+            // ── FVG zone (unchanged) ──────────────────────────────────
             const fvg = zone.fvg_candle;
             if (fvg && fvg.top != null && fvg.bottom != null && fvg.time != null) {
                 const isBullish = fvg.fvg_type === 'bullish';
-                // Use same colors as supply/demand zones
                 const fvgColor = isBullish ? 'rgba(70, 130, 220, 0.55)' : 'rgba(220, 100, 50, 0.55)';
-                const fvgFill  = isBullish ? 'rgba(70, 130, 220, 0.12)' : 'rgba(220, 100, 50, 0.12)';
                 const fvgOpts = { color: fvgColor, lineWidth: 1, lineStyle: 0,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-                // Use zone.end as the right edge (current candle) so the box stays visible
-                const fvgEnd = shiftTime(zone.end);
+                const fvgEnd   = shiftTime(zone.end);
                 const fvgStart = shiftTime(fvg.time);
 
-                const fTop = chart.addLineSeries(fvgOpts);
+                const fTop  = chart.addLineSeries(fvgOpts);
                 fTop.setData([{ time: fvgStart, value: fvg.top }, { time: fvgEnd, value: fvg.top }]);
-                const fBot = chart.addLineSeries(fvgOpts);
+                const fBot  = chart.addLineSeries(fvgOpts);
                 fBot.setData([{ time: fvgStart, value: fvg.bottom }, { time: fvgEnd, value: fvg.bottom }]);
                 const fLeft = chart.addLineSeries(fvgOpts);
                 fLeft.setData([{ time: fvgStart, value: fvg.top }, { time: fvgStart, value: fvg.bottom }]);
-                const fRight = chart.addLineSeries(fvgOpts);
+                const fRight= chart.addLineSeries(fvgOpts);
                 fRight.setData([{ time: fvgEnd, value: fvg.top }, { time: fvgEnd, value: fvg.bottom }]);
                 const fFill = chart.addBaselineSeries({
                     baseValue: { type: 'price', price: fvg.bottom },
-                    topFillColor1: fvgFill, topFillColor2: fvgFill,
+                    topFillColor1: 'rgba(70,130,220,0.12)', topFillColor2: 'rgba(70,130,220,0.12)',
                     topLineColor: 'rgba(0,0,0,0)',
                     bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
                     bottomLineColor: 'rgba(0,0,0,0)',
@@ -549,60 +590,70 @@
             return allSeries;
         }
 
-        function updateBiasBadge(bias) {
-            const badge = document.getElementById('bias-badge');
-            const label = document.getElementById('bias-label');
-            if (!bias) { badge.style.display = 'none'; return; }
-            badge.style.display = 'flex';
-            badge.className = bias.bias;
-            if (bias.bias === 'bullish') {
-                label.textContent = '↑ Bullish Bias (D+W)';
-            } else if (bias.bias === 'bearish') {
-                label.textContent = '↓ Bearish Bias (D+W)';
-            } else {
-                label.textContent = '⚡ Bias Misaligned';
+        function _biasLabel(bias) {
+            switch(bias) {
+                case 'strong_bullish': return '⬆⬆ Strong Bullish (D+W)';
+                case 'bullish':        return '↑ Bullish (D+W)';
+                case 'bearish':        return '↓ Bearish (D+W)';
+                case 'strong_bearish': return '⬇⬇ Strong Bearish (D+W)';
+                default:               return '⚡ Bias Misaligned';
             }
+        }
+
+        function updateBiasBadge(bias) {
+            const badge  = document.getElementById('bias-badge');
+            const label  = document.getElementById('bias-label');
+            const banner = document.getElementById('misaligned-banner');
+            if (!bias) { badge.style.display = 'none'; banner.style.display = 'none'; return; }
+            badge.style.display = 'flex';
+            badge.className = bias.bias || 'misaligned';
+            label.textContent = _biasLabel(bias.bias);
+            // Show misaligned warning banner when bias is misaligned
+            banner.style.display = (bias.bias === 'misaligned') ? '' : 'none';
         }
 
         function renderSupplyDemand(chart, result) {
             const allSeries = [];
-            // Handle new {bias, zones} structure
-            const allZones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
-            const zones = allZones;
+            const zones = Array.isArray(result) ? result : (result && result.zones ? result.zones : []);
             const bias  = result && result.bias ? result.bias : null;
 
             updateBiasBadge(bias);
-
             if (!zones.length) return allSeries;
 
-            // If a highlight param is set (Playwright screenshot mode), dim non-highlighted zones
-            const urlParams = new URLSearchParams(window.location.search);
+            const urlParams   = new URLSearchParams(window.location.search);
             const highlightTs = urlParams.get('highlight') ? parseInt(urlParams.get('highlight')) : null;
+            const isMisaligned = bias && bias.bias === 'misaligned';
 
             zones.forEach(zone => {
-                const isDemand   = zone.type === 'demand';
+                const isDemand      = zone.type === 'demand';
                 const isHighlighted = !highlightTs || zone.start === highlightTs;
+                const zoneIsMisaligned = zone.is_misaligned || isMisaligned;
 
-                // Highlighted zone: full opacity. Others: dimmed.
-                const color = isDemand
-                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.9)' : 'rgba(70, 130, 220, 0.15)')
-                    : (isHighlighted ? 'rgba(220, 100, 50, 0.9)'  : 'rgba(220, 100, 50, 0.15)');
-                const fill  = isDemand
-                    ? (isHighlighted ? 'rgba(70, 130, 220, 0.18)' : 'rgba(70, 130, 220, 0.03)')
-                    : (isHighlighted ? 'rgba(220, 100, 50, 0.18)' : 'rgba(220, 100, 50, 0.03)');
+                // Misaligned zones use amber/warning color; aligned zones use blue/red
+                let color, fill;
+                if (zoneIsMisaligned) {
+                    // Amber for misaligned zones regardless of direction
+                    color = isHighlighted ? 'rgba(200, 160, 40, 0.8)'  : 'rgba(200, 160, 40, 0.2)';
+                    fill  = isHighlighted ? 'rgba(200, 160, 40, 0.12)' : 'rgba(200, 160, 40, 0.04)';
+                } else {
+                    color = isDemand
+                        ? (isHighlighted ? 'rgba(70, 130, 220, 0.9)'  : 'rgba(70, 130, 220, 0.15)')
+                        : (isHighlighted ? 'rgba(220, 100, 50, 0.9)'  : 'rgba(220, 100, 50, 0.15)');
+                    fill  = isDemand
+                        ? (isHighlighted ? 'rgba(70, 130, 220, 0.18)' : 'rgba(70, 130, 220, 0.03)')
+                        : (isHighlighted ? 'rgba(220, 100, 50, 0.18)' : 'rgba(220, 100, 50, 0.03)');
+                }
                 const lineWidth = isHighlighted ? 2 : 1;
 
-                const topLine = chart.addLineSeries({
-                    color, lineWidth, lineStyle: 0,
-                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                topLine.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
+                const topLine = chart.addLineSeries({ color, lineWidth, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+                topLine.setData([{ time: shiftTime(zone.start), value: zone.top },
+                                 { time: shiftTime(zone.end),   value: zone.top }]);
 
-                const bottomLine = chart.addLineSeries({
-                    color, lineWidth, lineStyle: 0,
-                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                bottomLine.setData([{ time: shiftTime(zone.start), value: zone.bottom }, { time: shiftTime(zone.end), value: zone.bottom }]);
+                const bottomLine = chart.addLineSeries({ color, lineWidth, lineStyle: 0,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+                bottomLine.setData([{ time: shiftTime(zone.start), value: zone.bottom },
+                                    { time: shiftTime(zone.end),   value: zone.bottom }]);
 
                 const fillSeries = chart.addBaselineSeries({
                     baseValue: { type: 'price', price: zone.bottom },
@@ -613,7 +664,8 @@
                     lineWidth: 0,
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
                 });
-                fillSeries.setData([{ time: shiftTime(zone.start), value: zone.top }, { time: shiftTime(zone.end), value: zone.top }]);
+                fillSeries.setData([{ time: shiftTime(zone.start), value: zone.top },
+                                    { time: shiftTime(zone.end),   value: zone.top }]);
 
                 allSeries.push(topLine, bottomLine, fillSeries);
             });
@@ -621,14 +673,11 @@
             return allSeries;
         }
 
-        // ── Cooldown countdown timer ──────────────────────────────────────
-        // Runs a 1-second interval that updates the status badge label with a live
-        // countdown, then clears the box and resets to 'looking' when time is up.
-        let _cooldownTimer    = null;
-        let _cooldownUntilTs  = 0;
+        // ── Cooldown countdown timer ──────────────────────────────────
+        let _cooldownTimer   = null;
+        let _cooldownUntilTs = 0;
 
         function startCooldownTimer(cooldownUntilEpoch) {
-            // If already tracking this same cooldown, just update the label — don't restart.
             if (_cooldownTimer && _cooldownUntilTs === cooldownUntilEpoch) {
                 _updateCooldownLabel();
                 return;
@@ -640,7 +689,6 @@
                 const remaining = _cooldownUntilTs - Math.floor(Date.now() / 1000);
                 if (remaining <= 0) {
                     stopCooldownTimer();
-                    // Cooldown expired — clear the box and go back to looking state
                     for (const [, seriesList] of Object.entries(activeSeries)) {
                         (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
                     }
@@ -664,8 +712,26 @@
             const pad = n => String(n).padStart(2, '0');
             const el = ensureStatusEl('accumulation');
             el.className = 'detector-status state-cooldown';
-            el.querySelector('.label-text').textContent =
-                `Cooldown — resuming in ${pad(m)}:${pad(s)}`;
+            el.querySelector('.label-text').textContent = `Cooldown — resuming in ${pad(m)}:${pad(s)}`;
+        }
+
+        // ── Chart centering helper (for screenshot mode) ──────────────
+        let _screenshotCentered = false;
+        function maybeCenterOnScreenshot(candles) {
+            if (_screenshotCentered || !_screenshotCenterTs || !candles.length) return;
+            _screenshotCentered = true;
+            // Find the index of the target candle
+            const idx = candles.findIndex(c => c.time === _screenshotCenterTs);
+            if (idx < 0) return;
+            // Show a window of ±30 candles around the target
+            const from = Math.max(0, idx - 30);
+            const to   = Math.min(candles.length - 1, idx + 30);
+            try {
+                chart.timeScale().setVisibleRange({
+                    from: shiftTime(candles[from].time),
+                    to:   shiftTime(candles[to].time),
+                });
+            } catch(e) {}
         }
 
         // ── Data Loop ─────────────────────────────────────────────────
@@ -691,19 +757,8 @@
             document.getElementById('weekend-overlay').classList.remove('visible');
         }
 
-        function checkWeekendOverlay() {
-            if (isWeekendHalt()) {
-                showClosedOverlay('weekend');
-                return true;
-            }
-            return false;
-        }
-
         function loadData() {
-            if (isWeekendHalt()) {
-                showClosedOverlay('weekend');
-                return;
-            }
+            if (isWeekendHalt()) { showClosedOverlay('weekend'); return; }
             fetch(`/api/data?interval=${currentInterval}`)
                 .then(res => res.text())
                 .then(raw => {
@@ -718,12 +773,12 @@
                     }
                     hideClosedOverlay();
 
-                    // Clear existing candle data before loading new interval to avoid
-                    // timestamp ordering conflicts in LightweightCharts
                     candleSeries.setData([]);
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
                     candleSeries.setData(shifted);
-                    candleSeries.setData(shifted);
+
+                    // Center on screenshot target candle (Playwright mode)
+                    maybeCenterOnScreenshot(data.candles);
 
                     for (const [name, seriesList] of Object.entries(activeSeries)) {
                         (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
@@ -735,17 +790,24 @@
                         const renderer = detectorRenderers[name];
                         if (result && renderer) {
                             activeSeries[name] = renderer(chart, result);
-                            // Supply/demand returns an array — pick status from first zone
+
                             if (name === 'supply_demand') {
                                 const bias  = result.bias  || {};
                                 const zones = result.zones || [];
                                 updateBiasBadge(bias);
-                                if (bias.bias === 'misaligned') {
+                                const hasMisaligned = bias.bias === 'misaligned';
+                                if (hasMisaligned && zones.length > 0) {
+                                    setStatus(name, 'sd_misaligned_found');
+                                } else if (hasMisaligned) {
                                     setStatus(name, 'sd_misaligned');
                                 } else if (zones.length > 0) {
                                     setStatus(name, 'sd_found');
+                                } else if (bias.bias === 'strong_bullish') {
+                                    setStatus(name, 'sd_strong_bullish');
                                 } else if (bias.bias === 'bullish') {
                                     setStatus(name, 'sd_bullish');
+                                } else if (bias.bias === 'strong_bearish') {
+                                    setStatus(name, 'sd_strong_bearish');
                                 } else if (bias.bias === 'bearish') {
                                     setStatus(name, 'sd_bearish');
                                 } else {
@@ -754,8 +816,6 @@
                             } else if (name === 'accumulation') {
                                 const s = result.status;
                                 if (s === 'weekend') {
-                                    // Always-open markets (BTC) should never hit this now,
-                                    // but guard just in case
                                     setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
                                     stopCooldownTimer();
                                 } else if (s === 'cooldown') {
@@ -785,7 +845,6 @@
                                 updateBiasBadge(null);
                                 setStatus(name, 'sd_none');
                             } else {
-                                // null = out of session (or no data)
                                 setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
                             }
                         }
@@ -794,7 +853,7 @@
                 .catch(err => console.error('Fetch error:', err));
         }
 
-        setInterval(() => { loadData(); }, 2000);
+        setInterval(loadData, 2000);
         loadData();
 
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
