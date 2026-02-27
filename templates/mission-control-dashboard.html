@@ -550,13 +550,7 @@ async function fetchPair(pair) {
         statusEl.className   = 'status-text dim';
       }
 
-      const zonePills = zones.map(z => {
-        const cls   = z.is_misaligned || isMisaligned ? 'misaligned' : z.type;
-        const label = (z.is_misaligned || isMisaligned) ? `${z.type.toUpperCase()} ⚡` : z.type.toUpperCase();
-        return `<span class="zone-pill ${cls}">${label} ${formatPrice(z.bottom, pair.id)}–${formatPrice(z.top, pair.id)}</span>`;
-      }).join('');
-
-      extraEl.innerHTML = biasHtml + (zones.length ? `<div class="zones-row">${zonePills}</div>` : '');
+      extraEl.innerHTML = biasHtml;
       metaEl.textContent = '';
     }
 
