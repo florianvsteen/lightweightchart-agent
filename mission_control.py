@@ -1,931 +1,255 @@
 """
-mission_control.py — Mission Control dashboard server.
+mission_control.py
 
-Runs on port 6767 (separate from all pair servers).
-Serves the dashboard HTML and proxies /proxy/<pair_id>/api/data
-to each pair's internal port so there are zero CORS issues.
-
+Central hub Flask app. Serves:
+  /dashboard           → mission-control-dashboard.html (pair grid)
+  /chart-view/<pair>   → mission-control-charts.html  (trading terminal)
+  /proxy/<pair>/api/data  → proxies to individual pair server
+  /proxy/<pair>/api/bias  → proxies to individual pair server
+  /api/news/<pair>        → fetches live news via Claude API + web search
 """
 
+import os
+import json
 import requests
-from flask import Flask, jsonify, render_template_string, request
+
+from flask import Flask, render_template, jsonify
+
+# ── Config ─────────────────────────────────────────────────────────────
+# Import your existing PAIRS dict from config.py
 from config import PAIRS
 
-app = Flask(__name__)
+# ── App setup ──────────────────────────────────────────────────────────
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
-MISSION_PORT = 6767
+app = Flask(
+    __name__,
+    template_folder=os.path.join(ROOT, "templates"),
+    static_folder=os.path.join(ROOT, "static") if os.path.exists(os.path.join(ROOT, "static")) else None,
+)
 
-# ── Proxy ──────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────
 
-@app.route('/proxy/<pair_id>/api/data')
-def proxy_api(pair_id):
+def _pairs_js():
+    """Build the list of pairs to pass as JSON to dashboard template."""
+    return [
+        {
+            "id":          pair_id,
+            "label":       cfg["label"],
+            "port":        cfg["port"],
+            "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
+            "always_open": cfg.get("always_open", False),
+        }
+        for pair_id, cfg in PAIRS.items()
+    ]
+
+
+def _pairs_list():
+    """Simple list for template iteration (chart view pair selector)."""
+    return [{"id": pid, "label": cfg["label"]} for pid, cfg in PAIRS.items()]
+
+
+# ── Routes ─────────────────────────────────────────────────────────────
+
+@app.route("/")
+@app.route("/dashboard")
+def dashboard():
+    return render_template(
+        "mission-control-dashboard.html",
+        pairs_js=json.dumps(_pairs_js()),
+    )
+
+
+@app.route("/chart-view/<pair_id>")
+def chart_view(pair_id):
+    pair_id = pair_id.upper()
+    cfg = PAIRS.get(pair_id)
+    if not cfg:
+        return f"Unknown pair: {pair_id}", 404
+
+    tz = os.environ.get("TZ", "UTC")
+    detector_type = "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation"
+    default_interval = cfg.get("default_interval", cfg.get("interval", "1m"))
+
+    return render_template(
+        "mission-control-charts.html",
+        pair_id=pair_id,
+        label=cfg["label"],
+        always_open=cfg.get("always_open", False),
+        timezone=tz,
+        default_interval=default_interval,
+        detector_type=detector_type,
+        pairs=_pairs_list(),
+    )
+
+
+# ── Proxy routes ────────────────────────────────────────────────────────
+
+@app.route("/proxy/<pair_id>/api/data")
+def proxy_api_data(pair_id):
     cfg = PAIRS.get(pair_id.upper())
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        # Forward the interval param if provided by the browser, otherwise use default
-        interval = request.args.get("interval") or cfg.get("default_interval", cfg.get("interval", "1m"))
-        url = f"http://127.0.0.1:{cfg['port']}/api/data?interval={interval}"
-        r = requests.get(url, timeout=5)
+        from flask import request as flask_req
+        qs = flask_req.query_string.decode()
+        url = f"http://127.0.0.1:{cfg['port']}/api/data"
+        if qs:
+            url += "?" + qs
+        r = requests.get(url, timeout=15)
         return (r.content, r.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
 
-@app.route('/proxy/debug')
-def proxy_debug_default():
-    """Redirect /proxy/debug to the first available pair."""
-    first_pair = next(iter(PAIRS))
-    from flask import redirect
-    return redirect(f'/proxy/{first_pair}/debug')
-
-
-@app.route('/proxy/<pair_id>/debug')
-def proxy_debug(pair_id):
+@app.route("/proxy/<pair_id>/api/bias")
+def proxy_api_bias(pair_id):
     cfg = PAIRS.get(pair_id.upper())
     if not cfg:
         return jsonify({"error": "unknown pair"}), 404
     try:
-        import re
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug", timeout=30)
-        html = r.text
-        p = pair_id.upper()
+        r = requests.get(f"http://127.0.0.1:{cfg['port']}/api/bias", timeout=10)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"bias": "misaligned", "aligned": False, "reason": str(e)}), 502
 
-        # Rewrite all /debug/* fetch calls to route through the mission control proxy.
-        # The template uses literal strings like '/debug/data?interval=' + currentTF
-        # so we can do simple text substitution.
-        replacements = [
-            ("'/debug/data?interval='",    f"'/proxy/{p}/debug/data?interval='"),
-            ('"/debug/data?interval="',    f'"/proxy/{p}/debug/data?interval="'),
-            ("'/debug/sd?interval='",      f"'/proxy/{p}/debug/sd?interval='"),
-            ('"/debug/sd?interval="',      f'"/proxy/{p}/debug/sd?interval="'),
-            ("'/debug/sd/bias'",           f"'/proxy/{p}/debug/sd/bias'"),
-            ('"/debug/sd/bias"',           f'"/proxy/{p}/debug/sd/bias"'),
-            ("'/debug/fvg?interval='",     f"'/proxy/{p}/debug/fvg?interval='"),
-            ('"/debug/fvg?interval="',     f'"/proxy/{p}/debug/fvg?interval="'),
-            ("'/debug/replay?idx='",       f"'/proxy/{p}/debug/replay?idx='"),
-            ('"/debug/replay?idx="',       f'"/proxy/{p}/debug/replay?idx="'),
-        ]
-        for old, new in replacements:
-            html = html.replace(old, new)
 
-        # Rewrite the replay idx pattern which uses string concat
-        html = re.sub(
-            r"fetch\('/debug/replay\?idx=' \+ idx",
-            f"fetch('/proxy/{p}/debug/replay?idx=' + idx",
-            html,
+# ── News API ────────────────────────────────────────────────────────────
+
+# Simple in-memory cache: { pair_id: {"ts": epoch, "articles": [...]} }
+_news_cache: dict = {}
+_NEWS_TTL_SECONDS = 300  # 5 minutes
+
+PAIR_NEWS_CONTEXT = {
+    # Forex
+    "EURUSD": "EUR/USD forex pair, Euro US Dollar, ECB Federal Reserve monetary policy",
+    "GBPUSD": "GBP/USD forex pair, British Pound US Dollar, Bank of England Fed policy",
+    "USDJPY": "USD/JPY forex pair, US Dollar Japanese Yen, Bank of Japan yen intervention",
+    "EURGBP": "EUR/GBP forex pair, Euro British Pound, ECB Bank of England",
+    "AUDUSD": "AUD/USD forex pair, Australian Dollar, RBA rate decision",
+    "USDCAD": "USD/CAD forex pair, US Dollar Canadian Dollar, oil prices Bank of Canada",
+    "USDCHF": "USD/CHF forex pair, US Dollar Swiss Franc, SNB safe haven",
+    "NZDUSD": "NZD/USD forex pair, New Zealand Dollar RBNZ",
+    "EURJPY": "EUR/JPY cross, Euro Yen",
+    "GBPJPY": "GBP/JPY cross, British Pound Yen",
+    "AUDJPY": "AUD/JPY cross, Australian Dollar Yen",
+    "CADJPY": "CAD/JPY cross, Canadian Dollar Yen",
+    # Metals
+    "XAUUSD": "Gold price XAU/USD, gold market safe haven inflation hedge",
+    "XAGUSD": "Silver price XAG/USD, silver market",
+    # Crypto
+    "BTCUSD": "Bitcoin BTC/USD price, crypto market",
+    "ETHUSD": "Ethereum ETH/USD price, crypto market",
+    # Indices
+    "US30":   "Dow Jones Industrial Average DJIA US30",
+    "NAS100": "NASDAQ 100 tech stocks US tech market",
+    "SPX500": "S&P 500 index US equities",
+}
+
+
+def _fetch_news_via_claude(pair_id: str) -> list:
+    """
+    Use the Claude API with web_search tool to fetch live news for a pair.
+    Returns list of {headline, source, sentiment} dicts.
+    """
+    context = PAIR_NEWS_CONTEXT.get(pair_id.upper(), pair_id)
+    prompt = (
+        f"Search for the latest financial news about {context}. "
+        f"Return ONLY a JSON array of up to 8 articles with these fields: "
+        f'headline (string), source (string), sentiment ("bullish", "bearish", or "neutral"). '
+        f"Focus on news from the past 24 hours. "
+        f"Return ONLY the JSON array, no other text, no markdown code fences."
+    )
+
+    try:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        headers = {
+            "x-api-key":         api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type":      "application/json",
+            "anthropic-beta":    "tools-2024-04-04",
+        }
+        body = {
+            "model":      "claude-sonnet-4-20250514",
+            "max_tokens": 1000,
+            "tools": [
+                {"type": "web_search_20250305", "name": "web_search"}
+            ],
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+        }
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=body,
+            timeout=30,
         )
+        if not r.ok:
+            print(f"[news] Claude API error {r.status_code}: {r.text[:200]}")
+            return []
 
-        # Rewrite switchPair so the pair switcher navigates via proxy URLs
-        # instead of raw port-based URLs. Matches the select onchange handler.
-        html = re.sub(
-            r"window\.location\.origin \+ '/proxy/' \+ pairId \+ '/debug'",
-            "window.location.origin + '/proxy/' + pairId + '/debug'",
-            html,
-        )
+        data = r.json()
+        # Extract the text block from content
+        text_content = ""
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                text_content = block.get("text", "")
+                break
 
-        if '<meta charset' not in html:
-            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
-        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
+        if not text_content:
+            return []
+
+        # Strip potential markdown fences
+        clean = text_content.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1]
+            if clean.endswith("```"):
+                clean = clean[:-3].strip()
+
+        articles = json.loads(clean)
+        if not isinstance(articles, list):
+            return []
+
+        # Validate and clamp
+        result = []
+        for a in articles[:8]:
+            if isinstance(a, dict) and "headline" in a:
+                result.append({
+                    "headline":  str(a.get("headline", ""))[:300],
+                    "source":    str(a.get("source", ""))[:80],
+                    "sentiment": a.get("sentiment", "neutral") if a.get("sentiment") in ("bullish","bearish","neutral") else "neutral",
+                })
+        return result
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 502
+        print(f"[news] Error fetching news for {pair_id}: {e}")
+        return []
 
 
-@app.route('/proxy/<pair_id>/debug/data')
-def proxy_debug_data(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
+@app.route("/api/news/<pair_id>")
+def api_news(pair_id):
+    import time
+    pair_id = pair_id.upper()
+
+    if pair_id not in PAIRS:
         return jsonify({"error": "unknown pair"}), 404
-    try:
-        interval = request.args.get("interval", "")
-        url = f"http://127.0.0.1:{cfg['port']}/debug/data"
-        if interval:
-            url += f"?interval={interval}"
-        r = requests.get(url, timeout=30)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
 
+    cached = _news_cache.get(pair_id)
+    if cached and (time.time() - cached["ts"]) < _NEWS_TTL_SECONDS:
+        return jsonify({"articles": cached["articles"], "cached": True})
 
-@app.route('/proxy/<pair_id>/debug/replay')
-def proxy_debug_replay(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        idx = request.args.get("idx", "")
-        url = f"http://127.0.0.1:{cfg['port']}/debug/replay"
-        if idx:
-            url += f"?idx={idx}"
-        r = requests.get(url, timeout=60)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    articles = _fetch_news_via_claude(pair_id)
 
+    _news_cache[pair_id] = {"ts": time.time(), "articles": articles}
+    return jsonify({"articles": articles, "cached": False})
 
-@app.route('/proxy/<pair_id>/debug/sd')
-def proxy_debug_sd(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        interval = request.args.get("interval", "")
-        url = f"http://127.0.0.1:{cfg['port']}/debug/sd"
-        if interval:
-            url += f"?interval={interval}"
-        r = requests.get(url, timeout=30)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
 
+# ── Run ─────────────────────────────────────────────────────────────────
 
-@app.route('/proxy/<pair_id>/debug/sd/bias')
-def proxy_debug_sd_bias(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/debug/sd/bias", timeout=15)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route('/proxy/<pair_id>/debug/fvg')
-def proxy_debug_fvg(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        interval = request.args.get("interval", "")
-        url = f"http://127.0.0.1:{cfg['port']}/debug/fvg"
-        if interval:
-            url += f"?interval={interval}"
-        r = requests.get(url, timeout=30)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route('/chart/<pair_id>')
-@app.route('/chart/<pair_id>/')
-def proxy_chart(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return "Unknown pair", 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/", timeout=5)
-        html = r.text
-        # Rewrite ALL /api/data fetch patterns to go through our proxy.
-        # Covers single quotes, double quotes, and template literals.
-        pair_upper = pair_id.upper()
-        html = html.replace("fetch(`/api/data", f"fetch(`/proxy/{pair_upper}/api/data")
-        html = html.replace("fetch('/api/data", f"fetch('/proxy/{pair_upper}/api/data")
-        html = html.replace('fetch("/api/data', f'fetch("/proxy/{pair_upper}/api/data')
-        # Inject charset if missing so UTF-8 arrows/emoji render correctly
-        if '<meta charset' not in html:
-            html = html.replace('<head>', '<head><meta charset="utf-8">', 1)
-        return html, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
-    except Exception as e:
-        return f"Chart unavailable: {e}", 502
-
-
-# ── Dashboard ──────────────────────────────────────────────────────────────
-
-PAIRS_JS = [
-    {
-        "id":    pair_id,
-        "label": cfg["label"],
-        "port":  cfg["port"],
-        "type":  "supply_demand" if "supply_demand" in cfg["detectors"] else "accumulation",
-        "always_open": cfg.get("always_open", False),
-    }
-    for pair_id, cfg in PAIRS.items()
-]
-
-DASHBOARD = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mission Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg:        #0a0a0c;
-    --surface:   #111116;
-    --border:    #1e1e28;
-    --border2:   #2a2a38;
-    --text:      #c8c8d8;
-    --muted:     #4a4a60;
-    --accent:    #5af0c4;
-    --accent2:   #f05a7e;
-    --blue:      #5a9ef0;
-    --found:     #e8e8f0;
-    --potential: #888898;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Space Mono', monospace;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 2px,
-      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
-    );
-    pointer-events: none;
-    z-index: 9999;
-  }
-
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 32px;
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 100;
-  }
-
-  .logo { display: flex; align-items: baseline; gap: 12px; }
-  .logo-title {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.1rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-  .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.2em; text-transform: uppercase; }
-
-  .header-right { display: flex; align-items: center; gap: 20px; }
-  #clock { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.1em; }
-
-  #session-global {
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    padding: 4px 10px;
-    border-radius: 3px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    transition: all 0.3s;
-  }
-  #session-global.asian    { border-color: #c8a84b; color: #c8a84b; }
-  #session-global.london   { border-color: var(--blue); color: var(--blue); }
-  #session-global.new_york { border-color: var(--accent); color: var(--accent); }
-  #session-global.weekend  { border-color: #3a2a2a; color: #553a3a; }
-
-  /* Weekend banner */
-  #weekend-banner {
-    display: none;
-    background: linear-gradient(180deg, rgba(20, 12, 6, 0.98) 0%, rgba(15, 9, 4, 0.95) 100%);
-    border-bottom: 1px solid #2a1a08;
-    padding: 22px 32px;
-    position: sticky;
-    top: 61px;
-    z-index: 99;
-  }
-  #weekend-banner .wk-inner {
-    max-width: 600px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  #weekend-banner .wk-icon { font-size: 1.4rem; margin-bottom: 6px; }
-  #weekend-banner .wk-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 0.85rem;
-    font-weight: 800;
-    color: #4a3010;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-  #weekend-banner .wk-countdown {
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: #3a2808;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.08em;
-    line-height: 1;
-    margin-bottom: 6px;
-  }
-  #weekend-banner .wk-hint {
-    font-size: 0.6rem;
-    color: #2a1e08;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-  }
-  #weekend-banner .wk-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #2a1a08 30%, #2a1a08 70%, transparent);
-    margin: 12px 0;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 1px;
-    background: var(--border);
-  }
-
-  .card {
-    background: var(--surface);
-    padding: 20px 22px;
-    position: relative;
-    cursor: pointer;
-    transition: background 0.2s;
-    text-decoration: none;
-    display: block;
-    color: var(--text);
-  }
-  .card:hover { background: #13131a; }
-  .card::after {
-    content: '↗';
-    position: absolute;
-    top: 16px; right: 16px;
-    font-size: 0.75rem;
-    color: var(--muted);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-  .card:hover::after { opacity: 1; }
-
-  .card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 14px;
-  }
-
-  .pair-name {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.3rem;
-    color: #fff;
-    letter-spacing: 0.05em;
-    line-height: 1;
-  }
-  .pair-label { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
-
-  .detector-badge {
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    background: var(--bg);
-  }
-  .detector-badge.accum { border-color: #3a3a50; color: #7070a0; }
-  .detector-badge.sd    { border-color: #3a5050; color: #70a0a0; }
-
-  .price-row { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 12px; }
-  .price { font-size: 1.6rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; line-height: 1; }
-  .price-change { font-size: 0.72rem; padding: 2px 6px; border-radius: 2px; }
-  .price-change.up   { color: var(--accent);  background: rgba(90,240,196,0.08); }
-  .price-change.down { color: var(--accent2); background: rgba(240,90,126,0.08); }
-
-  .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  .status-dot.found     { background: var(--found); box-shadow: 0 0 8px rgba(232,232,240,0.6); animation: pulse 2s ease-in-out infinite; }
-  .status-dot.potential { background: var(--potential); }
-  .status-dot.looking   { background: #2a2a3a; }
-  .status-dot.offline   { background: #1a1a2a; }
-  .status-dot.standby   { background: #2a2018; }
-  .status-dot.bullish   { background: var(--accent); box-shadow: 0 0 6px rgba(90,240,196,0.4); }
-  .status-dot.bearish   { background: var(--accent2); box-shadow: 0 0 6px rgba(240,90,126,0.4); }
-  .status-dot.misaligned{ background: var(--muted); }
-
-  .weekend-card-badge {
-    margin-top: 10px;
-    padding: 5px 10px;
-    font-size: 0.58rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #3a2e1a;
-    border: 1px solid #2a2010;
-    border-left: 2px solid #4a3820;
-    display: inline-block;
-  }
-
-  .status-text { font-size: 0.72rem; color: var(--text); letter-spacing: 0.05em; }
-  .status-text.dim { color: var(--muted); }
-
-  .accum-box {
-    margin-top: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--border2);
-    border-left: 2px solid var(--muted);
-    font-size: 0.65rem;
-    color: var(--muted);
-    display: none;
-    line-height: 1.6;
-  }
-  .accum-box.found     { border-left-color: var(--found); color: var(--text); display: block; }
-  .accum-box.potential { border-left-color: var(--potential); color: var(--potential); display: block; }
-  .accum-range { font-size: 0.7rem; color: #fff; font-weight: 700; }
-
-  .zones-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .zone-pill {
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid;
-    text-transform: uppercase;
-  }
-  .zone-pill.demand { border-color: rgba(90,158,240,0.4); color: #5a9ef0; background: rgba(90,158,240,0.06); }
-  .zone-pill.supply { border-color: rgba(240,90,126,0.4); color: #f05a7e; background: rgba(240,90,126,0.06); }
-
-  .bias-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-  .bias-pill {
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    padding: 3px 8px;
-    border-radius: 2px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-  }
-  .bias-pill.bullish    { border-color: rgba(90,240,196,0.4); color: var(--accent); background: rgba(90,240,196,0.06); }
-  .bias-pill.bearish    { border-color: rgba(240,90,126,0.4); color: var(--accent2); background: rgba(240,90,126,0.06); }
-  .bias-pill.misaligned { border-color: var(--border2); color: var(--muted); }
-
-  .card-divider { height: 1px; background: var(--border); margin: 12px 0; }
-  .card-meta { display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.08em; }
-
-  .card.error { opacity: 0.4; }
-  .card.error .pair-name { color: var(--muted); }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.4; }
-  }
-
-  footer {
-    border-top: 1px solid var(--border);
-    padding: 12px 32px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.6rem;
-    color: var(--muted);
-    letter-spacing: 0.1em;
-  }
-  .refresh-indicator { display: flex; align-items: center; gap: 6px; }
-  .refresh-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
-  .refresh-dot.active { background: var(--accent); animation: pulse 0.5s ease-in-out; }
-</style>
-</head>
-<body>
-
-<header>
-  <div class="logo">
-    <span class="logo-title">Mission Control</span>
-    <span class="logo-sub">Trading Agent</span>
-  </div>
-  <div class="header-right">
-    <span id="session-global">--</span>
-    <span id="clock">--:--:--</span>
-  </div>
-</header>
-
-<div id="weekend-banner">
-  <div class="wk-inner">
-    <div class="wk-icon">⏸</div>
-    <div class="wk-title">All Operations Suspended — Weekend Halt</div>
-    <div class="wk-divider"></div>
-    <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
-    <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
-  </div>
-</div>
-
-<div class="grid" id="grid"></div>
-
-<footer>
-  <span id="last-update">Waiting for data...</span>
-  <div class="refresh-indicator">
-    <div class="refresh-dot" id="refresh-dot"></div>
-    <span id="refresh-label">LIVE · 5s</span>
-  </div>
-</footer>
-
-<script>
-const PAIRS = """ + str(PAIRS_JS).replace("'", '"').replace("True", "true").replace("False", "false") + r""";
-
-const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
-];
-
-function getCurrentSession() {
-  const now = new Date();
-  const dow  = now.getUTCDay();   // 0=Sun,1=Mon…5=Sat,6=Sun
-  const hour = now.getUTCHours();
-  // Weekend halt check
-  if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 1)) return null;
-  return SESSION_WINDOWS.find(s => hour >= s.start && hour < s.end) || null;
-}
-
-function isWeekendHalt() {
-  const now = new Date();
-  const dow  = now.getUTCDay();
-  const hour = now.getUTCHours();
-  if (dow === 5 && hour >= 23) return true;   // Fri ≥ 23:00
-  if (dow === 6) return true;                  // All Saturday
-  if (dow === 0 && hour < 22) return true;     // Sun < 22:00
-  return false;
-}
-
-function getWeekendCountdown() {
-  const now = new Date();
-  const target = new Date(now);
-  const dow = now.getUTCDay();
-  // Count to next Sunday 22:00 UTC (earliest market reopen)
-  let daysUntilSun = (0 - dow + 7) % 7;
-  if (daysUntilSun === 0 && now.getUTCHours() >= 22) daysUntilSun = 7;
-  target.setUTCDate(target.getUTCDate() + daysUntilSun);
-  target.setUTCHours(22, 0, 0, 0);
-  const diff = target - now;
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  const pad = n => String(n).padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-
-function formatPrice(p, id) {
-  if (p == null) return '---';
-  const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
-  const forex3 = ['USDJPY', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY'];
-  if (forex5.includes(id)) return p.toFixed(5);
-  if (forex3.includes(id)) return p.toFixed(3);
-  if (id === 'XAUUSD') return p.toFixed(2);
-  return p.toFixed(0);
-}
-
-function formatUTC(ts) {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-function buildGrid() {
-  const grid = document.getElementById('grid');
-  PAIRS.forEach(pair => {
-    const card = document.createElement('a');
-    card.className = 'card';
-    card.id = `card-${pair.id}`;
-    card.href = `/chart/${pair.id}`;
-    card.target = '_blank';
-    card.innerHTML = `
-      <div class="card-header">
-        <div>
-          <div class="pair-name">${pair.id}</div>
-          <div class="pair-label">${pair.label}</div>
-        </div>
-        <span class="detector-badge ${pair.type === 'accumulation' ? 'accum' : 'sd'}">
-          ${pair.type === 'accumulation' ? 'Accum' : 'S/D'}
-        </span>
-      </div>
-      <div class="price-row">
-        <span class="price" id="price-${pair.id}">---</span>
-        <span class="price-change" id="change-${pair.id}"></span>
-      </div>
-      <div class="status-row">
-        <div class="status-dot looking" id="dot-${pair.id}"></div>
-        <span class="status-text dim" id="status-${pair.id}">Connecting...</span>
-      </div>
-      <div id="extra-${pair.id}"></div>
-      <div class="card-divider"></div>
-      <div class="card-meta">
-        <span id="meta-${pair.id}">--</span>
-      </div>`;
-    grid.appendChild(card);
-  });
-}
-
-async function fetchPair(pair) {
-  try {
-    const res = await fetch(`/proxy/${pair.id}/api/data`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-
-    const candles = data.candles || [];
-    const last = candles[candles.length - 1];
-    const prev = candles[candles.length - 2];
-    const price = last?.close;
-
-    // If no candles returned at all, show closed state
-    if (!last) {
-      const dotEl    = document.getElementById(`dot-${pair.id}`);
-      const statusEl = document.getElementById(`status-${pair.id}`);
-      const extraEl  = document.getElementById(`extra-${pair.id}`);
-      const metaEl   = document.getElementById(`meta-${pair.id}`);
-      card.classList.remove('error');
-      dotEl.className      = 'status-dot standby';
-      statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed — operations halted';
-      statusEl.className   = 'status-text dim';
-      extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
-      metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
-      return;
-    }
-
-    document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
-
-    if (prev?.close && price) {
-      const chg = ((price - prev.close) / prev.close) * 100;
-      const el = document.getElementById(`change-${pair.id}`);
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
-      el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
-    }
-
-    const det = data.detectors || {};
-    const dotEl    = document.getElementById(`dot-${pair.id}`);
-    const statusEl = document.getElementById(`status-${pair.id}`);
-    const extraEl  = document.getElementById(`extra-${pair.id}`);
-    const metaEl   = document.getElementById(`meta-${pair.id}`);
-    const card     = document.getElementById(`card-${pair.id}`);
-    card.classList.remove('error');
-
-    // ── Accumulation ─────────────────────────────────────────────────────
-    if (pair.type === 'accumulation') {
-      const z = det.accumulation;
-      if (z && z.status === 'weekend' && !pair.always_open) {
-        dotEl.className      = 'status-dot offline';
-        statusEl.textContent = 'Market closed — weekend';
-        statusEl.className   = 'status-text dim';
-        extraEl.innerHTML    = '';
-        metaEl.textContent   = '⛔ CLOSED';
-      } else if (z && z.status === 'out_of_session') {
-        dotEl.className      = 'status-dot offline';
-        statusEl.textContent = pair.always_open ? 'Open — not in session' : 'Out of session';
-        statusEl.className   = 'status-text dim';
-        extraEl.innerHTML    = '';
-        metaEl.textContent   = 'OUT OF SESSION';
-      } else if (z && z.status === 'cooldown') {
-        const remaining = Math.max(0, z.cooldown_until - Math.floor(Date.now() / 1000));
-        const m = Math.floor(remaining / 60);
-        const s = remaining % 60;
-        const pad = n => String(n).padStart(2, '0');
-        dotEl.className      = 'status-dot potential';
-        statusEl.textContent = `Cooldown — resumes in ${pad(m)}:${pad(s)}`;
-        statusEl.className   = 'status-text dim';
-        extraEl.innerHTML    = `
-          <div class="accum-box potential">
-            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
-            <br>Last breakout ${formatUTC(z.start)}
-          </div>`;
-        metaEl.textContent = '⏸ COOLDOWN';
-      } else if (!z || z.status === 'looking' || !z.status || (z.status === 'weekend' && pair.always_open)) {
-        // null = out of session; 'looking' = in session no zone; 'weekend'+always_open = OOS for 24/7 pairs
-        const isOOS = !z || z.status === 'weekend';
-        const oosLabel = pair.always_open ? 'Open — not in session' : 'Out of session';
-        dotEl.className      = 'status-dot looking';
-        statusEl.textContent = isOOS ? oosLabel : 'Looking for accumulation';
-        statusEl.className   = 'status-text dim';
-        extraEl.innerHTML    = '';
-        metaEl.textContent   = z?.session ? z.session.replace('_',' ').toUpperCase() : (isOOS ? 'OUT OF SESSION' : '--');
-      } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
-        dotEl.className   = 'status-dot found';
-        statusEl.textContent = z.status === 'confirmed' ? 'Accumulation confirmed ✓' : 'Accumulation found';
-        statusEl.className = 'status-text';
-        const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
-        const fvgStr = z.fvg_candle ? ` &nbsp;·&nbsp; <span style="color:#5a9ef0">FVG ✓</span>` : '';
-        extraEl.innerHTML = `
-          <div class="accum-box found">
-            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
-            ${adxStr}${fvgStr}
-            <br>Since ${formatUTC(z.start)}
-          </div>`;
-        metaEl.textContent = '';
-      } else if (z.status === 'active' && z.is_active) {
-        dotEl.className      = 'status-dot potential';
-        statusEl.textContent = 'Accumulation forming';
-        statusEl.className   = 'status-text';
-        const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
-        extraEl.innerHTML = `
-          <div class="accum-box potential">
-            <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
-            ${adxStr}
-            <br>Since ${formatUTC(z.start)}
-          </div>`;
-        metaEl.textContent = '● FORMING';
-      } else if (z.status === 'potential' && z.is_active) {
-        dotEl.className   = 'status-dot potential';
-        statusEl.textContent = 'Potential forming';
-        statusEl.className = 'status-text dim';
-        extraEl.innerHTML = `
-          <div class="accum-box potential">
-            ${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}
-          </div>`;
-        metaEl.textContent = '';
-      } else {
-        dotEl.className      = 'status-dot looking';
-        statusEl.textContent = 'Looking for accumulation';
-        statusEl.className   = 'status-text dim';
-        extraEl.innerHTML    = '';
-        metaEl.textContent   = '';
-      }
-    }
-
-    // ── Supply & Demand ───────────────────────────────────────────────────
-    if (pair.type === 'supply_demand') {
-      const result = det.supply_demand;
-      const bias   = result?.bias || {};
-      const zones  = (result?.zones || []).filter(z => z.is_active);
-
-      if (bias.bias === 'bullish') {
-        dotEl.className = 'status-dot bullish';
-      } else if (bias.bias === 'bearish') {
-        dotEl.className = 'status-dot bearish';
-      } else {
-        dotEl.className = 'status-dot misaligned';
-      }
-
-      if (!bias.bias || bias.bias === 'misaligned') {
-        statusEl.textContent = 'Bias misaligned — not looking';
-        statusEl.className   = 'status-text dim';
-      } else if (zones.length > 0) {
-        statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} active`;
-        statusEl.className   = 'status-text';
-      } else {
-        statusEl.textContent = bias.bias === 'bullish' ? 'Seeking demand zones' : 'Seeking supply zones';
-        statusEl.className   = 'status-text dim';
-      }
-
-      const biasLabel = bias.bias === 'bullish' ? '↑ Bullish D+W'
-                      : bias.bias === 'bearish' ? '↓ Bearish D+W'
-                      : '⚡ Misaligned';
-      const biasClass = bias.bias || 'misaligned';
-
-      const zonePills = zones.map(z =>
-        `<span class="zone-pill ${z.type}">${z.type.toUpperCase()} ${formatPrice(z.bottom, pair.id)}–${formatPrice(z.top, pair.id)}</span>`
-      ).join('');
-
-      extraEl.innerHTML = `
-        <div class="bias-row"><span class="bias-pill ${biasClass}">${biasLabel}</span></div>
-        ${zones.length ? `<div class="zones-row">${zonePills}</div>` : ''}`;
-
-      metaEl.textContent = '';
-    }
-
-  } catch (e) {
-    const card     = document.getElementById(`card-${pair.id}`);
-    const dotEl    = document.getElementById(`dot-${pair.id}`);
-    const statusEl = document.getElementById(`status-${pair.id}`);
-    const metaEl   = document.getElementById(`meta-${pair.id}`);
-    const extraEl  = document.getElementById(`extra-${pair.id}`);
-    card.classList.remove('error');
-    dotEl.className      = 'status-dot standby';
-    statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed — operations halted';
-    statusEl.className   = 'status-text dim';
-    extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
-    metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
-  }
-}
-
-function updateClock() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  document.getElementById('clock').textContent = timeStr;
-
-  const badge = document.getElementById('session-global');
-
-  if (isWeekendHalt()) {
-    const countdown = getWeekendCountdown();
-    badge.textContent = `⏸ CLOSED · Mon in ${countdown}`;
-    badge.className   = 'weekend';
-    document.getElementById('weekend-banner').style.display = '';
-    document.getElementById('weekend-countdown').textContent = countdown;
-    const lbl = document.getElementById('refresh-label');
-    if (lbl) lbl.textContent = 'HALTED · weekend';
-    return;
-  }
-
-  document.getElementById('weekend-banner').style.display = 'none';
-  const lbl = document.getElementById('refresh-label');
-  if (lbl) lbl.textContent = 'LIVE · 5s';
-
-  const sess = getCurrentSession();
-  if (sess) {
-    badge.textContent = sess.label;
-    badge.className   = sess.name;
-  } else {
-    const utcH = now.getUTCHours();
-    const next = SESSION_WINDOWS.find(s => s.start > utcH) || SESSION_WINDOWS[0];
-    const target = new Date(now);
-    target.setUTCHours(next.start, 0, 0, 0);
-    if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
-    const diff = target - now;
-    const dh = Math.floor(diff / 3600000);
-    const dm = Math.floor((diff % 3600000) / 60000);
-    const ds = Math.floor((diff % 60000) / 1000);
-    badge.textContent = `${next.label.split(' ')[0]} in ${pad(dh)}:${pad(dm)}:${pad(ds)}`;
-    badge.className   = '';
-  }
-}
-
-async function pollAll() {
-  const weekend = isWeekendHalt();
-  const dot = document.getElementById('refresh-dot');
-  dot.classList.add('active');
-
-  // For each pair: skip fetching if weekend AND not always_open
-  await Promise.all(PAIRS.map(pair => {
-    if (weekend && !pair.always_open) return Promise.resolve();
-    return fetchPair(pair);
-  }));
-
-  // Apply standby styling to non-always_open pairs during weekend
-  if (weekend) applyWeekendStandby();
-
-  dot.classList.remove('active');
-  const now = new Date();
-  document.getElementById('last-update').textContent =
-    'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-}
-
-function applyWeekendStandby() {
-  PAIRS.forEach(pair => {
-    if (pair.always_open) return;   // 24/7 pairs are never suspended
-    const dotEl    = document.getElementById(`dot-${pair.id}`);
-    const statusEl = document.getElementById(`status-${pair.id}`);
-    const extraEl  = document.getElementById(`extra-${pair.id}`);
-    const metaEl   = document.getElementById(`meta-${pair.id}`);
-    const card     = document.getElementById(`card-${pair.id}`);
-    if (!dotEl) return;
-    card.classList.remove('error');
-    dotEl.className      = 'status-dot standby';
-    statusEl.textContent = 'Standby — resumes Sunday 22:00 UTC';
-    statusEl.className   = 'status-text dim';
-    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS SUSPENDED</div>';
-    metaEl.textContent   = '⏸ HALTED';
-  });
-  document.getElementById('last-update').textContent = 'Polling suspended for weekend';
-}
-
-buildGrid();
-setInterval(updateClock, 1000);
-updateClock();
-
-// Initial fetch — always fetch all pairs for price population, then apply standby to non-always_open
-Promise.all(PAIRS.map(pair =>
-  fetch(`/proxy/${pair.id}/api/data`)
-    .then(r => r.ok ? r.json() : null)
-    .then(data => { if (data) _populatePriceOnly(pair, data); })
-    .catch(() => {})
-)).then(() => {
-  if (isWeekendHalt()) applyWeekendStandby();
-  // Always start polling — pollAll handles per-pair always_open logic
-  pollAll();
-  setInterval(pollAll, 5000);
-});
-
-// Helper: populate just price/change fields without touching status
-function _populatePriceOnly(pair, data) {
-  const candles = data.candles || [];
-  const last = candles[candles.length - 1];
-  const prev = candles[candles.length - 2];
-  const price = last?.close;
-  const priceEl = document.getElementById(`price-${pair.id}`);
-  if (priceEl) priceEl.textContent = formatPrice(price, pair.id);
-  if (prev?.close && price) {
-    const chg = ((price - prev.close) / prev.close) * 100;
-    const el = document.getElementById(`change-${pair.id}`);
-    if (el) {
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
-      el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
-    }
-  }
-}
-</script>
-</body>
-</html>"""
-
-
-@app.route('/')
-def index():
-    return render_template_string(DASHBOARD)
-
-
-if __name__ == '__main__':
-    print("=" * 50)
-    print("Mission Control — http://0.0.0.0:6767")
-    print("=" * 50)
-    for pair_id, cfg in PAIRS.items():
-        print(f"  {pair_id:10s} → proxied from port {cfg['port']}")
-    print("=" * 50)
-    app.run(host='0.0.0.0', port=MISSION_PORT, use_reloader=False, threaded=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("MISSION_CONTROL_PORT", 9000))
+    print(f"[MissionControl] Starting on http://0.0.0.0:{port}")
+    print(f"[MissionControl] Dashboard:  http://localhost:{port}/dashboard")
+    print(f"[MissionControl] Chart view: http://localhost:{port}/chart-view/<PAIR>")
+    app.run(host="0.0.0.0", port=port, use_reloader=False, threaded=True)
