@@ -988,8 +988,10 @@
 
   // ── Init ─────────────────────────────────────────────────────────────
   loadData();
+  loadBias();
   loadNews();
   setInterval(loadData, 3000);
+  setInterval(loadBias, 30 * 60 * 1000); 
 </script>
 </body>
 </html>
