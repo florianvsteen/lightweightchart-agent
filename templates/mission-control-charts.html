@@ -252,6 +252,19 @@
   #candle-detail .cd-val   { color: var(--text); }
   #candle-detail .cd-val.up   { color: var(--accent); }
   #candle-detail .cd-val.down { color: var(--accent2); }
+  #candle-explain {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 0.63rem;
+    line-height: 1.7;
+  }
+  #candle-explain .ce-line        { display: block; margin-bottom: 1px; }
+  #candle-explain .ce-line.header { color: var(--muted); margin-bottom: 4px; }
+  #candle-explain .ce-line.pass   { color: var(--accent); }
+  #candle-explain .ce-line.bullet { color: var(--text); padding-left: 4px; }
+  #candle-explain .ce-line.sub    { color: var(--muted); padding-left: 8px; font-size: 0.59rem; }
+  #candle-explain .ce-loading     { font-style: italic; color: var(--muted); font-size: 0.62rem; }
   #candle-hint { font-size: 0.6rem; color: var(--muted); font-style: italic; margin-top: 4px; }
 
   /* News section */
@@ -731,9 +744,9 @@
   let _rawCandles = [];
   let _detectorResults = {};
 
-  function showCandleDetail(c) {
+  async function showCandleDetail(c) {
     const isBull = c.close >= c.open;
-    const det   = document.getElementById('candle-detail');
+    const det    = document.getElementById('candle-detail');
     const change = c.open>0 ? ((c.close-c.open)/c.open*100) : 0;
     det.innerHTML = `
       <div class="cd-row"><span class="cd-label">Time</span><span class="cd-val">${fmtTime(c.time)}</span></div>
@@ -741,7 +754,32 @@
       <div class="cd-row"><span class="cd-label">High</span><span class="cd-val">${fmtPrice(c.high,PAIR_ID)}</span></div>
       <div class="cd-row"><span class="cd-label">Low</span><span class="cd-val">${fmtPrice(c.low,PAIR_ID)}</span></div>
       <div class="cd-row"><span class="cd-label">Close</span><span class="cd-val ${isBull?'up':'down'}">${fmtPrice(c.close,PAIR_ID)}</span></div>
-      <div class="cd-row"><span class="cd-label">Change</span><span class="cd-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>`;
+      <div class="cd-row"><span class="cd-label">Change</span><span class="cd-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>
+      <div id="candle-explain"><span class="ce-loading">Analysing candle…</span></div>`;
+
+    // fetch explanation from server
+    try {
+      const res = await fetch(`/proxy/${PAIR_ID}/api/candle-explain?ts=${c.time}`);
+      const json = await res.json();
+      const lines = json.lines || [];
+      const el = document.getElementById('candle-explain');
+      if (!el) return;
+      el.innerHTML = lines.map((line, i) => {
+        const isPass   = line.startsWith('✓');
+        const isBullet = line.trimStart().startsWith('•');
+        const isSub    = line.startsWith('  ') && !isBullet;
+        const isHeader = i === 0;
+        let cls = 'header';
+        if (isPass)   cls = 'pass';
+        else if (isBullet) cls = 'bullet';
+        else if (isSub)    cls = 'sub';
+        else if (i > 0)    cls = 'bullet';
+        return `<span class="ce-line ${cls}">${line}</span>`;
+      }).join('');
+    } catch(e) {
+      const el = document.getElementById('candle-explain');
+      if (el) el.innerHTML = '<span class="ce-loading">Could not load explanation.</span>';
+    }
   }
 
   // Subscribe to crosshair move to show candle data in tooltip
