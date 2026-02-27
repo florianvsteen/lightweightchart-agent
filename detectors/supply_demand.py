@@ -242,7 +242,7 @@ def explain_candle(
     )
 
     # Slice so detect() sees candle[ci] as the last evaluable base candidate
-    df_slice = df.iloc[: ci + 2]
+    df_slice = df.iloc[: ci + 3]
 
     result = detect(
         df_slice,
