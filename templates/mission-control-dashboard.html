@@ -138,6 +138,13 @@
   }
   .card:hover { background: #13131a; }
 
+  /* Invisible full-card link overlay */
+  .card-link-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
   /* Chart link button — top right of card */
   .card-chart-link {
     position: absolute;
@@ -152,7 +159,7 @@
     background: var(--bg);
     text-decoration: none;
     transition: all 0.2s;
-    z-index: 2;
+    z-index: 3;
   }
   .card-chart-link:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -397,7 +404,8 @@ function buildGrid() {
     card.className = 'card';
     card.id = `card-${pair.id}`;
     card.innerHTML = `
-      <a class="card-chart-link" href="/chart-view/${pair.id}" target="_blank">↗ Chart</a>
+      <a class="card-link-overlay" href="/chart-view/${pair.id}"></a>
+      <a class="card-chart-link" href="/chart-view/${pair.id}">↗ Chart</a>
       <div class="card-header">
         <div>
           <div class="pair-name">${pair.id}</div>
