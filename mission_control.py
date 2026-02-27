@@ -24,11 +24,6 @@ from news import get_news as _get_news
 from config import PAIRS
 
 
-# News
-import threading
-from news import warmup as news_warmup
-threading.Thread(target=news_warmup, daemon=True).start()
-
 # ── App setup ──────────────────────────────────────────────────────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
