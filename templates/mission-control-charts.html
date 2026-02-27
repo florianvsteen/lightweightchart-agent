@@ -902,16 +902,24 @@
   });
 
   // ── Data load ─────────────────────────────────────────────────────────
+ let _cachedBias = null;
+  async function loadBias() {
+    try {
+      const res = await fetch(`/proxy/${PAIR_ID}/api/bias`);
+      if (res.ok) {
+        _cachedBias = await res.json().catch(() => null);
+        updateBiasDisplay(_cachedBias);
+      }
+    } catch(e) { /* keep last cached value */ }
+  }
+
   async function loadData() {
     if (isWeekend()) return;
     try {
-      const [dataRes, biasRes] = await Promise.all([
-        fetch(`/proxy/${PAIR_ID}/api/data?interval=${currentInterval}`),
-        fetch(`/proxy/${PAIR_ID}/api/bias`).catch(()=>null),
-      ]);
+      const dataRes = await fetch(`/proxy/${PAIR_ID}/api/data?interval=${currentInterval}`);
       if (!dataRes.ok) return;
       const data = await dataRes.json();
-      const biasInfo = biasRes&&biasRes.ok ? await biasRes.json().catch(()=>null) : null;
+      const biasInfo = _cachedBias;
 
       _rawCandles = data.candles||[];
       _detectorResults = data.detectors||{};
