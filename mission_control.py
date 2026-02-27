@@ -35,8 +35,8 @@ def _pairs_js():
     return [
         {
             "id":          pair_id,
-            "label":       cfg["label"],
-            "port":        cfg["port"],
+            "label":       cfg.get("label", pair_id),
+            "port":        cfg.get("port", 0),
             "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
             "always_open": cfg.get("always_open", False),
         }
