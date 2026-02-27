@@ -642,6 +642,9 @@
     priceFormat:   fmtPriceFormat(PAIR_ID),
   });
 
+  window._chartRef = chart;
+  window._tzOffset = TZ_OFFSET;
+
   window.addEventListener('resize', () => {
     chart.applyOptions({width: container.clientWidth});
   });
@@ -862,6 +865,7 @@
 
   // ── Candle click ─────────────────────────────────────────────────────
   let _rawCandles = [];
+  window._rawCandles = _rawCandles;
   let _detectorResults = {};
 
   async function showCandleDetail(c) {
@@ -950,6 +954,7 @@
       const biasInfo = _cachedBias;
 
       _rawCandles = data.candles||[];
+      window._rawCandles = _rawCandles;
       _detectorResults = data.detectors||{};
 
       candleSeries.setData([]);
