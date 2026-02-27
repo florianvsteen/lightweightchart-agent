@@ -125,6 +125,9 @@ class PairServer:
         self._cached_candles: dict[str, list] = {}
         self._results_lock = threading.Lock()
 
+        self._bias_cache: dict = {}
+        self._bias_cache_ts: float = 0.0
+
         self._detection_lock = threading.Lock()
         self._stagger_seconds = 0
         self._last_detection_time: float = 0.0
@@ -457,6 +460,14 @@ class PairServer:
                     self._cached_detector_results = results
                     self._cached_candles.update(candles_by_interval)
 
+                # Refresh bias cache while we're already doing heavy work
+                try:
+                    from detectors.bias import get_bias
+                    self._bias_cache = get_bias(self.ticker)
+                    self._bias_cache_ts = time.time()
+                except Exception as be:
+                    print(f"[{self.pair_id}] Bias cache refresh error: {be}")
+
                 print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
             except Exception as e:
                 print(f"[{self.pair_id}] Detection loop error: {e}")
@@ -497,6 +508,7 @@ class PairServer:
                     "label":     self.label,
                     "candles":   candles,
                     "detectors": {},
+                    "bias":      self._bias_cache,
                 })
 
             # Accumulation state overrides (in-memory only)
@@ -519,6 +531,7 @@ class PairServer:
                 "label":     self.label,
                 "candles":   candles,
                 "detectors": detector_results,
+                "bias":      self._bias_cache,
             })
 
         except Exception as e:
@@ -527,8 +540,14 @@ class PairServer:
     def _api_bias(self):
         """Return current bias for this pair (used by mission control for all pairs)."""
         try:
+            now = time.time()
+            if self._bias_cache and (now - self._bias_cache_ts) < 60:
+                return jsonify(self._bias_cache)
+
             from detectors.bias import get_bias
             bias_info = get_bias(self.ticker)
+            self._bias_cache = bias_info
+            self._bias_cache_ts = now
             return jsonify(bias_info)
         except Exception as e:
             return jsonify({"bias": "misaligned", "aligned": False, "reason": str(e)}), 500
