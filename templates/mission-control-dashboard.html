@@ -430,15 +430,34 @@ function buildGrid() {
   });
 }
 
+// Bias cache: keyed by pair.id, stores { data, fetchedAt (ms) }
+const _biasCache = {};
+const BIAS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function fetchBias(pairId) {
+  const cached = _biasCache[pairId];
+  if (cached && (Date.now() - cached.fetchedAt) < BIAS_TTL_MS) {
+    return cached.data;
+  }
+  try {
+    const res = await fetch(`/proxy/${pairId}/api/bias`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (data) _biasCache[pairId] = { data, fetchedAt: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPair(pair) {
   try {
-    const [res, biasRes] = await Promise.all([
+    const [res, biasInfo] = await Promise.all([
       fetch(`/proxy/${pair.id}/api/data`),
-      fetch(`/proxy/${pair.id}/api/bias`).catch(() => null),
+      fetchBias(pair.id),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const biasInfo = biasRes && biasRes.ok ? await biasRes.json().catch(() => null) : null;
 
     const candles = data.candles || [];
     const last = candles[candles.length - 1];
@@ -584,7 +603,7 @@ function updateClock() {
   }
   document.getElementById('weekend-banner').style.display = 'none';
   const lbl = document.getElementById('refresh-label');
-  if (lbl) lbl.textContent = 'LIVE · 5s';
+  if (lbl) lbl.textContent = 'LIVE · 60s';
 
   const sess = getCurrentSession();
   if (sess) {
@@ -642,7 +661,7 @@ buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
 pollAll();
-setInterval(pollAll, 5000);
+setInterval(pollAll, 60000);
 </script>
 </body>
 </html>
