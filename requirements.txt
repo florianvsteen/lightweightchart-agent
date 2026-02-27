@@ -3,5 +3,3 @@ yfinance
 pandas
 discord-webhook
 playwright
-transformers
-torch
