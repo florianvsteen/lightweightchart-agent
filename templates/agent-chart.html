@@ -331,8 +331,9 @@
             timeScale: { timeVisible: true, borderColor: '#2B2B43' },
         });
 
-        // Expose chart reference for Playwright screenshot centering
+        // Expose chart reference and raw candles for Playwright screenshot centering
         window._chartRef = chart;
+        window._rawCandles = [];
 
         function getPriceFormat(pairId) {
             const forex5 = ['EURUSD', 'EURGBP', 'GBPUSD'];
@@ -464,7 +465,6 @@
 
             const allSeries = [];
 
-            // ── Accumulation box ─────────────────────────────────────
             let lineAlpha, lineColor, lineStyle;
             if (isCooldown) {
                 lineAlpha = 0.60;
@@ -500,7 +500,6 @@
             ]);
             allSeries.push(topLine, bottomLine, leftLine, rightLine);
 
-            // ── Cooldown fill ─────────────────────────────────────────
             if (isCooldown) {
                 const cooldownFill = chart.addBaselineSeries({
                     baseValue: { type: 'price', price: zone.bottom },
@@ -519,29 +518,19 @@
                 allSeries.push(cooldownFill);
             }
 
-            // ── Aggressor candle zone (breakout candle drawn as S&D-style zone) ──
-            // The breakout candle body is rendered as a highlighted filled box,
-            // similar to a supply/demand zone, to clearly show the impulse move.
             const bc = zone.breakout_candle;
             if (bc && bc.time != null) {
                 const isBullish = bc.close > bc.open;
-                // Orange/amber = aggressor (neutral — not demand/supply colour)
                 const aggrColor = isBullish
-                    ? 'rgba(240, 170, 50, 0.85)'   // amber-gold for bullish aggressor
-                    : 'rgba(240, 100, 50, 0.85)';   // orange-red for bearish aggressor
-                const aggrFill  = isBullish
-                    ? 'rgba(240, 170, 50, 0.18)'
-                    : 'rgba(240, 100, 50, 0.18)';
+                    ? 'rgba(240, 170, 50, 0.85)'
+                    : 'rgba(240, 100, 50, 0.85)';
 
-                // Estimate candle width (1 candle = interval seconds; default 60s for 1m)
                 const candleWidthSecs = 60;
                 const aggrEnd = bc.time + candleWidthSecs;
 
-                // Draw as a zone using the candle HIGH and LOW (full range)
                 const aggrSeries = drawFilledBox(bc.time, aggrEnd, bc.high, bc.low, aggrColor, 0.18);
                 allSeries.push(...aggrSeries);
 
-                // Extra line at the body boundaries (open and close) for clarity
                 const bodyTop    = Math.max(bc.open, bc.close);
                 const bodyBottom = Math.min(bc.open, bc.close);
                 const bodyOpts   = { color: aggrColor, lineWidth: 2, lineStyle: 0,
@@ -555,7 +544,6 @@
                 allSeries.push(btl, bbl);
             }
 
-            // ── FVG zone (unchanged) ──────────────────────────────────
             const fvg = zone.fvg_candle;
             if (fvg && fvg.top != null && fvg.bottom != null && fvg.time != null) {
                 const isBullish = fvg.fvg_type === 'bullish';
@@ -608,7 +596,6 @@
             badge.style.display = 'flex';
             badge.className = bias.bias || 'misaligned';
             label.textContent = _biasLabel(bias.bias);
-            // Show misaligned warning banner when bias is misaligned
             banner.style.display = (bias.bias === 'misaligned') ? '' : 'none';
         }
 
@@ -629,10 +616,8 @@
                 const isHighlighted = !highlightTs || zone.start === highlightTs;
                 const zoneIsMisaligned = zone.is_misaligned || isMisaligned;
 
-                // Misaligned zones use amber/warning color; aligned zones use blue/red
                 let color, fill;
                 if (zoneIsMisaligned) {
-                    // Amber for misaligned zones regardless of direction
                     color = isHighlighted ? 'rgba(200, 160, 40, 0.8)'  : 'rgba(200, 160, 40, 0.2)';
                     fill  = isHighlighted ? 'rgba(200, 160, 40, 0.12)' : 'rgba(200, 160, 40, 0.04)';
                 } else {
@@ -715,22 +700,26 @@
             el.querySelector('.label-text').textContent = `Cooldown — resuming in ${pad(m)}:${pad(s)}`;
         }
 
-        // ── Chart centering helper (for screenshot mode) ──────────────
+        // ── Chart centering for screenshot mode (Playwright) ──────────
         let _screenshotCentered = false;
         function maybeCenterOnScreenshot(candles) {
             if (_screenshotCentered || !_screenshotCenterTs || !candles.length) return;
             _screenshotCentered = true;
-            // Find the index of the target candle
-            const idx = candles.findIndex(c => c.time === _screenshotCenterTs);
-            if (idx < 0) return;
-            // Show a window of ±30 candles around the target
-            const from = Math.max(0, idx - 30);
-            const to   = Math.min(candles.length - 1, idx + 30);
+
+            // Find the logical index of the target candle
+            let bestIdx = 0, bestDiff = Infinity;
+            for (let i = 0; i < candles.length; i++) {
+                const diff = Math.abs(candles[i].time - _screenshotCenterTs);
+                if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+            }
+
+            // Show ~80 bars total, target candle at ~65% from left (space to the right)
+            const totalBars = 80;
+            const rightPad  = Math.round(totalBars * 0.35);
+            const from = bestIdx - (totalBars - rightPad);
+            const to   = bestIdx + rightPad;
             try {
-                chart.timeScale().setVisibleRange({
-                    from: shiftTime(candles[from].time),
-                    to:   shiftTime(candles[to].time),
-                });
+                chart.timeScale().setVisibleLogicalRange({ from, to });
             } catch(e) {}
         }
 
@@ -772,6 +761,9 @@
                         return;
                     }
                     hideClosedOverlay();
+
+                    // Store raw candles for Playwright centering
+                    window._rawCandles = data.candles;
 
                     candleSeries.setData([]);
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
@@ -853,7 +845,7 @@
                 .catch(err => console.error('Fetch error:', err));
         }
 
-        setInterval(loadData, 2000);
+        setInterval(loadData, 60 * 1000);
         loadData();
 
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
