@@ -411,3 +411,113 @@ def detect(
     except Exception as e:
         print(f"[accumulation] Detection error: {e}")
         return None
+
+def explain_candle(
+    df,
+    ci: int,
+    params: dict,
+    market_timing: str = FOREX,
+) -> list[str]:
+    """
+    Explain why candle at index `ci` is or isn't a valid accumulation aggressor.
+
+    Slices df to ci+2 so that detect() treats candle[ci] as the "last closed"
+    breakout candidate. Then narrates whatever detect() returned.
+    No detection logic is duplicated here.
+    """
+    if ci < 0 or ci + 2 > len(df):
+        return ["Candle index out of range."]
+
+    c = df.iloc[ci]
+    o, h, l, cl = float(c["Open"]), float(c["High"]), float(c["Low"]), float(c["Close"])
+    body    = abs(cl - o)
+    is_bull = cl >= o
+
+    lines = []
+    lines.append(
+        f"{'Bullish' if is_bull else 'Bearish'} candle — "
+        f"body {body:.5f}  range {h - l:.5f}"
+    )
+
+    # Slice so detect() sees candle[ci] as df[-2] (last closed candle)
+    df_slice = df.iloc[: ci + 2]
+
+    result = detect(df_slice, market_timing=market_timing, **params)
+
+    if result is None:
+        lines.append("Not enough data to evaluate.")
+        return lines
+
+    status = result.get("status")
+
+    if status == "weekend":
+        lines.append("Market is closed (weekend).")
+        return lines
+
+    if status == "out_of_session":
+        lines.append(
+            "Outside configured trading sessions — "
+            "accumulation detection is inactive at this time."
+        )
+        return lines
+
+    if status == "looking":
+        # detect() found no valid zone at all
+        lines.append(
+            "No valid accumulation zone found before this candle. "
+            "The scan window either had no candidate zones, or all candidates "
+            "were rejected (too wide, trending, or not choppy enough)."
+        )
+        return lines
+
+    # A zone was found (active, found, potential, or confirmed)
+    top    = result.get("top", 0)
+    bot    = result.get("bottom", 0)
+    adx    = result.get("adx")
+    chop   = result.get("slope")   # slope is in the result
+    avg_body = result.get("avg_body", 0)
+    touches  = result.get("touchpoints", 0)
+
+    lines.append(
+        f"Found valid accumulation zone ({bot:.5f}–{top:.5f})"
+    )
+    if adx is not None:
+        lines.append(
+            f"  ADX {adx:.1f}  ·  avg body {avg_body:.5f}  ·  touches {touches}"
+        )
+
+    if status in ("active", "found", "potential"):
+        lines.append(
+            "This candle is still inside the zone — hasn't broken out yet."
+        )
+        lines.append(
+            f"  Zone avg body: {avg_body:.5f}  ·  This body: {body:.5f}"
+        )
+        lines.append(
+            "An aggressor must close its body above the zone high (bullish) "
+            "or below the zone low (bearish)."
+        )
+        return lines
+
+    if status == "confirmed":
+        dir_      = result.get("breakout_dir", "?")
+        ratio     = result.get("impulse_ratio")
+        lines.append(f"✓ Valid aggressor — broke {dir_} out of zone.")
+        lines.append(
+            f"  Body {body:.5f} > zone avg body {avg_body:.5f} "
+            f"({ratio}× — impulsive)."
+        )
+        return lines
+
+    # detect() returned something unexpected — broke out but wasn't impulsive
+    # (detect returns 'looking' in that case, handled above, but be safe)
+    lines.append(
+        f"Broke out of zone ({bot:.5f}–{top:.5f}) but not impulsive enough."
+    )
+    lines.append(
+        f"  Body {body:.5f}  ·  zone avg body {avg_body:.5f}  ·  need > 1.0×."
+    )
+    lines.append(
+        "A valid aggressor must have a body larger than the average candle in the zone."
+    )
+    return lines
