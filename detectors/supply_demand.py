@@ -3,33 +3,30 @@ detectors/supply_demand.py
 
 Detects Supply and Demand zones with directional bias filtering.
 
-BIAS CHECK (runs first):
-  - Fetches previous daily candle and previous weekly candle via yfinance.
-  - Both must be bullish OR both must be bearish to proceed.
-  - Misaligned = no zone detection.
-  - Bullish bias  → only DEMAND zones returned.
-  - Bearish bias  → only SUPPLY zones returned.
+BIAS CHECK (from detectors/bias.py):
+  - Fetches previous daily and weekly candles via the active data provider.
+  - Bias levels: strong_bullish, bullish, bearish, strong_bearish, misaligned.
+  - When aligned bullish  → demand zones only.
+  - When aligned bearish  → supply zones only.
+  - When MISALIGNED       → both zone types detected, but flagged as lower-confidence
+                            (is_misaligned=True on each zone).
 
 ZONE DETECTION:
   1. INDECISION CANDLE — wicks > body (wick ratio check)
   2. IMPULSE CANDLE    — body of next candle must be significantly larger
                          than average candle BODY size (wicks excluded).
-  - Indecision candle may be the last candle before session open (so the
-    first candle of the session can be the impulse).
   - Only zones created during valid_sessions are kept.
   - Zones up to max_age_days old are returned.
 
 Session logic lives in sessions.py.
-
-NOTE: _get_bias() downloads are wrapped in the caller's _YF_LOCK via
-      the `yf_lock` parameter to avoid concurrent download collisions.
+Bias logic lives in detectors/bias.py.
 """
 
 import numpy as np
 import pandas as pd
 import threading
 from datetime import datetime, timezone
-from providers import get_bias_df as _provider_get_bias_df
+from detectors.bias import get_bias as _get_bias_from_module
 from sessions import candle_session_or_pre, in_session, FOREX
 
 # Backward-compat aliases used by debug.html server routes
@@ -57,38 +54,10 @@ def _is_indecision(o, h, l, c, min_wick_ratio: float = 0.6) -> bool:
 
 def _get_bias(ticker: str, yf_lock=None) -> dict:
     """
-    Fetch previous completed daily and weekly candles via the active data provider.
+    Wrapper around detectors/bias.py for backward compatibility.
     yf_lock param retained for backward compatibility but no longer used.
     """
-    try:
-        df_d = _provider_get_bias_df(ticker, "5d", "1d").dropna()
-        df_w = _provider_get_bias_df(ticker, "3mo", "1wk").dropna()
-
-        if len(df_d) < 2 or len(df_w) < 2:
-            return {"bias": "misaligned", "reason": "insufficient data"}
-
-        d_open  = float(df_d['Open'].iloc[-2])
-        d_close = float(df_d['Close'].iloc[-2])
-        w_open  = float(df_w['Open'].iloc[-2])
-        w_close = float(df_w['Close'].iloc[-2])
-
-        daily_bias  = "bullish" if d_close > d_open else "bearish"
-        weekly_bias = "bullish" if w_close > w_open else "bearish"
-        bias        = daily_bias if daily_bias == weekly_bias else "misaligned"
-
-        return {
-            "bias":         bias,
-            "daily_bias":   daily_bias,
-            "weekly_bias":  weekly_bias,
-            "daily_open":   d_open,
-            "daily_close":  d_close,
-            "weekly_open":  w_open,
-            "weekly_close": w_close,
-        }
-
-    except Exception as e:
-        print(f"[supply_demand] Bias fetch error: {e}")
-        return {"bias": "misaligned", "reason": str(e)}
+    return _get_bias_from_module(ticker)
 
 
 def detect(
@@ -105,14 +74,18 @@ def detect(
 ) -> dict:
     """
     Returns a dict with:
-      bias:   bias info dict (always present)
-      zones:  list of zone dicts (empty if misaligned or none found)
+      bias:   bias info dict (always present, uses new strong/weak levels)
+      zones:  list of zone dicts.
+              When bias is misaligned, zones are still detected but flagged
+              with is_misaligned=True so the UI can warn the user.
     """
     try:
         if valid_sessions is None:
             valid_sessions = list(SESSION_WINDOWS.keys())
 
-        bias_info = _get_bias(ticker, yf_lock) if ticker else {"bias": "misaligned", "reason": "no ticker"}
+        bias_info = _get_bias_from_module(ticker) if ticker else {
+            "bias": "misaligned", "aligned": False, "reason": "no ticker"
+        }
 
         result = {
             "detector": "supply_demand",
@@ -120,10 +93,14 @@ def detect(
             "zones":    [],
         }
 
-        if bias_info["bias"] == "misaligned":
-            return result
+        is_misaligned = bias_info["bias"] == "misaligned"
 
-        look_for = "demand" if bias_info["bias"] == "bullish" else "supply"
+        # Determine which zone type(s) to look for
+        from detectors.bias import is_bullish, is_bearish
+        if not is_misaligned:
+            look_for = "demand" if is_bullish(bias_info) else "supply"
+        else:
+            look_for = None   # misaligned → scan both directions
 
         if len(df) < 10:
             return result
@@ -141,22 +118,14 @@ def detect(
         lows   = df['Low'].values.flatten().astype(float)
         closes = df['Close'].values.flatten().astype(float)
 
-        # Average BODY size across all candles (wicks excluded)
-        bodies    = np.abs(closes - opens)
-        avg_body  = float(np.mean(bodies))
+        bodies   = np.abs(closes - opens)
+        avg_body = float(np.mean(bodies))
 
-        # Last fully closed candle for removal checks
-        last_closed_close = closes[-2]
-        now_ts     = datetime.now(timezone.utc).timestamp()
-        cutoff_ts  = now_ts - (max_age_days * 86400)
+        now_ts    = datetime.now(timezone.utc).timestamp()
+        cutoff_ts = now_ts - (max_age_days * 86400)
 
         zones = []
-
-        # len(df)-1 = currently forming candle (not closed yet, skip)
-        # len(df)-2 = last closed candle (can be impulse)
-        # len(df)-3 = candle before that (can be indecision, with i+1 being the closed impulse)
-        # So we scan indecision candidates up to len(df)-3 so impulse at i+1 is always closed.
-        candidates = []  # ← add before the loop
+        candidates = []
 
         for i in range(len(df) - 3, 0, -1):
             candle_ts = int(df.index[i].timestamp())
@@ -184,7 +153,8 @@ def detect(
             impulse_bullish = closes[i + 1] > opens[i + 1]
             zone_type = "demand" if impulse_bullish else "supply"
 
-            if not reject_reason and look_for and zone_type != look_for:
+            # Direction filter — skip only when we have a clear directional bias
+            if not reject_reason and look_for is not None and zone_type != look_for:
                 reject_reason = f"wrong direction ({zone_type}) — bias requires {look_for}"
 
             if not reject_reason:
@@ -213,18 +183,20 @@ def detect(
                     "end":           int(df.index[-1].timestamp()),
                     "top":           float(h),
                     "bottom":        float(l),
+                    "is_misaligned": is_misaligned,
                 })
 
             if is_active:
                 zones.append({
-                    "type":      zone_type,
-                    "status":    "active",
-                    "session":   _candle_session_or_pre(candle_ts, market_timing),
-                    "is_active": True,
-                    "start":     candle_ts,
-                    "end":       int(df.index[-1].timestamp()),
-                    "top":       float(h),
-                    "bottom":    float(l),
+                    "type":          zone_type,
+                    "status":        "active",
+                    "session":       _candle_session_or_pre(candle_ts, market_timing),
+                    "is_active":     True,
+                    "is_misaligned": is_misaligned,
+                    "start":         candle_ts,
+                    "end":           int(df.index[-1].timestamp()),
+                    "top":           float(h),
+                    "bottom":        float(l),
                 })
                 if len(zones) >= max_zones:
                     break
@@ -236,4 +208,4 @@ def detect(
 
     except Exception as e:
         print(f"[supply_demand] Detection error: {e}")
-        return {"detector": "supply_demand", "bias": {"bias": "misaligned", "reason": str(e)}, "zones": []}
+        return {"detector": "supply_demand", "bias": {"bias": "misaligned", "aligned": False, "reason": str(e)}, "zones": []}
