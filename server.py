@@ -536,248 +536,57 @@ class PairServer:
     def _api_candle_explain(self):
         """
         Given ?ts=<unix_ts>, explain in plain English why that candle
-        isn't an aggressor (accumulation) or a base candle (supply/demand).
+        is or isn't a valid aggressor (accumulation) or base candle (supply/demand).
+
+        All logic lives in the detector modules — this method just:
+          1. Parses the timestamp
+          2. Cleans the dataframe
+          3. Finds the candle index
+          4. Delegates to the appropriate detector's explain_candle()
         """
-        import numpy as np
         try:
             ts_raw = request.args.get("ts")
             if not ts_raw:
                 return jsonify({"error": "ts required"}), 400
             ts = int(ts_raw)
 
-            # ── helpers ──────────────────────────────────────────────────
             def clean_df(df):
                 if isinstance(df.columns, pd.MultiIndex):
                     df = df.copy()
                     df.columns = df.columns.get_level_values(0)
                 df = df.loc[:, ~df.columns.duplicated()].copy()
-                for col in ["Open","High","Low","Close"]:
+                for col in ["Open", "High", "Low", "Close"]:
                     df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
-                return df.dropna(subset=["Open","High","Low","Close"])
+                return df.dropna(subset=["Open", "High", "Low", "Close"])
 
             def find_idx(df, ts):
                 stamps = [int(idx.timestamp()) for idx in df.index]
                 if ts in stamps:
                     return stamps.index(ts)
-                return min(range(len(stamps)), key=lambda i: abs(stamps[i]-ts))
+                return min(range(len(stamps)), key=lambda i: abs(stamps[i] - ts))
 
-            # ── ACCUMULATION ──────────────────────────────────────────────
             if "accumulation" in self.detector_names:
-                from detectors.accumulation import _slope_pct, _choppiness, _adx
+                from detectors.accumulation import explain_candle
 
-                params        = dict(self.detector_params.get("accumulation", {}))
-                det_iv        = params.pop("timeframe", "1m")
-                lookback      = params.get("lookback", 40)
-                min_candles   = params.get("min_candles", 20)
-                adx_threshold = params.get("adx_threshold", 25)
-                threshold_pct = params.get("threshold_pct", 0.003)
-                max_range_pct = params.get("max_range_pct")
+                params = dict(self.detector_params.get("accumulation", {}))
+                det_iv = params.pop("timeframe", "1m")
+                df     = clean_df(self._get_df(det_iv, {}))
+                ci     = find_idx(df, ts)
+                lines  = explain_candle(df, ci, params, self.market_timing)
 
-                df = clean_df(self._get_df(det_iv, {}))
-                if len(df) < min_candles + 3:
-                    return jsonify({"lines": ["Not enough data to evaluate."]})
-
-                ci = find_idx(df, ts)
-                c  = df.iloc[ci]
-                o, h, l, cl = float(c["Open"]), float(c["High"]), float(c["Low"]), float(c["Close"])
-                body      = abs(cl - o)
-                is_bull   = cl >= o
-
-                lines = []
-                lines.append(f"{'Bullish' if is_bull else 'Bearish'} candle — body {body:.5f}  range {h-l:.5f}")
-
-                if ci < min_candles + 1:
-                    lines.append("Too near the start of data to find an accumulation zone before it.")
-                    return jsonify({"lines": lines})
-
-                # Scan all valid zones that ended just before this candle (at ci-1)
-                accum_end = ci - 1
-                scan_start = max(0, accum_end - lookback)
-
-                best_zone   = None   # best passing zone
-                best_reject = None   # rejection reason for best candidate zone
-
-                for window_size in range(min_candles, lookback + 1):
-                    i = accum_end - window_size + 1
-                    if i < 0 or i < scan_start:
-                        continue
-
-                    win    = df.iloc[i : i + window_size]
-                    closes = win["Close"].values.flatten().astype(float)
-                    opens  = win["Open"].values.flatten().astype(float)
-                    highs  = win["High"].values.flatten().astype(float)
-                    lows   = win["Low"].values.flatten().astype(float)
-
-                    avg_p      = closes.mean()
-                    if avg_p == 0: continue
-                    bh         = np.maximum(opens, closes)
-                    bl         = np.minimum(opens, closes)
-                    h_max      = float(bh.max())
-                    l_min      = float(bl.min())
-                    avg_body   = float(np.abs(closes - opens).mean())
-                    range_pct  = (h_max - l_min) / avg_p
-                    slope      = _slope_pct(closes, avg_p)
-                    chop       = _choppiness(closes)
-                    adx_val    = _adx(highs, lows, closes)
-                    slope_limit= (threshold_pct * 0.10) / window_size
-
-                    # Zone validity
-                    z_reject = None
-                    if max_range_pct and range_pct > max_range_pct:
-                        z_reject = f"zone range too wide ({range_pct*100:.3f}% > max {max_range_pct*100:.3f}%)"
-                    elif slope >= slope_limit:
-                        z_reject = f"price was trending in zone (slope {slope:.6f} ≥ limit {slope_limit:.6f})"
-                    elif adx_val is not None and adx_val > adx_threshold:
-                        z_reject = f"zone was trending (ADX {adx_val:.1f} > threshold {adx_threshold})"
-                    elif chop < 0.36:
-                        z_reject = f"not choppy enough (choppiness {chop:.3f} < 0.36)"
-
-                    if z_reject:
-                        if best_zone is None and best_reject is None:
-                            best_reject = (window_size, h_max, l_min, z_reject)
-                        continue
-
-                    # Valid zone — now check this candle vs it
-                    body_high = max(o, cl)
-                    body_low  = min(o, cl)
-                    broke_up   = body_high > h_max
-                    broke_down = body_low  < l_min
-                    broke_out  = broke_up or broke_down
-
-                    best_zone = {
-                        "size":      window_size,
-                        "top":       h_max,
-                        "bot":       l_min,
-                        "avg_body":  avg_body,
-                        "broke_out": broke_out,
-                        "broke_up":  broke_up,
-                        "broke_down":broke_down,
-                        "impulsive": body > avg_body if broke_out else None,
-                        "ratio":     round(body / avg_body, 2) if avg_body > 0 and broke_out else None,
-                    }
-                    break  # use the first (shortest) valid zone
-
-                if best_zone is None and best_reject is None:
-                    lines.append("No accumulation zone found before this candle in the scan window.")
-                elif best_zone is None:
-                    sz, top, bot, reason = best_reject
-                    lines.append(f"Closest zone ({sz} candles, {bot:.5f}–{top:.5f}) was rejected:")
-                    lines.append(f"  • {reason}")
-                    lines.append("Without a valid accumulation zone, this candle cannot be an aggressor.")
-                elif not best_zone["broke_out"]:
-                    z = best_zone
-                    lines.append(f"Found valid {z['size']}-candle accumulation zone ({z['bot']:.5f}–{z['top']:.5f}).")
-                    lines.append("This candle is still inside the zone — hasn't broken out yet.")
-                    lines.append(f"  Zone avg body: {z['avg_body']:.5f}  ·  This body: {body:.5f}")
-                    lines.append("An aggressor must close above the zone high (bullish) or below the zone low (bearish).")
-                elif best_zone["impulsive"]:
-                    z = best_zone
-                    dir_ = "up" if z["broke_up"] else "down"
-                    lines.append(f"✓ Valid aggressor — broke {dir_} out of {z['size']}-candle zone ({z['bot']:.5f}–{z['top']:.5f}).")
-                    lines.append(f"  Body {body:.5f} > zone avg body {z['avg_body']:.5f} ({z['ratio']}× — impulsive).")
-                else:
-                    z = best_zone
-                    dir_ = "up" if z["broke_up"] else "down"
-                    lines.append(f"Broke {dir_} out of {z['size']}-candle zone ({z['bot']:.5f}–{z['top']:.5f}) but not impulsive enough.")
-                    lines.append(f"  Body {body:.5f} ≤ zone avg body {z['avg_body']:.5f} ({z['ratio']}× — need > 1.0×).")
-                    lines.append("A valid aggressor must have a body larger than the average candle in the zone.")
-
-                return jsonify({"lines": lines})
-
-            # ── SUPPLY & DEMAND ───────────────────────────────────────────
             elif "supply_demand" in self.detector_names:
-                from detectors.fvg import DEFAULT_MIN_GAP_PCT, DEFAULT_IMPULSE_BODY_PCT
+                from detectors.supply_demand import explain_candle
 
-                params       = dict(self.detector_params.get("supply_demand", {}))
-                det_iv       = params.pop("timeframe", "30m")
-                min_gap_pct  = self.detector_params.get("fvg", {}).get("min_gap_pct",      DEFAULT_MIN_GAP_PCT)
-                imp_body_pct = self.detector_params.get("fvg", {}).get("impulse_body_pct", DEFAULT_IMPULSE_BODY_PCT)
-
-                df = clean_df(self._get_df(det_iv, {}))
-                if len(df) < 3:
-                    return jsonify({"lines": ["Not enough data."]})
-
-                ci = find_idx(df, ts)
-                if ci < 1 or ci >= len(df) - 1:
-                    return jsonify({"lines": ["Candle is at the edge of data — cannot evaluate neighbours."]})
-
-                c      = df.iloc[ci]
-                c_prev = df.iloc[ci - 1]
-                c_next = df.iloc[ci + 1]
-
-                o, h, l, cl   = float(c["Open"]), float(c["High"]), float(c["Low"]), float(c["Close"])
-                body          = abs(cl - o)
-                crange        = h - l
-                body_ratio    = body / crange if crange > 0 else 0
-                is_bull       = cl >= o
-                avg_p         = (h + l) / 2.0
-
-                h_prev, l_prev = float(c_prev["High"]), float(c_prev["Low"])
-                h_next, l_next = float(c_next["High"]), float(c_next["Low"])
-
-                avg_body = float(np.abs(df["Close"].values - df["Open"].values).mean())
-
-                raw_bull = l_next - h_prev   # positive = bullish gap
-                raw_bear = l_prev - h_next   # positive = bearish gap
-                gap      = max(raw_bull, raw_bear)
-                gap_pct  = gap / avg_p if avg_p > 0 else 0
-                gap_dir  = "bullish" if raw_bull >= raw_bear else "bearish"
-
-                lines = []
-                lines.append(f"{'Bullish' if is_bull else 'Bearish'} candle — body {body:.5f}  body/range {body_ratio*100:.1f}%")
-
-                reasons = []
-
-                # 1. Body size (impulse)
-                if body_ratio < imp_body_pct:
-                    reasons.append(
-                        f"body too small — {body_ratio*100:.1f}% of candle range, "
-                        f"need ≥ {imp_body_pct*100:.0f}% (candle isn't impulsive enough)"
-                    )
-
-                # 2. Gap existence
-                if raw_bull <= 0 and raw_bear <= 0:
-                    reasons.append(
-                        "no fair-value gap — the wicks of the surrounding candles overlap "
-                        "(previous high overlaps next low, or vice versa)"
-                    )
-                elif gap_pct < min_gap_pct:
-                    reasons.append(
-                        f"gap too small — {gap_pct*100:.4f}% ({gap_dir}), "
-                        f"need ≥ {min_gap_pct*100:.4f}% to qualify as an FVG"
-                    )
-                else:
-                    # Gap is big enough — check direction match
-                    if gap_dir == "bullish" and not is_bull:
-                        reasons.append(
-                            f"gap is bullish ({raw_bull:.5f}) but candle closed bearish — "
-                            "direction mismatch, a bullish FVG needs a bullish impulse candle"
-                        )
-                    elif gap_dir == "bearish" and is_bull:
-                        reasons.append(
-                            f"gap is bearish ({raw_bear:.5f}) but candle closed bullish — "
-                            "direction mismatch, a bearish FVG needs a bearish impulse candle"
-                        )
-
-                # 3. Adjacent candle data quality
-                if h_prev == l_prev:
-                    reasons.append("previous candle has no range (doji or bad data) — gap can't be measured")
-                if h_next == l_next:
-                    reasons.append("next candle has no range (doji or bad data) — gap can't be measured")
-
-                if not reasons:
-                    lines.append("✓ This candle passes all supply/demand base-candle checks.")
-                    lines.append(f"  {gap_dir.capitalize()} FVG of {gap_pct*100:.4f}%  ·  body ratio {body_ratio*100:.1f}%")
-                else:
-                    lines.append("Not a valid supply/demand base candle:")
-                    for r in reasons:
-                        lines.append(f"  • {r}")
-
-                lines.append(f"  Chart avg body: {avg_body:.5f}  ·  This body: {body:.5f}")
-                return jsonify({"lines": lines})
+                params = dict(self.detector_params.get("supply_demand", {}))
+                det_iv = params.pop("timeframe", "30m")
+                df     = clean_df(self._get_df(det_iv, {}))
+                ci     = find_idx(df, ts)
+                lines  = explain_candle(df, ci, params, self.market_timing, self.ticker)
 
             else:
-                return jsonify({"lines": ["No detector configured for this pair."]})
+                lines = ["No detector configured for this pair."]
+
+            return jsonify({"lines": lines})
 
         except Exception as e:
             import traceback
