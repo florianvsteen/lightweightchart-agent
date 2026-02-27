@@ -380,6 +380,34 @@
   .news-sentiment.bearish  { border-color: rgba(240,90,126,0.3); color: var(--accent2); background: rgba(240,90,126,0.05); }
   .news-sentiment.neutral  { border-color: var(--border2); color: var(--muted); }
 
+  .news-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3px;
+  }
+
+  .news-age {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  a.news-headline {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 4px;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  a.news-headline:hover {
+    color: var(--accent);
+  }
+  
   .news-loading {
     font-size: 0.65rem;
     color: var(--muted);
