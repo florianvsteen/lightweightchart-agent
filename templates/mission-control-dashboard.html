@@ -4,27 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mission Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:         #06080a;
-    --bg2:        #090c0f;
-    --surface:    #0d1117;
-    --surface2:   #111820;
-    --border:     #151d26;
-    --border2:    #1c2733;
-    --border3:    #243040;
-    --text:       #c8d8e8;
-    --muted:      #3a5068;
-    --faint:      #1a2535;
-    --accent:     #00d4a0;
-    --accent-dim: #006650;
-    --red:        #f04870;
-    --red-dim:    #601830;
-    --gold:       #e8b840;
-    --blue:       #4898f0;
-    --found:      #e0eeff;
-    --white:      #eaf2ff;
+    --bg:        #0a0a0c;
+    --surface:   #111116;
+    --border:    #1e1e28;
+    --border2:   #2a2a38;
+    --text:      #c8c8d8;
+    --muted:     #4a4a60;
+    --accent:    #5af0c4;
+    --accent2:   #f05a7e;
+    --blue:      #5a9ef0;
+    --found:     #e8e8f0;
+    --potential: #888898;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,260 +25,134 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Space Mono', monospace;
     min-height: 100vh;
     overflow-x: hidden;
   }
 
-  /* Subtle noise texture overlay */
   body::before {
     content: '';
     position: fixed;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+    );
     pointer-events: none;
     z-index: 9999;
   }
 
-  /* ── Header ─────────────────────────────────────────────────────── */
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 32px;
-    height: 52px;
+    padding: 20px 32px;
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    background: rgba(6,8,10,0.97);
-    backdrop-filter: blur(16px);
+    background: var(--bg);
     z-index: 100;
   }
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .logo-mark {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--accent-dim);
-    border-radius: 6px;
-    position: relative;
-    overflow: hidden;
-  }
-  .logo-mark::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(0,212,160,0.15) 0%, transparent 60%);
-  }
-  .logo-mark-inner {
-    width: 9px;
-    height: 9px;
-    background: var(--accent);
-    border-radius: 2px;
-    box-shadow: 0 0 10px rgba(0,212,160,0.7);
-    position: relative;
-    z-index: 1;
-  }
-
-  .logo-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
+  .logo { display: flex; align-items: baseline; gap: 12px; }
   .logo-title {
     font-family: 'Syne', sans-serif;
     font-weight: 800;
-    font-size: 0.82rem;
-    letter-spacing: 0.22em;
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: var(--white);
+    color: var(--accent);
   }
-  .logo-sub {
-    font-size: 0.5rem;
-    color: var(--muted);
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-  }
+  .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.2em; text-transform: uppercase; }
 
-  .header-center {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    overflow: hidden;
-  }
-
-  .stat-chip {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 14px;
-    background: var(--surface);
-    font-size: 0.55rem;
-    color: var(--muted);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    border-right: 1px solid var(--border);
-  }
-  .stat-chip:last-child { border-right: none; }
-  .stat-chip .val { color: var(--text); font-weight: 500; }
-  .stat-chip .dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: var(--muted);
-  }
-  .stat-chip .dot.live {
-    background: var(--accent);
-    box-shadow: 0 0 6px rgba(0,212,160,0.6);
-    animation: pulse-dot 2s ease-in-out infinite;
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  #clock {
-    font-size: 0.7rem;
-    color: var(--text);
-    letter-spacing: 0.06em;
-    font-variant-numeric: tabular-nums;
-    padding: 6px 14px;
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    background: var(--surface);
-    min-width: 88px;
-    text-align: center;
-  }
+  .header-right { display: flex; align-items: center; gap: 20px; }
+  #clock { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.1em; }
 
   #session-global {
-    font-size: 0.58rem;
-    letter-spacing: 0.14em;
-    padding: 6px 14px;
-    border-radius: 4px;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    padding: 4px 10px;
+    border-radius: 3px;
     border: 1px solid var(--border2);
     color: var(--muted);
-    text-transform: uppercase;
-    transition: all 0.4s;
-    min-width: 80px;
-    text-align: center;
-    background: var(--surface);
+    transition: all 0.3s;
   }
-  #session-global.asian    { border-color: rgba(232,184,64,0.4); color: var(--gold); background: rgba(232,184,64,0.05); }
-  #session-global.london   { border-color: rgba(72,152,240,0.4); color: var(--blue); background: rgba(72,152,240,0.05); }
-  #session-global.new_york { border-color: rgba(0,212,160,0.4); color: var(--accent); background: rgba(0,212,160,0.05); }
+  #session-global.asian    { border-color: #c8a84b; color: #c8a84b; }
+  #session-global.london   { border-color: var(--blue); color: var(--blue); }
+  #session-global.new_york { border-color: var(--accent); color: var(--accent); }
+  #session-global.weekend  { border-color: #3a2a2a; color: #553a3a; }
 
-  /* ── Weekend banner ──────────────────────────────────────────────── */
+  /* Weekend banner */
   #weekend-banner {
     display: none;
-    padding: 18px 32px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg2);
+    background: linear-gradient(180deg, rgba(20, 12, 6, 0.98) 0%, rgba(15, 9, 4, 0.95) 100%);
+    border-bottom: 1px solid #2a1a08;
+    padding: 22px 32px;
     position: sticky;
-    top: 52px;
+    top: 61px;
     z-index: 99;
   }
-  #weekend-banner .wk-inner {
-    max-width: 440px;
-    margin: 0 auto;
-    text-align: center;
-  }
+  #weekend-banner .wk-inner { max-width: 600px; margin: 0 auto; text-align: center; }
+  #weekend-banner .wk-icon { font-size: 1.4rem; margin-bottom: 6px; }
   #weekend-banner .wk-title {
     font-family: 'Syne', sans-serif;
-    font-size: 0.58rem;
-    font-weight: 700;
-    color: var(--muted);
-    letter-spacing: 0.45em;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #4a3010;
+    letter-spacing: 0.25em;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   #weekend-banner .wk-countdown {
-    font-family: 'JetBrains Mono', monospace;
     font-size: 2.2rem;
-    font-weight: 300;
-    color: var(--border3);
+    font-weight: 700;
+    color: #3a2808;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     line-height: 1;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
   }
-  #weekend-banner .wk-hint {
-    font-size: 0.52rem;
-    color: var(--faint);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+  #weekend-banner .wk-hint { font-size: 0.6rem; color: #2a1e08; letter-spacing: 0.15em; text-transform: uppercase; }
+  #weekend-banner .wk-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #2a1a08 30%, #2a1a08 70%, transparent);
+    margin: 12px 0;
   }
 
-  /* ── Grid ────────────────────────────────────────────────────────── */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 1px;
     background: var(--border);
-    margin: 1px;
   }
 
-  /* ── Card ────────────────────────────────────────────────────────── */
   .card {
     background: var(--surface);
-    padding: 22px 24px 18px;
+    padding: 20px 22px;
     position: relative;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.2s;
+    text-decoration: none;
+    display: block;
     color: var(--text);
-    overflow: hidden;
-    animation: card-in 0.4s ease both;
   }
-  .card:hover { background: var(--surface2); }
+  .card:hover { background: #13131a; }
 
-  /* Accent glow top bar on hover */
-  .card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-  .card:hover::before { opacity: 0.5; }
-
-  /* Corner bracket top-left */
-  .card-corner {
-    position: absolute;
-    top: 10px; left: 10px;
-    width: 10px; height: 10px;
-    border-top: 1px solid var(--border3);
-    border-left: 1px solid var(--border3);
-    pointer-events: none;
-    transition: border-color 0.3s;
-  }
-  .card:hover .card-corner { border-color: var(--accent-dim); }
-
+  /* Invisible full-card link overlay */
   .card-link-overlay {
     position: absolute;
     inset: 0;
     z-index: 1;
   }
 
+  /* Chart link button — top right of card */
   .card-chart-link {
     position: absolute;
-    top: 18px; right: 18px;
-    font-size: 0.5rem;
-    letter-spacing: 0.16em;
+    top: 14px; right: 14px;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border: 1px solid var(--border2);
     border-radius: 3px;
     color: var(--muted);
@@ -294,320 +161,150 @@
     transition: all 0.2s;
     z-index: 3;
   }
-  .card-chart-link:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(0,212,160,0.04);
-  }
+  .card-chart-link:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* ── Card Header ─────────────────────────────────────────────────── */
-  .card-top {
+  .card-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
   }
-
-  .pair-block { display: flex; flex-direction: column; gap: 4px; }
 
   .pair-name {
     font-family: 'Syne', sans-serif;
     font-weight: 800;
-    font-size: 1.4rem;
-    color: var(--white);
+    font-size: 1.3rem;
+    color: #fff;
     letter-spacing: 0.05em;
     line-height: 1;
   }
-
-  .pair-label {
-    font-size: 0.5rem;
-    color: var(--muted);
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-  }
+  .pair-label { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
 
   .detector-badge {
-    font-size: 0.48rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    background: var(--bg);
+  }
+  .detector-badge.accum { border-color: #3a3a50; color: #7070a0; }
+  .detector-badge.sd    { border-color: #3a5050; color: #70a0a0; }
+
+  .price-row { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 12px; }
+  .price { font-size: 1.6rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; line-height: 1; }
+  .price-change { font-size: 0.72rem; padding: 2px 6px; border-radius: 2px; }
+  .price-change.up   { color: var(--accent);  background: rgba(90,240,196,0.08); }
+  .price-change.down { color: var(--accent2); background: rgba(240,90,126,0.08); }
+
+  .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .status-dot.found     { background: var(--found); box-shadow: 0 0 8px rgba(232,232,240,0.6); animation: pulse 2s ease-in-out infinite; }
+  .status-dot.potential { background: var(--potential); }
+  .status-dot.looking   { background: #2a2a3a; }
+  .status-dot.offline   { background: #1a1a2a; }
+  .status-dot.standby   { background: #2a2018; }
+  .status-dot.bullish   { background: var(--accent); box-shadow: 0 0 6px rgba(90,240,196,0.4); }
+  .status-dot.bearish   { background: var(--accent2); box-shadow: 0 0 6px rgba(240,90,126,0.4); }
+  .status-dot.misaligned{ background: var(--muted); }
+
+  .weekend-card-badge {
+    margin-top: 10px;
+    padding: 5px 10px;
+    font-size: 0.58rem;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    padding: 4px 9px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    border-radius: 3px;
-    margin-top: 2px;
-    display: block;
-    text-align: right;
-  }
-  .detector-badge.accum { border-color: rgba(120,100,200,0.25); color: #8070b8; }
-  .detector-badge.sd    { border-color: rgba(72,152,240,0.2); color: #4878a8; }
-
-  /* ── Price row ───────────────────────────────────────────────────── */
-  .price-section {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    margin-bottom: 14px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--border);
+    color: #3a2e1a;
+    border: 1px solid #2a2010;
+    border-left: 2px solid #4a3820;
+    display: inline-block;
   }
 
-  .price {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 1.7rem;
-    font-weight: 300;
-    color: var(--white);
-    letter-spacing: -0.02em;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-    border-radius: 3px;
-    padding: 0 2px;
-    transition: background 0.5s;
-  }
-
-  .price-change {
-    font-size: 0.6rem;
-    padding: 3px 8px;
-    border-radius: 3px;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-  }
-  .price-change.up   { color: var(--accent); background: rgba(0,212,160,0.1); border: 1px solid rgba(0,212,160,0.18); }
-  .price-change.down { color: var(--red);    background: rgba(240,72,112,0.08); border: 1px solid rgba(240,72,112,0.18); }
-
-  /* ── Status ──────────────────────────────────────────────────────── */
-  .status-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    margin-bottom: 10px;
-  }
-
-  .status-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--muted);
-    flex-shrink: 0;
-    transition: all 0.4s;
-  }
-  .status-dot.found      { background: var(--found); box-shadow: 0 0 10px rgba(224,238,255,0.65); animation: pulse-dot 1.8s ease-in-out infinite; }
-  .status-dot.potential  { background: #4a8a60; box-shadow: 0 0 6px rgba(74,138,96,0.45); }
-  .status-dot.looking    { background: var(--border3); }
-  .status-dot.offline    { background: var(--faint); }
-  .status-dot.standby    { background: var(--border); }
-  .status-dot.bullish    { background: var(--accent); box-shadow: 0 0 8px rgba(0,212,160,0.55); animation: pulse-dot 2.5s ease-in-out infinite; }
-  .status-dot.bearish    { background: var(--red); box-shadow: 0 0 8px rgba(240,72,112,0.55); animation: pulse-dot 2.5s ease-in-out infinite; }
-  .status-dot.misaligned { background: var(--muted); }
-  .status-dot.cooldown   { background: var(--gold); box-shadow: 0 0 6px rgba(232,184,64,0.45); }
-
-  .status-text {
-    font-size: 0.63rem;
-    color: var(--text);
-    letter-spacing: 0.04em;
-  }
+  .status-text { font-size: 0.72rem; color: var(--text); letter-spacing: 0.05em; }
   .status-text.dim { color: var(--muted); }
 
-  /* ── Detail box ──────────────────────────────────────────────────── */
-  .detail-box {
-    display: none;
+  .accum-box {
     margin-top: 10px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border: 1px solid var(--border2);
-    border-radius: 4px;
-    background: rgba(0,0,0,0.25);
-    font-size: 0.6rem;
-    line-height: 1.8;
+    border-left: 2px solid var(--muted);
+    font-size: 0.65rem;
     color: var(--muted);
+    display: none;
+    line-height: 1.6;
   }
-  .detail-box.show { display: block; }
-  .detail-box.found    { border-color: rgba(224,238,255,0.1); background: rgba(224,238,255,0.015); }
-  .detail-box.forming  { border-color: rgba(74,138,96,0.18); background: rgba(74,138,96,0.025); }
-  .detail-box.cooldown { border-color: rgba(232,184,64,0.15); background: rgba(232,184,64,0.02); }
+  .accum-box.found     { border-left-color: var(--found); color: var(--text); display: block; }
+  .accum-box.potential { border-left-color: var(--potential); color: var(--potential); display: block; }
+  .accum-range { font-size: 0.7rem; color: #fff; font-weight: 700; }
 
-  .detail-range {
-    font-size: 0.78rem;
-    font-weight: 400;
-    color: var(--white);
-    font-variant-numeric: tabular-nums;
-    display: block;
-    margin-bottom: 4px;
-    letter-spacing: 0.02em;
-  }
-
-  .detail-meta {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-  }
-  .detail-meta span { font-size: 0.55rem; color: var(--muted); }
-  .detail-meta .hi  { color: var(--text); }
-
-  /* ── Zone pills ──────────────────────────────────────────────────── */
-  .zones-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 10px;
-  }
+  .zones-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .zone-pill {
-    font-size: 0.5rem;
-    letter-spacing: 0.12em;
-    padding: 4px 10px;
-    border-radius: 3px;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 2px;
     border: 1px solid;
     text-transform: uppercase;
   }
-  .zone-pill.demand     { border-color: rgba(72,152,240,0.35); color: var(--blue); background: rgba(72,152,240,0.06); }
-  .zone-pill.supply     { border-color: rgba(240,72,112,0.35); color: var(--red); background: rgba(240,72,112,0.06); }
-  .zone-pill.misaligned { border-color: rgba(232,184,64,0.3); color: var(--gold); background: rgba(232,184,64,0.05); }
+  .zone-pill.demand     { border-color: rgba(90,158,240,0.4); color: #5a9ef0; background: rgba(90,158,240,0.06); }
+  .zone-pill.supply     { border-color: rgba(240,90,126,0.4); color: #f05a7e; background: rgba(240,90,126,0.06); }
+  .zone-pill.misaligned { border-color: rgba(200,160,40,0.4); color: #c8a020; background: rgba(200,160,40,0.06); }
 
-  /* ── Bias row ────────────────────────────────────────────────────── */
-  .bias-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 10px;
-  }
+  .bias-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
   .bias-pill {
-    font-size: 0.52rem;
-    letter-spacing: 0.12em;
-    padding: 4px 10px;
-    border-radius: 3px;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 2px;
     border: 1px solid var(--border2);
     color: var(--muted);
-    text-transform: uppercase;
   }
-  .bias-pill.strong_bullish { border-color: rgba(0,212,160,0.5); color: var(--accent); background: rgba(0,212,160,0.07); }
-  .bias-pill.bullish        { border-color: rgba(0,212,160,0.25); color: #28a870; background: rgba(0,212,160,0.04); }
-  .bias-pill.bearish        { border-color: rgba(240,72,112,0.25); color: var(--red); background: rgba(240,72,112,0.04); }
-  .bias-pill.strong_bearish { border-color: rgba(240,72,112,0.5); color: var(--red); background: rgba(240,72,112,0.07); }
+  .bias-pill.strong_bullish { border-color: rgba(46,204,113,0.5); color: #2ecc71; background: rgba(46,204,113,0.08); font-weight: 700; }
+  .bias-pill.bullish        { border-color: rgba(90,240,196,0.4); color: var(--accent); background: rgba(90,240,196,0.06); }
+  .bias-pill.bearish        { border-color: rgba(240,90,126,0.4); color: var(--accent2); background: rgba(240,90,126,0.06); }
+  .bias-pill.strong_bearish { border-color: rgba(231,76,60,0.5);  color: #e74c3c; background: rgba(231,76,60,0.08); font-weight: 700; }
   .bias-pill.misaligned     { border-color: var(--border2); color: var(--muted); }
 
-  /* ── Card footer ─────────────────────────────────────────────────── */
-  .card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .card-meta {
-    font-size: 0.5rem;
-    color: var(--muted);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .card-meta .on  { color: var(--accent); }
-  .card-meta .off { color: var(--red); }
+  .card-divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .card-meta { display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.08em; }
 
-  .halted-badge {
-    font-size: 0.48rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    color: var(--border3);
-    display: inline-block;
-    margin-top: 8px;
-  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  /* ── Footer ──────────────────────────────────────────────────────── */
   footer {
     border-top: 1px solid var(--border);
-    padding: 10px 32px;
+    padding: 12px 32px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.53rem;
+    font-size: 0.6rem;
     color: var(--muted);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    background: var(--bg2);
+    letter-spacing: 0.1em;
   }
-
-  .refresh-indicator {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .refresh-dot {
-    width: 5px; height: 5px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: all 0.2s;
-  }
-  .refresh-dot.active {
-    background: var(--accent);
-    box-shadow: 0 0 6px rgba(0,212,160,0.5);
-  }
-
-  /* ── Animations ──────────────────────────────────────────────────── */
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50%       { opacity: 0.45; transform: scale(0.82); }
-  }
-
-  @keyframes card-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes flash-up   { 0% { background: rgba(0,212,160,0.18); } 100% { background: transparent; } }
-  @keyframes flash-down { 0% { background: rgba(240,72,112,0.14); } 100% { background: transparent; } }
-
-  .price.flash-up   { animation: flash-up 0.7s ease; }
-  .price.flash-down { animation: flash-down 0.7s ease; }
-
-  .card:nth-child(1)  { animation-delay: 0.02s; }
-  .card:nth-child(2)  { animation-delay: 0.05s; }
-  .card:nth-child(3)  { animation-delay: 0.08s; }
-  .card:nth-child(4)  { animation-delay: 0.11s; }
-  .card:nth-child(5)  { animation-delay: 0.14s; }
-  .card:nth-child(6)  { animation-delay: 0.17s; }
-  .card:nth-child(7)  { animation-delay: 0.20s; }
-  .card:nth-child(8)  { animation-delay: 0.23s; }
-  .card:nth-child(9)  { animation-delay: 0.26s; }
-  .card:nth-child(10) { animation-delay: 0.29s; }
-  .card:nth-child(11) { animation-delay: 0.32s; }
-  .card:nth-child(12) { animation-delay: 0.35s; }
+  .refresh-indicator { display: flex; align-items: center; gap: 6px; }
+  .refresh-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .refresh-dot.active { background: var(--accent); animation: pulse 0.5s ease-in-out; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">
-    <div class="logo-mark">
-      <div class="logo-mark-inner"></div>
-    </div>
-    <div class="logo-text">
-      <span class="logo-title">Mission Control</span>
-      <span class="logo-sub">Trading Agent System</span>
-    </div>
+    <span class="logo-title">Mission Control</span>
+    <span class="logo-sub">Trading Agent</span>
   </div>
-
-  <div class="header-center">
-    <div class="stat-chip">
-      <div class="dot live"></div>
-      <span>System Live</span>
-    </div>
-    <div class="stat-chip">
-      Pairs <span class="val" id="pairs-count">—</span>
-    </div>
-    <div class="stat-chip">
-      Active <span class="val" id="active-count" style="color:var(--accent)">—</span>
-    </div>
-  </div>
-
   <div class="header-right">
-    <span id="session-global">—</span>
+    <span id="session-global">--</span>
     <span id="clock">--:--:--</span>
   </div>
 </header>
 
 <div id="weekend-banner">
   <div class="wk-inner">
+    <div class="wk-icon">⏸</div>
     <div class="wk-title">All Operations Suspended — Weekend Halt</div>
+    <div class="wk-divider"></div>
     <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
     <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
   </div>
@@ -616,10 +313,10 @@
 <div class="grid" id="grid"></div>
 
 <footer>
-  <span id="last-update">Initialising...</span>
+  <span id="last-update">Waiting for data...</span>
   <div class="refresh-indicator">
     <div class="refresh-dot" id="refresh-dot"></div>
-    <span id="refresh-label">LIVE · 30s</span>
+    <span id="refresh-label">LIVE · 5s</span>
   </div>
 </footer>
 
@@ -627,9 +324,9 @@
 const PAIRS = {{ pairs_js | safe }};
 
 const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York', start: 13, end: 19 },
+  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
+  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
+  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
 ];
 
 function getCurrentSession() {
@@ -644,7 +341,10 @@ function isWeekendHalt() {
   const now = new Date();
   const dow  = now.getUTCDay();
   const hour = now.getUTCHours();
-  return (dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 22);
+  if (dow === 5 && hour >= 23) return true;
+  if (dow === 6) return true;
+  if (dow === 0 && hour < 22) return true;
+  return false;
 }
 
 function getWeekendCountdown() {
@@ -664,7 +364,7 @@ function getWeekendCountdown() {
 }
 
 function formatPrice(p, id) {
-  if (p == null) return '—';
+  if (p == null) return '---';
   const forex5 = ['EURUSD','EURGBP','GBPUSD','AUDUSD','USDCAD','USDCHF','NZDUSD'];
   const forex3 = ['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'];
   if (forex5.includes(id)) return p.toFixed(5);
@@ -674,30 +374,27 @@ function formatPrice(p, id) {
 }
 
 function formatUTC(ts) {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function biasLabelText(bias) {
   switch(bias) {
-    case 'strong_bullish': return '▲▲ Strong Bull';
-    case 'bullish':        return '▲ Bullish';
-    case 'bearish':        return '▼ Bearish';
-    case 'strong_bearish': return '▼▼ Strong Bear';
+    case 'strong_bullish': return '⬆⬆ Strong Bullish';
+    case 'bullish':        return '↑ Bullish';
+    case 'bearish':        return '↓ Bearish';
+    case 'strong_bearish': return '⬇⬇ Strong Bearish';
     default:               return '⚡ Misaligned';
   }
 }
 
 function renderBiasRow(biasInfo) {
   if (!biasInfo) return '';
-  const bias = biasInfo.bias || 'misaligned';
-  const warn = bias === 'misaligned'
-    ? `<span style="font-size:0.48rem;color:var(--gold);letter-spacing:0.12em">LOWER CONF.</span>`
+  const bias  = biasInfo.bias || 'misaligned';
+  const warn  = bias === 'misaligned'
+    ? ' <span style="font-size:9px;color:#c8a84b;margin-left:4px">lower confidence</span>'
     : '';
   return `<div class="bias-row"><span class="bias-pill ${bias}">${biasLabelText(bias)}</span>${warn}</div>`;
 }
-
-const _prevPrices = {};
-let _activeCount = 0;
 
 function buildGrid() {
   const grid = document.getElementById('grid');
@@ -706,45 +403,42 @@ function buildGrid() {
     card.className = 'card';
     card.id = `card-${pair.id}`;
     card.innerHTML = `
-      <div class="card-corner"></div>
       <a class="card-link-overlay" href="/chart-view/${pair.id}"></a>
-      <div class="card-top">
-        <div class="pair-block">
+      <div class="card-header">
+        <div>
           <div class="pair-name">${pair.id}</div>
           <div class="pair-label">${pair.label}</div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-          <a class="card-chart-link" href="/chart-view/${pair.id}">Chart ↗</a>
-          <span class="detector-badge ${pair.type === 'accumulation' ? 'accum' : 'sd'}">
-            ${pair.type === 'accumulation' ? 'Accumulation' : 'Supply / Demand'}
-          </span>
-        </div>
+        <span class="detector-badge ${pair.type === 'accumulation' ? 'accum' : 'sd'}">
+          ${pair.type === 'accumulation' ? 'Accum' : 'S/D'}
+        </span>
       </div>
-      <div class="price-section">
-        <span class="price" id="price-${pair.id}">—</span>
-        <span class="price-change" id="change-${pair.id}" style="display:none"></span>
+      <div class="price-row">
+        <span class="price" id="price-${pair.id}">---</span>
+        <span class="price-change" id="change-${pair.id}"></span>
       </div>
       <div class="status-row">
         <div class="status-dot looking" id="dot-${pair.id}"></div>
         <span class="status-text dim" id="status-${pair.id}">Connecting...</span>
       </div>
       <div id="extra-${pair.id}"></div>
-      <div class="card-footer">
-        <span class="card-meta" id="meta-${pair.id}">—</span>
-        <span class="card-meta" id="meta2-${pair.id}" style="color:var(--muted)"></span>
+      <div class="card-divider"></div>
+      <div class="card-meta">
+        <span id="meta-${pair.id}">--</span>
       </div>`;
     grid.appendChild(card);
   });
-
-  document.getElementById('pairs-count').textContent = PAIRS.length;
 }
 
 async function fetchPair(pair) {
   try {
-    const res = await fetch(`/proxy/${pair.id}/api/data`);
+    const [res, biasRes] = await Promise.all([
+      fetch(`/proxy/${pair.id}/api/data`),
+      fetch(`/proxy/${pair.id}/api/bias`).catch(() => null),
+    ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const biasInfo = data.bias && Object.keys(data.bias).length ? data.bias : null;
+    const biasInfo = biasRes && biasRes.ok ? await biasRes.json().catch(() => null) : null;
 
     const candles = data.candles || [];
     const last = candles[candles.length - 1];
@@ -755,41 +449,28 @@ async function fetchPair(pair) {
     const statusEl = document.getElementById(`status-${pair.id}`);
     const extraEl  = document.getElementById(`extra-${pair.id}`);
     const metaEl   = document.getElementById(`meta-${pair.id}`);
-    const meta2El  = document.getElementById(`meta2-${pair.id}`);
 
     if (!last) {
       dotEl.className      = 'status-dot standby';
-      statusEl.textContent = pair.always_open ? 'Waiting for feed' : 'Markets closed';
+      statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed';
       statusEl.className   = 'status-text dim';
-      extraEl.innerHTML    = '<div class="halted-badge">Operations Halted</div>';
-      metaEl.textContent   = '—';
+      extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+      metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
       return;
     }
 
-    // Price with flash animation
-    const priceEl = document.getElementById(`price-${pair.id}`);
-    const prevPrice = _prevPrices[pair.id];
-    if (price != null) {
-      priceEl.textContent = formatPrice(price, pair.id);
-      if (prevPrice != null && price !== prevPrice) {
-        priceEl.classList.remove('flash-up', 'flash-down');
-        void priceEl.offsetWidth;
-        priceEl.classList.add(price > prevPrice ? 'flash-up' : 'flash-down');
-      }
-      _prevPrices[pair.id] = price;
-    }
+    document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
 
     if (prev?.close && price) {
       const chg = ((price - prev.close) / prev.close) * 100;
       const el = document.getElementById(`change-${pair.id}`);
       el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
       el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
-      el.style.display = '';
     }
 
     const det = data.detectors || {};
 
-    // ── Accumulation ─────────────────────────────────────────────────
+    // ── Accumulation ──────────────────────────────────────────────────
     if (pair.type === 'accumulation') {
       const z = det.accumulation;
       const biasHtml = renderBiasRow(biasInfo);
@@ -797,60 +478,47 @@ async function fetchPair(pair) {
       if (!z || z.status === 'looking' || z.status === 'weekend' || z.status === 'out_of_session') {
         const isOOS = !z || z.status === 'weekend' || z.status === 'out_of_session';
         dotEl.className      = 'status-dot looking';
-        statusEl.textContent = isOOS ? 'Out of session' : 'Scanning for accumulation';
+        statusEl.textContent = isOOS ? 'Out of session' : 'Looking for accumulation';
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = biasHtml;
-        metaEl.textContent   = z?.session ? z.session.replace('_',' ').toUpperCase() : '—';
-        meta2El.textContent  = '';
+        metaEl.textContent   = z?.session ? z.session.replace('_',' ').toUpperCase() : '--';
       } else if (z.status === 'cooldown') {
         const remaining = Math.max(0, z.cooldown_until - Math.floor(Date.now() / 1000));
         const m = Math.floor(remaining / 60), s = remaining % 60;
         const pad = n => String(n).padStart(2, '0');
-        dotEl.className      = 'status-dot cooldown';
-        statusEl.textContent = `Cooldown — ${pad(m)}:${pad(s)} remaining`;
-        statusEl.className   = 'status-text';
-        extraEl.innerHTML    = `<div class="detail-box cooldown show">
-          <span class="detail-range">${formatPrice(z.bottom, pair.id)} — ${formatPrice(z.top, pair.id)}</span>
-          <div class="detail-meta">
-            <span>Breakout <span class="hi">${formatUTC(z.start)}</span></span>
-          </div>
+        dotEl.className      = 'status-dot potential';
+        statusEl.textContent = `Cooldown — resumes in ${pad(m)}:${pad(s)}`;
+        statusEl.className   = 'status-text dim';
+        extraEl.innerHTML    = `<div class="accum-box potential">
+          <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+          <br>Last breakout ${formatUTC(z.start)}
         </div>` + biasHtml;
-        metaEl.textContent = 'COOLDOWN';
-        meta2El.textContent = '';
+        metaEl.textContent = '⏸ COOLDOWN';
       } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
         dotEl.className      = 'status-dot found';
-        statusEl.textContent = z.status === 'confirmed' ? 'Aggressor confirmed ✓' : 'Accumulation found';
+        statusEl.textContent = z.status === 'confirmed' ? 'Aggressor candle confirmed ✓' : 'Accumulation found';
         statusEl.className   = 'status-text';
-        const adxStr = z.adx != null ? `<span>ADX <span class="hi">${z.adx}</span></span>` : '';
-        extraEl.innerHTML    = `<div class="detail-box found show">
-          <span class="detail-range">${formatPrice(z.bottom, pair.id)} — ${formatPrice(z.top, pair.id)}</span>
-          <div class="detail-meta">
-            <span>Since <span class="hi">${formatUTC(z.start)}</span></span>
-            ${adxStr}
-          </div>
+        const adxStr = z.adx != null ? ` &nbsp;·&nbsp; ADX ${z.adx}` : '';
+        extraEl.innerHTML    = `<div class="accum-box found">
+          <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+          ${adxStr}<br>Since ${formatUTC(z.start)}
         </div>` + biasHtml;
-        metaEl.innerHTML = `<span class="on">● ACTIVE</span>`;
-        meta2El.textContent = '';
-        _activeCount++;
+        metaEl.textContent   = '';
       } else if (z.status === 'active' && z.is_active) {
         dotEl.className      = 'status-dot potential';
         statusEl.textContent = 'Accumulation forming';
         statusEl.className   = 'status-text';
-        extraEl.innerHTML    = `<div class="detail-box forming show">
-          <span class="detail-range">${formatPrice(z.bottom, pair.id)} — ${formatPrice(z.top, pair.id)}</span>
-          <div class="detail-meta">
-            <span>Since <span class="hi">${formatUTC(z.start)}</span></span>
-          </div>
+        extraEl.innerHTML    = `<div class="accum-box potential">
+          <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+          <br>Since ${formatUTC(z.start)}
         </div>` + biasHtml;
-        metaEl.textContent = 'FORMING';
-        meta2El.textContent = '';
+        metaEl.textContent = '● FORMING';
       } else {
         dotEl.className      = 'status-dot looking';
-        statusEl.textContent = 'Scanning for accumulation';
+        statusEl.textContent = 'Looking for accumulation';
         statusEl.className   = 'status-text dim';
         extraEl.innerHTML    = biasHtml;
-        metaEl.textContent   = '—';
-        meta2El.textContent  = '';
+        metaEl.textContent   = '';
       }
     }
 
@@ -867,35 +535,21 @@ async function fetchPair(pair) {
       else                                                                   dotEl.className = 'status-dot misaligned';
 
       if (isMisaligned && zones.length > 0) {
-        statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} · bias misaligned`;
+        statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} (bias misaligned ⚡)`;
         statusEl.className   = 'status-text';
       } else if (isMisaligned) {
-        statusEl.textContent = 'Bias misaligned — both directions';
+        statusEl.textContent = 'Bias misaligned — scanning both directions';
         statusEl.className   = 'status-text dim';
       } else if (zones.length > 0) {
-        statusEl.textContent = `${zones.length} active zone${zones.length > 1 ? 's' : ''}`;
+        statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} active`;
         statusEl.className   = 'status-text';
-        _activeCount++;
       } else {
         statusEl.textContent = bias.bias?.includes('bullish') ? 'Seeking demand zones' : 'Seeking supply zones';
         statusEl.className   = 'status-text dim';
       }
 
-      if (zones.length > 0) {
-        const demandCount = zones.filter(z => z.type === 'demand').length;
-        const supplyCount = zones.filter(z => z.type === 'supply').length;
-        let pillsHtml = '<div class="zones-row">';
-        if (demandCount > 0) pillsHtml += `<span class="zone-pill demand">${demandCount} Demand</span>`;
-        if (supplyCount > 0) pillsHtml += `<span class="zone-pill supply">${supplyCount} Supply</span>`;
-        if (isMisaligned)    pillsHtml += `<span class="zone-pill misaligned">Misaligned</span>`;
-        pillsHtml += '</div>';
-        extraEl.innerHTML = biasHtml + pillsHtml;
-      } else {
-        extraEl.innerHTML = biasHtml;
-      }
-
-      metaEl.textContent  = zones.length > 0 ? `${zones.length} ZONE${zones.length>1?'S':''}` : '—';
-      meta2El.textContent = '';
+      extraEl.innerHTML = biasHtml;
+      metaEl.textContent = '';
     }
 
   } catch (e) {
@@ -904,10 +558,10 @@ async function fetchPair(pair) {
     const extraEl  = document.getElementById(`extra-${pair.id}`);
     const metaEl   = document.getElementById(`meta-${pair.id}`);
     dotEl.className      = 'status-dot standby';
-    statusEl.textContent = 'Markets closed';
+    statusEl.textContent = 'Markets closed — operations halted';
     statusEl.className   = 'status-text dim';
-    extraEl.innerHTML    = '<div class="halted-badge">Operations Halted</div>';
-    metaEl.textContent   = '—';
+    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+    metaEl.textContent   = '⛔ CLOSED';
   }
 }
 
@@ -920,17 +574,21 @@ function updateClock() {
   const badge = document.getElementById('session-global');
   if (isWeekendHalt()) {
     const cd = getWeekendCountdown();
-    badge.textContent = '⏸ CLOSED';
-    badge.className   = '';
+    badge.textContent = `⏸ CLOSED · Mon in ${cd}`;
+    badge.className   = 'weekend';
     document.getElementById('weekend-banner').style.display = '';
     document.getElementById('weekend-countdown').textContent = cd;
+    const lbl = document.getElementById('refresh-label');
+    if (lbl) lbl.textContent = 'HALTED · weekend';
     return;
   }
   document.getElementById('weekend-banner').style.display = 'none';
+  const lbl = document.getElementById('refresh-label');
+  if (lbl) lbl.textContent = 'LIVE · 5s';
 
   const sess = getCurrentSession();
   if (sess) {
-    badge.textContent = sess.label;
+    badge.textContent = sess.label || sess.name;
     badge.className   = sess.name;
   } else {
     const utcH = now.getUTCHours();
@@ -942,7 +600,8 @@ function updateClock() {
     const dh = Math.floor(diff / 3600000);
     const dm = Math.floor((diff % 3600000) / 60000);
     const ds = Math.floor((diff % 60000) / 1000);
-    badge.textContent = `${next.label} in ${pad(dh)}:${pad(dm)}:${pad(ds)}`;
+    const pad = n => String(n).padStart(2, '0');
+    badge.textContent = `${next.label.split(' ')[0]} in ${pad(dh)}:${pad(dm)}:${pad(ds)}`;
     badge.className   = '';
   }
 }
@@ -951,20 +610,15 @@ async function pollAll() {
   const weekend = isWeekendHalt();
   const dot = document.getElementById('refresh-dot');
   dot.classList.add('active');
-  _activeCount = 0;
-
   await Promise.all(PAIRS.map(pair => {
     if (weekend && !pair.always_open) return Promise.resolve();
     return fetchPair(pair);
   }));
-
   if (weekend) applyWeekendStandby();
   dot.classList.remove('active');
-  document.getElementById('active-count').textContent = _activeCount;
-
   const now = new Date();
   document.getElementById('last-update').textContent =
-    'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
 function applyWeekendStandby() {
@@ -978,17 +632,17 @@ function applyWeekendStandby() {
     dotEl.className      = 'status-dot standby';
     statusEl.textContent = 'Standby — resumes Sunday 22:00 UTC';
     statusEl.className   = 'status-text dim';
-    extraEl.innerHTML    = '<div class="halted-badge">Operations Suspended</div>';
+    extraEl.innerHTML    = '<div class="weekend-card-badge">OPERATIONS SUSPENDED</div>';
     metaEl.textContent   = '⏸ HALTED';
   });
-  document.getElementById('last-update').textContent = 'Polling suspended — weekend halt';
+  document.getElementById('last-update').textContent = 'Polling suspended for weekend';
 }
 
 buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
 pollAll();
-setInterval(pollAll, 30000);
+setInterval(pollAll, 5000);
 </script>
 </body>
 </html>
