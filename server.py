@@ -460,11 +460,12 @@ class PairServer:
                     self._cached_detector_results = results
                     self._cached_candles.update(candles_by_interval)
 
-                # Refresh bias cache while we're already doing heavy work
+                # Refresh bias cache once per day
                 try:
                     from detectors.bias import get_bias
-                    self._bias_cache = get_bias(self.ticker)
-                    self._bias_cache_ts = time.time()
+                    if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 86400:
+                        self._bias_cache = get_bias(self.ticker)
+                        self._bias_cache_ts = time.time()
                 except Exception as be:
                     print(f"[{self.pair_id}] Bias cache refresh error: {be}")
 
@@ -541,7 +542,7 @@ class PairServer:
         """Return current bias for this pair (used by mission control for all pairs)."""
         try:
             now = time.time()
-            if self._bias_cache and (now - self._bias_cache_ts) < 60:
+            if self._bias_cache and (now - self._bias_cache_ts) < 86400:
                 return jsonify(self._bias_cache)
 
             from detectors.bias import get_bias
