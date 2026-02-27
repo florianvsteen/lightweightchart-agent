@@ -5,11 +5,16 @@ Central hub Flask app. Serves:
   /dashboard           → mission-control-dashboard.html (pair grid)
   /chart-view/<pair>   → mission-control-charts.html  (trading terminal)
   /debug               → redirects to first pair's debug page
-  /debug/<pair>        → redirects to that pair's debug page
+  /debug/<pair>        → redirects to that pair's debug page (via proxy)
   /proxy/<pair>/api/data         → proxies to individual pair server
   /proxy/<pair>/api/bias         → proxies to individual pair server
   /proxy/<pair>/api/candle-explain → proxies to individual pair server
   /proxy/<pair>/debug            → proxies debug page from individual pair server
+  /proxy/<pair>/debug/data       → proxies debug data endpoint
+  /proxy/<pair>/debug/replay     → proxies debug replay endpoint
+  /proxy/<pair>/debug/sd         → proxies debug S&D endpoint
+  /proxy/<pair>/debug/sd/bias    → proxies debug S&D bias endpoint
+  /proxy/<pair>/debug/fvg        → proxies debug FVG endpoint
   /api/news/<pair>               → fetches live news via Claude API + web search
 """
 
@@ -17,7 +22,7 @@ import os
 import json
 import requests
 
-from flask import Flask, render_template, jsonify, redirect
+from flask import Flask, render_template, jsonify, redirect, request
 from news import get_news as _get_news
 
 # ── Config ─────────────────────────────────────────────────────────────
@@ -36,7 +41,6 @@ app = Flask(
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def _pairs_js():
-    """Build the list of pairs to pass as JSON to dashboard template."""
     return [
         {
             "id":          pair_id,
@@ -50,8 +54,23 @@ def _pairs_js():
 
 
 def _pairs_list():
-    """Simple list for template iteration (chart view pair selector)."""
     return [{"id": pid, "label": cfg["label"]} for pid, cfg in PAIRS.items()]
+
+
+def _proxy_to(pair_id, path):
+    """Forward a request to the pair's local server, return the response."""
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return None, f"Unknown pair: {pair_id}", 404
+    try:
+        qs = request.query_string.decode()
+        url = f"http://127.0.0.1:{cfg['port']}{path}"
+        if qs:
+            url += "?" + qs
+        r = requests.get(url, timeout=15)
+        return r, None, None
+    except Exception as e:
+        return None, str(e), 502
 
 
 # ── Routes ─────────────────────────────────────────────────────────────
@@ -88,105 +107,92 @@ def chart_view(pair_id):
     )
 
 
-# ── Debug routes ─────────────────────────────────────────────────────────
+# ── Debug routes ────────────────────────────────────────────────────────
 
 @app.route("/debug")
 def debug_default():
-    """Redirect to the debug page of the first configured pair."""
+    """Redirect to the first pair's debug page via the built-in proxy."""
     first_pair = next(iter(PAIRS))
-    return redirect(f"/debug/{first_pair}")
+    return redirect(f"/proxy/{first_pair}/debug")
 
 
 @app.route("/debug/<pair_id>")
 def debug_pair(pair_id):
-    """Redirect to that pair's debug page on its individual port."""
+    """Redirect to that pair's debug page via the built-in proxy."""
     pair_id = pair_id.upper()
-    cfg = PAIRS.get(pair_id)
-    if not cfg:
+    if pair_id not in PAIRS:
         return f"Unknown pair: {pair_id}", 404
-    port = cfg["port"]
-    from flask import request as flask_req
-    host = flask_req.host.split(":")[0]
-    return redirect(f"http://{host}:{port}/debug")
+    return redirect(f"/proxy/{pair_id}/debug")
 
 
-# ── Proxy routes ────────────────────────────────────────────────────────
+# ── Proxy routes ─────────────────────────────────────────────────────────
+
+def _json_proxy(pair_id, path):
+    r, err, code = _proxy_to(pair_id, path)
+    if err:
+        return jsonify({"error": err}), code
+    return (r.content, r.status_code, {"Content-Type": "application/json"})
+
+
+def _html_proxy(pair_id, path):
+    r, err, code = _proxy_to(pair_id, path)
+    if err:
+        return f"Could not reach pair server: {err}", code
+    return (r.content, r.status_code, {"Content-Type": "text/html"})
+
 
 @app.route("/proxy/<pair_id>/api/data")
 def proxy_api_data(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        from flask import request as flask_req
-        qs = flask_req.query_string.decode()
-        url = f"http://127.0.0.1:{cfg['port']}/api/data"
-        if qs:
-            url += "?" + qs
-        r = requests.get(url, timeout=15)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    return _json_proxy(pair_id, "/api/data")
 
 
 @app.route("/proxy/<pair_id>/api/bias")
 def proxy_api_bias(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        r = requests.get(f"http://127.0.0.1:{cfg['port']}/api/bias", timeout=10)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"bias": "misaligned", "aligned": False, "reason": str(e)}), 502
+    return _json_proxy(pair_id, "/api/bias")
 
 
 @app.route("/proxy/<pair_id>/api/candle-explain")
 def proxy_api_candle_explain(pair_id):
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return jsonify({"error": "unknown pair"}), 404
-    try:
-        from flask import request as flask_req
-        qs = flask_req.query_string.decode()
-        url = f"http://127.0.0.1:{cfg['port']}/api/candle-explain"
-        if qs:
-            url += "?" + qs
-        r = requests.get(url, timeout=15)
-        return (r.content, r.status_code, {"Content-Type": "application/json"})
-    except Exception as e:
-        return jsonify({"lines": [f"Error: {str(e)}"]}), 502
+    return _json_proxy(pair_id, "/api/candle-explain")
 
 
 @app.route("/proxy/<pair_id>/debug")
 def proxy_debug(pair_id):
-    """Proxy the debug HTML page from the individual pair server."""
-    cfg = PAIRS.get(pair_id.upper())
-    if not cfg:
-        return f"Unknown pair: {pair_id}", 404
-    try:
-        from flask import request as flask_req
-        qs = flask_req.query_string.decode()
-        url = f"http://127.0.0.1:{cfg['port']}/debug"
-        if qs:
-            url += "?" + qs
-        r = requests.get(url, timeout=15)
-        return (r.content, r.status_code, {"Content-Type": "text/html"})
-    except Exception as e:
-        return f"Could not reach pair server: {e}", 502
+    return _html_proxy(pair_id, "/debug")
+
+
+@app.route("/proxy/<pair_id>/debug/data")
+def proxy_debug_data(pair_id):
+    return _json_proxy(pair_id, "/debug/data")
+
+
+@app.route("/proxy/<pair_id>/debug/replay")
+def proxy_debug_replay(pair_id):
+    return _json_proxy(pair_id, "/debug/replay")
+
+
+@app.route("/proxy/<pair_id>/debug/sd")
+def proxy_debug_sd(pair_id):
+    return _json_proxy(pair_id, "/debug/sd")
+
+
+@app.route("/proxy/<pair_id>/debug/sd/bias")
+def proxy_debug_sd_bias(pair_id):
+    return _json_proxy(pair_id, "/debug/sd/bias")
+
+
+@app.route("/proxy/<pair_id>/debug/fvg")
+def proxy_debug_fvg(pair_id):
+    return _json_proxy(pair_id, "/debug/fvg")
 
 
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
     pair_id = pair_id.upper()
-
     if pair_id not in PAIRS:
         return jsonify({"error": "unknown pair"}), 404
-
-    # Resolve the yfinance ticker from config so news.py uses the right symbol
-    cfg       = PAIRS[pair_id]
+    cfg = PAIRS[pair_id]
     yf_ticker = cfg.get("yf_ticker") or cfg.get("ticker")
-
     articles = _get_news(pair_id, yf_ticker)
     return jsonify({"articles": articles, "cached": False})
 
