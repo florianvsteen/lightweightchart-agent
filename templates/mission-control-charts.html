@@ -162,9 +162,9 @@
     background: var(--surface);
   }
 
-  /* Bias section */
+  /* ── Bias section ─────────────────────────────────────────────────── */
   #bias-section {
-    padding: 16px 18px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -177,16 +177,12 @@
     margin-bottom: 10px;
   }
 
-  #bias-display {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .bias-row {
+  /* Combined bias pill + individual timeframe grid */
+  #bias-combined-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
   }
 
   .bias-pill {
@@ -196,6 +192,7 @@
     border-radius: 3px;
     border: 1px solid var(--border2);
     color: var(--muted);
+    white-space: nowrap;
   }
   .bias-pill.strong_bullish { border-color: rgba(46,204,113,0.5); color: #2ecc71; background: rgba(46,204,113,0.08); font-weight: 700; }
   .bias-pill.bullish        { border-color: rgba(90,240,196,0.4); color: var(--accent); background: rgba(90,240,196,0.06); }
@@ -203,11 +200,51 @@
   .bias-pill.strong_bearish { border-color: rgba(231,76,60,0.5); color: #e74c3c; background: rgba(231,76,60,0.08); font-weight: 700; }
   .bias-pill.misaligned     { border-color: var(--border2); color: var(--muted); }
 
-  .bias-text {
-    font-size: 0.62rem;
+  /* Daily / Weekly breakdown grid */
+  #bias-breakdown {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .bias-tf-cell {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 6px 8px;
+  }
+  .bias-tf-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
     color: var(--muted);
-    line-height: 1.7;
-    margin-top: 4px;
+    margin-bottom: 3px;
+  }
+  .bias-tf-val {
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .bias-tf-val.bullish        { color: var(--accent); }
+  .bias-tf-val.strong_bullish { color: #2ecc71; }
+  .bias-tf-val.bearish        { color: var(--accent2); }
+  .bias-tf-val.strong_bearish { color: #e74c3c; }
+  .bias-tf-val.misaligned     { color: var(--muted); }
+  .bias-tf-price {
+    font-size: 0.6rem;
+    color: var(--muted);
+  }
+
+  .bias-misaligned-warn {
+    display: none;
+    font-size: 0.6rem;
+    color: #c8a84b;
+    padding: 3px 6px;
+    border: 1px solid rgba(200,168,75,0.3);
+    border-radius: 2px;
+    background: rgba(200,168,75,0.05);
+    margin-top: 2px;
   }
 
   /* Detector status */
@@ -409,14 +446,32 @@
 
   <!-- Right Panel -->
   <div id="right-panel">
-    <!-- Bias -->
+
+    <!-- ── Bias ──────────────────────────────────────────────────── -->
     <div id="bias-section">
       <div class="section-title">Bias</div>
-      <div id="bias-display">
-        <div class="bias-row">
-          <span class="bias-pill" id="bias-pill">Loading...</span>
+
+      <!-- Combined verdict pill -->
+      <div id="bias-combined-row">
+        <span class="bias-pill" id="bias-pill">Loading...</span>
+      </div>
+
+      <!-- Daily / Weekly breakdown -->
+      <div id="bias-breakdown">
+        <div class="bias-tf-cell">
+          <div class="bias-tf-label">Daily</div>
+          <div class="bias-tf-val" id="daily-bias-val">—</div>
+          <div class="bias-tf-price" id="daily-bias-price">O — · C —</div>
         </div>
-        <div class="bias-text" id="bias-text">Fetching bias data...</div>
+        <div class="bias-tf-cell">
+          <div class="bias-tf-label">Weekly</div>
+          <div class="bias-tf-val" id="weekly-bias-val">—</div>
+          <div class="bias-tf-price" id="weekly-bias-price">O — · C —</div>
+        </div>
+      </div>
+
+      <div class="bias-misaligned-warn" id="bias-misaligned-warn">
+        ⚡ Daily &amp; weekly conflict — lower confidence
       </div>
     </div>
 
@@ -666,36 +721,73 @@
   }
 
   // ── Bias display ─────────────────────────────────────────────────────
-  function biasLabel(b) {
+  function biasIcon(b) {
     switch(b) {
-      case 'strong_bullish': return '⬆⬆ Strong Bullish';
-      case 'bullish':        return '↑ Bullish';
-      case 'bearish':        return '↓ Bearish';
-      case 'strong_bearish': return '⬇⬇ Strong Bearish';
-      default:               return '⚡ Misaligned';
+      case 'strong_bullish': return '⬆⬆';
+      case 'bullish':        return '↑';
+      case 'bearish':        return '↓';
+      case 'strong_bearish': return '⬇⬇';
+      default:               return '⚡';
     }
   }
-  function biasDescription(b) {
+  function biasShortLabel(b) {
     switch(b) {
-      case 'strong_bullish': return 'Both daily & weekly candles closed bullish. High-confidence long bias.';
-      case 'bullish':        return 'Daily or weekly structure is bullish. Prefer demand zones.';
-      case 'bearish':        return 'Daily or weekly structure is bearish. Prefer supply zones.';
-      case 'strong_bearish': return 'Both daily & weekly candles closed bearish. High-confidence short bias.';
-      default:               return 'Daily and weekly bias conflict. Lower confidence — use caution.';
+      case 'strong_bullish': return 'Strong Bullish';
+      case 'bullish':        return 'Bullish';
+      case 'bearish':        return 'Bearish';
+      case 'strong_bearish': return 'Strong Bearish';
+      default:               return 'Misaligned';
     }
   }
+  function biasCssClass(b) {
+    return b || 'misaligned';
+  }
+
   function updateBiasDisplay(biasInfo) {
-    const pill = document.getElementById('bias-pill');
-    const txt  = document.getElementById('bias-text');
+    const pill      = document.getElementById('bias-pill');
+    const dailyVal  = document.getElementById('daily-bias-val');
+    const dailyPx   = document.getElementById('daily-bias-price');
+    const weeklyVal = document.getElementById('weekly-bias-val');
+    const weeklyPx  = document.getElementById('weekly-bias-price');
+    const warn      = document.getElementById('bias-misaligned-warn');
+
     if (!biasInfo) {
-      pill.textContent = '— No data'; pill.className='bias-pill';
-      txt.textContent  = 'Bias unavailable';
+      pill.textContent = '— No data';
+      pill.className   = 'bias-pill';
+      dailyVal.textContent  = '—';
+      weeklyVal.textContent = '—';
+      warn.style.display    = 'none';
       return;
     }
-    const b = biasInfo.bias||'misaligned';
-    pill.textContent = biasLabel(b);
-    pill.className   = `bias-pill ${b}`;
-    txt.textContent  = biasDescription(b);
+
+    const combined = biasInfo.bias || 'misaligned';
+    const daily    = biasInfo.daily_bias  || 'misaligned';
+    const weekly   = biasInfo.weekly_bias || 'misaligned';
+
+    // Combined pill
+    pill.textContent = `${biasIcon(combined)} ${biasShortLabel(combined)}`;
+    pill.className   = `bias-pill ${biasCssClass(combined)}`;
+
+    // Daily cell
+    dailyVal.textContent = `${biasIcon(daily)} ${biasShortLabel(daily)}`;
+    dailyVal.className   = `bias-tf-val ${biasCssClass(daily)}`;
+    if (biasInfo.daily_open != null && biasInfo.daily_close != null) {
+      dailyPx.textContent = `O ${fmtPrice(biasInfo.daily_open, PAIR_ID)} · C ${fmtPrice(biasInfo.daily_close, PAIR_ID)}`;
+    } else {
+      dailyPx.textContent = '';
+    }
+
+    // Weekly cell
+    weeklyVal.textContent = `${biasIcon(weekly)} ${biasShortLabel(weekly)}`;
+    weeklyVal.className   = `bias-tf-val ${biasCssClass(weekly)}`;
+    if (biasInfo.weekly_open != null && biasInfo.weekly_close != null) {
+      weeklyPx.textContent = `O ${fmtPrice(biasInfo.weekly_open, PAIR_ID)} · C ${fmtPrice(biasInfo.weekly_close, PAIR_ID)}`;
+    } else {
+      weeklyPx.textContent = '';
+    }
+
+    // Misaligned warning
+    warn.style.display = (combined === 'misaligned') ? '' : 'none';
   }
 
   // ── Detector status ──────────────────────────────────────────────────
@@ -757,7 +849,6 @@
       <div class="cd-row"><span class="cd-label">Change</span><span class="cd-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>
       <div id="candle-explain"><span class="ce-loading">Analysing candle…</span></div>`;
 
-    // fetch explanation from server
     try {
       const res = await fetch(`/proxy/${PAIR_ID}/api/candle-explain?ts=${c.time}`);
       const json = await res.json();
@@ -770,7 +861,7 @@
         const isSub    = line.startsWith('  ') && !isBullet;
         const isHeader = i === 0;
         let cls = 'header';
-        if (isPass)   cls = 'pass';
+        if (isPass)        cls = 'pass';
         else if (isBullet) cls = 'bullet';
         else if (isSub)    cls = 'sub';
         else if (i > 0)    cls = 'bullet';
@@ -805,8 +896,6 @@
   container.addEventListener('click', (e) => {
     const logical = chart.timeScale().coordinateToLogical(e.clientX - container.getBoundingClientRect().left);
     if (logical==null) return;
-    const shifted = Math.round(chart.timeScale().logicalToCoordinate(logical));
-    // find closest candle by searching raw candles
     if (!_rawCandles.length) return;
     const ts = _rawCandles.reduce((best,c) => Math.abs(shiftTime(c.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) < Math.abs(shiftTime(best.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) ? c : best, _rawCandles[0]);
     if (ts) showCandleDetail(ts);
@@ -827,12 +916,10 @@
       _rawCandles = data.candles||[];
       _detectorResults = data.detectors||{};
 
-      // Set candle data
       candleSeries.setData([]);
       const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
       if (shifted.length) candleSeries.setData(shifted);
 
-      // Clear and redraw detector overlays
       clearSeries();
       const det = data.detectors||{};
       if (det.accumulation) activeSeries.accumulation = renderAccumulation(det.accumulation);
