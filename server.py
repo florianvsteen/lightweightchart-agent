@@ -1255,32 +1255,15 @@ class PairServer:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page(viewport={"width": 1280, "height": 720})
                     page.goto(page_url)
-                    # Wait for chart to render, then scroll to center the target candle
-                    page.wait_for_timeout(4000)
-                    # Execute JS to position the candle in view (zoomed out, with right-side padding)
-                    if center_ts:
-                        page.evaluate(f"""
-                            (() => {{
-                                try {{
-                                    const ts = {center_ts};
-                                    if (!window._chartRef || !window._rawCandles || !window._rawCandles.length) return;
-                                    const candles = window._rawCandles;
-                                    // Find the logical index of the target candle
-                                    let bestIdx = 0, bestDiff = Infinity;
-                                    for (let i = 0; i < candles.length; i++) {{
-                                        const diff = Math.abs(candles[i].time - ts);
-                                        if (diff < bestDiff) {{ bestDiff = diff; bestIdx = i; }}
-                                    }}
-                                    // Show ~80 bars total, target candle at ~65% from left (space on right)
-                                    const totalBars = 80;
-                                    const rightPad  = Math.round(totalBars * 0.35);
-                                    const from = bestIdx - (totalBars - rightPad);
-                                    const to   = bestIdx + rightPad;
-                                    window._chartRef.timeScale().setVisibleLogicalRange({{ from, to }});
-                                }} catch(e) {{}}
-                            }})();
-                        """)
-                        page.wait_for_timeout(800)
+                    # Wait for the chart to signal it has centered on the target candle.
+                    # _screenshotReady is set by the page after setVisibleLogicalRange completes.
+                    # Falls back to a 6s hard timeout if centering never fires (e.g. no data).
+                    try:
+                        page.wait_for_function("window._screenshotReady === true", timeout=6000)
+                    except Exception:
+                        pass  # timeout — chart rendered but centering may not have fired
+                    # Small settle delay to let the chart finish painting
+                    page.wait_for_timeout(300)
                     page.screenshot(path=screenshot_path)
                     browser.close()
 
