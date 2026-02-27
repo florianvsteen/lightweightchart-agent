@@ -997,16 +997,22 @@
       return;
     }
     list.innerHTML = articles.map(a => {
-      const sentimentClass = a.sentiment||'neutral';
-      const sentimentLabel = {bullish:'↑ Bullish',bearish:'↓ Bearish',neutral:'— Neutral'}[sentimentClass]||'—';
+      const sentimentClass = a.sentiment || 'neutral';
+      const sentimentLabel = {bullish:'↑ Bullish', bearish:'↓ Bearish', neutral:'— Neutral'}[sentimentClass] || '—';
+      const age  = a.age  ? `<span class="news-age">${escHtml(a.age)}</span>` : '';
+      const link = a.link ? `href="${escHtml(a.link)}" target="_blank" rel="noopener"` : '';
       return `
         <div class="news-item">
-          <div class="news-source">${escHtml(a.source||'')}</div>
-          <div class="news-headline">${escHtml(a.headline)}</div>
-          <span class="news-sentiment ${sentimentClass}">${sentimentLabel}</span>
+          <div class="news-meta-row">
+            <span class="news-source">${escHtml(a.source || '')}</span>
+            ${age}
+          </div>
+          <a class="news-headline" ${link}>${escHtml(a.headline)}</a>
+          <div><span class="news-sentiment ${sentimentClass}">${sentimentLabel}</span></div>
         </div>`;
     }).join('');
   }
+
 
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
