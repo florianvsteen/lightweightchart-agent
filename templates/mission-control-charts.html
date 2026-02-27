@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ pair_id }} — Chart View</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg:      #0a0a0c;
+    --surface: #111116;
+    --border:  #1e1e28;
+    --border2: #2a2a38;
+    --text:    #c8c8d8;
+    --muted:   #4a4a60;
+    --accent:  #5af0c4;
+    --accent2: #f05a7e;
+    --blue:    #5a9ef0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ───────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+
+  .back-link {
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    border: 1px solid var(--border2);
+    padding: 4px 10px;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .back-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  .header-pair {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.2rem;
+    color: #fff;
+    letter-spacing: 0.05em;
+  }
+  .header-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+
+  #pair-select {
+    margin-left: auto;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 130px;
+  }
+  #pair-select:focus { outline: none; border-color: var(--accent); }
+
+  .tf-bar { display: flex; gap: 3px; }
+  .tf-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.68rem;
+    font-family: 'Space Mono', monospace;
+    padding: 4px 8px;
+    transition: all 0.15s;
+  }
+  .tf-btn:hover { border-color: #888; color: #bbb; }
+  .tf-btn.active { border-color: var(--text); color: var(--text); font-weight: 700; }
+
+  #session-badge {
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  #session-badge.asian    { border-color: #c8a84b; color: #c8a84b; }
+  #session-badge.london   { border-color: var(--blue); color: var(--blue); }
+  #session-badge.new_york { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Main layout ──────────────────────────────────────────────────── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  /* ── Chart ────────────────────────────────────────────────────────── */
+  #chart-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #chart-container {
+    flex: 1;
+    border-right: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  #chart { width: 100%; height: 100%; }
+
+  /* Candle tooltip */
+  #candle-tooltip {
+    display: none;
+    position: absolute;
+    top: 12px; left: 12px;
+    background: rgba(10,10,12,0.92);
+    border: 1px solid var(--border2);
+    padding: 8px 12px;
+    font-size: 0.65rem;
+    line-height: 1.8;
+    color: var(--text);
+    pointer-events: none;
+    z-index: 10;
+  }
+  #candle-tooltip .ct-pair { font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  #candle-tooltip .ct-row { display: flex; justify-content: space-between; gap: 20px; }
+  #candle-tooltip .ct-label { color: var(--muted); }
+  #candle-tooltip .ct-val   { color: var(--text); }
+  #candle-tooltip .ct-val.up   { color: var(--accent); }
+  #candle-tooltip .ct-val.down { color: var(--accent2); }
+
+  /* ── Right panel ──────────────────────────────────────────────────── */
+  #right-panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  /* Bias section */
+  #bias-section {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 0.58rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  #bias-display {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bias-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .bias-pill {
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+  }
+  .bias-pill.strong_bullish { border-color: rgba(46,204,113,0.5); color: #2ecc71; background: rgba(46,204,113,0.08); font-weight: 700; }
+  .bias-pill.bullish        { border-color: rgba(90,240,196,0.4); color: var(--accent); background: rgba(90,240,196,0.06); }
+  .bias-pill.bearish        { border-color: rgba(240,90,126,0.4); color: var(--accent2); background: rgba(240,90,126,0.06); }
+  .bias-pill.strong_bearish { border-color: rgba(231,76,60,0.5); color: #e74c3c; background: rgba(231,76,60,0.08); font-weight: 700; }
+  .bias-pill.misaligned     { border-color: var(--border2); color: var(--muted); }
+
+  .bias-text {
+    font-size: 0.62rem;
+    color: var(--muted);
+    line-height: 1.7;
+    margin-top: 4px;
+  }
+
+  /* Detector status */
+  #detector-section {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .det-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.68rem;
+    color: var(--text);
+    margin-top: 6px;
+  }
+  .det-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .det-dot.found     { background: #e8e8f0; box-shadow: 0 0 7px rgba(232,232,240,0.5); }
+  .det-dot.potential { background: #888; }
+  .det-dot.looking   { background: var(--muted); }
+  .det-dot.bullish   { background: var(--accent); box-shadow: 0 0 5px rgba(90,240,196,0.4); }
+  .det-dot.bearish   { background: var(--accent2); box-shadow: 0 0 5px rgba(240,90,126,0.4); }
+  .det-dot.cooldown  { background: #d4a017; box-shadow: 0 0 5px rgba(212,160,23,0.4); }
+
+  /* Candle click detail */
+  #candle-section {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    min-height: 80px;
+  }
+
+  #candle-detail { margin-top: 6px; font-size: 0.65rem; line-height: 2; color: var(--muted); }
+  #candle-detail .cd-row { display: flex; justify-content: space-between; }
+  #candle-detail .cd-label { color: var(--muted); }
+  #candle-detail .cd-val   { color: var(--text); }
+  #candle-detail .cd-val.up   { color: var(--accent); }
+  #candle-detail .cd-val.down { color: var(--accent2); }
+  #candle-hint { font-size: 0.6rem; color: var(--muted); font-style: italic; margin-top: 4px; }
+
+  /* News section */
+  #news-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 12px 18px 0;
+  }
+
+  #news-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+
+  #news-refresh {
+    background: none;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    font-size: 0.58rem;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+  #news-refresh:hover { border-color: var(--accent); color: var(--accent); }
+  #news-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #news-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+  #news-list::-webkit-scrollbar { width: 4px; }
+  #news-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .news-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .news-item:last-child { border-bottom: none; }
+
+  .news-source {
+    font-size: 0.55rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+
+  .news-headline {
+    font-size: 0.68rem;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 3px;
+  }
+
+  .news-sentiment {
+    display: inline-block;
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+  }
+  .news-sentiment.bullish  { border-color: rgba(90,240,196,0.3); color: var(--accent); background: rgba(90,240,196,0.05); }
+  .news-sentiment.bearish  { border-color: rgba(240,90,126,0.3); color: var(--accent2); background: rgba(240,90,126,0.05); }
+  .news-sentiment.neutral  { border-color: var(--border2); color: var(--muted); }
+
+  .news-loading {
+    font-size: 0.65rem;
+    color: var(--muted);
+    padding: 12px 0;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .news-dot {
+    display: inline-block;
+    animation: blink 1.2s step-end infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* Weekend overlay */
+  #weekend-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,12,0.88);
+    z-index: 9999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  #weekend-overlay.visible { display: flex; }
+  #weekend-overlay .wk-title { font-family: 'Syne', sans-serif; font-size: 1.2rem; font-weight: 800; color: #e0e0e0; letter-spacing: 0.08em; }
+  #weekend-overlay .wk-countdown { font-size: 2rem; font-weight: 700; color: #3a3a5a; font-variant-numeric: tabular-nums; }
+  #weekend-overlay .wk-hint { font-size: 0.65rem; color: #333; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back-link" href="/dashboard">← Mission Control</a>
+  <div>
+    <div class="header-pair" id="header-pair">{{ pair_id }}</div>
+    <div class="header-label" id="header-label">{{ label }}</div>
+  </div>
+  <div class="tf-bar" id="tf-bar">
+    <button class="tf-btn" data-interval="1m">1m</button>
+    <button class="tf-btn" data-interval="5m">5m</button>
+    <button class="tf-btn" data-interval="15m">15m</button>
+    <button class="tf-btn" data-interval="30m">30m</button>
+    <button class="tf-btn" data-interval="1h">1h</button>
+  </div>
+  <div id="session-badge">--</div>
+  <select id="pair-select">
+    {% for p in pairs %}
+    <option value="{{ p.id }}" {% if p.id == pair_id %}selected{% endif %}>{{ p.id }} — {{ p.label }}</option>
+    {% endfor %}
+  </select>
+</header>
+
+<div class="main">
+  <!-- Chart -->
+  <div id="chart-wrap">
+    <div id="chart-container">
+      <div id="chart"></div>
+      <div id="candle-tooltip"></div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div id="right-panel">
+    <!-- Bias -->
+    <div id="bias-section">
+      <div class="section-title">Bias</div>
+      <div id="bias-display">
+        <div class="bias-row">
+          <span class="bias-pill" id="bias-pill">Loading...</span>
+        </div>
+        <div class="bias-text" id="bias-text">Fetching bias data...</div>
+      </div>
+    </div>
+
+    <!-- Detector Status -->
+    <div id="detector-section">
+      <div class="section-title">Detector</div>
+      <div class="det-status">
+        <div class="det-dot looking" id="det-dot"></div>
+        <span id="det-status-text">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Candle click -->
+    <div id="candle-section">
+      <div class="section-title">Candle</div>
+      <div id="candle-detail">
+        <div id="candle-hint">Click a candle to inspect</div>
+      </div>
+    </div>
+
+    <!-- News -->
+    <div id="news-section">
+      <div id="news-header">
+        <div class="section-title" style="margin-bottom:0">News · <span id="news-pair-label">{{ pair_id }}</span></div>
+        <button id="news-refresh">↻ Refresh</button>
+      </div>
+      <div id="news-list">
+        <div class="news-loading">Fetching news<span class="news-dot">...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="weekend-overlay">
+  <div class="wk-title">⛔ Market Closed</div>
+  <div class="wk-countdown" id="wk-countdown">--:--:--</div>
+  <div class="wk-hint">Resumes Sunday 22:00 UTC</div>
+</div>
+
+<script>
+  const PAIR_ID        = "{{ pair_id }}";
+  const PAIR_LABEL     = "{{ label }}";
+  const ALWAYS_OPEN    = {{ 'true' if always_open else 'false' }};
+  const TIMEZONE       = "{{ timezone }}";
+  const DEFAULT_IV     = "{{ default_interval }}";
+  const DETECTOR_TYPE  = "{{ detector_type }}";  // 'accumulation' or 'supply_demand'
+
+  // ── Timezone ────────────────────────────────────────────────────────
+  function getTzOffset(tz) {
+    try {
+      const now = new Date();
+      const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
+      const tzStr  = now.toLocaleString('en-US', { timeZone: tz });
+      return (new Date(tzStr) - new Date(utcStr)) / 1000;
+    } catch(e) { return 0; }
+  }
+  const TZ_OFFSET = getTzOffset(TIMEZONE);
+  function shiftTime(ts) { return ts + TZ_OFFSET; }
+
+  // ── Weekend ──────────────────────────────────────────────────────────
+  function isWeekend() {
+    if (ALWAYS_OPEN) return false;
+    const now = new Date(); const dow = now.getUTCDay(); const h = now.getUTCHours();
+    return (dow===5&&h>=23)||dow===6||(dow===0&&h<22);
+  }
+  function weekendCountdown() {
+    const now = new Date(); const target = new Date(now);
+    const dow = now.getUTCDay();
+    let days = (0-dow+7)%7;
+    if (days===0&&now.getUTCHours()>=22) days=7;
+    target.setUTCDate(target.getUTCDate()+days);
+    target.setUTCHours(22,0,0,0);
+    const diff=target-now;
+    const pad=n=>String(n).padStart(2,'0');
+    return `${pad(Math.floor(diff/3600000))}:${pad(Math.floor((diff%3600000)/60000))}:${pad(Math.floor((diff%60000)/1000))}`;
+  }
+  function updateWeekendOverlay() {
+    const el = document.getElementById('weekend-overlay');
+    if (isWeekend()) {
+      el.classList.add('visible');
+      document.getElementById('wk-countdown').textContent = weekendCountdown();
+    } else {
+      el.classList.remove('visible');
+    }
+  }
+  setInterval(updateWeekendOverlay, 1000);
+  updateWeekendOverlay();
+
+  // ── Session badge ────────────────────────────────────────────────────
+  const SESSION_WINDOWS = [
+    { name:'asian',    label:'Asian Session',    start:1,  end:7  },
+    { name:'london',   label:'London Session',   start:8,  end:12 },
+    { name:'new_york', label:'New York Session', start:13, end:19 },
+  ];
+  function updateSessionBadge() {
+    const h = new Date().getUTCHours();
+    const badge = document.getElementById('session-badge');
+    const sess  = SESSION_WINDOWS.find(s=>h>=s.start&&h<s.end);
+    if (sess) { badge.textContent=sess.label; badge.className=sess.name; }
+    else { badge.textContent='Between Sessions'; badge.className=''; }
+  }
+  setInterval(updateSessionBadge, 5000);
+  updateSessionBadge();
+
+  // ── Price formatter ──────────────────────────────────────────────────
+  function fmtPrice(p, id) {
+    if (p==null) return '---';
+    if (['EURUSD','EURGBP','GBPUSD','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(id)) return p.toFixed(5);
+    if (['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'].includes(id)) return p.toFixed(3);
+    if (id==='XAUUSD') return p.toFixed(2);
+    return p.toFixed(0);
+  }
+  function fmtTime(ts) {
+    return new Date(ts*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+  }
+  function fmtPriceFormat(id) {
+    if (['EURUSD','EURGBP','GBPUSD','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(id)) return {type:'price',precision:5,minMove:0.00001};
+    if (['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'].includes(id)) return {type:'price',precision:3,minMove:0.001};
+    if (id==='XAUUSD') return {type:'price',precision:2,minMove:0.01};
+    return {type:'price',precision:0,minMove:1};
+  }
+
+  // ── Chart Setup ──────────────────────────────────────────────────────
+  let currentInterval = DEFAULT_IV;
+
+  const container = document.getElementById('chart');
+  const chart = LightweightCharts.createChart(container, {
+    layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
+    grid: { vertLines:{visible:false}, horzLines:{visible:false} },
+    timeScale: { timeVisible:true, borderColor:'#1e1e28' },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor:       '#d4d0d0',
+    downColor:     '#068c76',
+    wickUpColor:   '#d4d0d0',
+    wickDownColor: '#068c76',
+    borderVisible: false,
+    priceFormat:   fmtPriceFormat(PAIR_ID),
+  });
+
+  window.addEventListener('resize', () => {
+    chart.applyOptions({width: container.clientWidth});
+  });
+
+  // ── Timeframe buttons ────────────────────────────────────────────────
+  document.querySelectorAll('.tf-btn').forEach(btn => {
+    if (btn.dataset.interval===DEFAULT_IV) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentInterval = btn.dataset.interval;
+      loadData();
+    });
+  });
+
+  // ── Pair selector ────────────────────────────────────────────────────
+  document.getElementById('pair-select').addEventListener('change', (e) => {
+    window.location.href = `/chart-view/${e.target.value}`;
+  });
+
+  // ── Box drawing ──────────────────────────────────────────────────────
+  function drawFilledBox(s, e, top, bot, color, alpha) {
+    const toRgba = (c,a)=>{ const m=c.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/); return m?`rgba(${m[1]},${m[2]},${m[3]},${a})`:c; };
+    const opts={color,lineWidth:1,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false};
+    const tl=chart.addLineSeries(opts); tl.setData([{time:shiftTime(s),value:top},{time:shiftTime(e),value:top}]);
+    const bl=chart.addLineSeries(opts); bl.setData([{time:shiftTime(s),value:bot},{time:shiftTime(e),value:bot}]);
+    const fl=chart.addBaselineSeries({baseValue:{type:'price',price:bot},topFillColor1:toRgba(color,alpha),topFillColor2:toRgba(color,alpha),topLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',lineWidth:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    fl.setData([{time:shiftTime(s),value:top},{time:shiftTime(e),value:top}]);
+    return [tl,bl,fl];
+  }
+
+  let activeSeries = {};
+  function clearSeries() {
+    Object.values(activeSeries).forEach(arr=>arr.forEach(s=>{try{chart.removeSeries(s);}catch(e){}}));
+    activeSeries={};
+  }
+
+  // ── Detector overlays ────────────────────────────────────────────────
+  function renderAccumulation(zone) {
+    const all=[];
+    if (!zone.top||!zone.bottom||!zone.start) return all;
+    const isCooldown=zone.status==='cooldown';
+    const isFound=zone.status==='found'||zone.status==='confirmed';
+    const lineColor=isCooldown?`rgba(212,160,23,0.6)`:`rgba(200,200,200,${isFound?0.55:0.28})`;
+    const lineStyle=isFound?0:2;
+    const opts={color:lineColor,lineWidth:1,lineStyle,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false};
+    const tl=chart.addLineSeries(opts); tl.setData([{time:shiftTime(zone.start),value:zone.top},{time:shiftTime(zone.end),value:zone.top}]);
+    const bl=chart.addLineSeries(opts); bl.setData([{time:shiftTime(zone.start),value:zone.bottom},{time:shiftTime(zone.end),value:zone.bottom}]);
+    const ll=chart.addLineSeries(opts); ll.setData([{time:shiftTime(zone.start),value:zone.top},{time:shiftTime(zone.start),value:zone.bottom}]);
+    const rl=chart.addLineSeries(opts); rl.setData([{time:shiftTime(zone.end),value:zone.top},{time:shiftTime(zone.end),value:zone.bottom}]);
+    all.push(tl,bl,ll,rl);
+    if (isCooldown) {
+      const fill=chart.addBaselineSeries({baseValue:{type:'price',price:zone.bottom},topFillColor1:'rgba(212,160,23,0.07)',topFillColor2:'rgba(212,160,23,0.07)',topLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',lineWidth:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      fill.setData([{time:shiftTime(zone.start),value:zone.top},{time:shiftTime(zone.end),value:zone.top}]);
+      all.push(fill);
+    }
+    const bc=zone.breakout_candle;
+    if (bc&&bc.time!=null) {
+      const bull=bc.close>bc.open;
+      const aggrColor=bull?'rgba(240,170,50,0.85)':'rgba(240,100,50,0.85)';
+      const aggrEnd=bc.time+60;
+      all.push(...drawFilledBox(bc.time,aggrEnd,bc.high,bc.low,aggrColor,0.18));
+      const bTop=Math.max(bc.open,bc.close), bBot=Math.min(bc.open,bc.close);
+      const bOpts={color:aggrColor,lineWidth:2,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false};
+      const btl=chart.addLineSeries(bOpts); btl.setData([{time:shiftTime(bc.time),value:bTop},{time:shiftTime(aggrEnd),value:bTop}]);
+      const bbl=chart.addLineSeries(bOpts); bbl.setData([{time:shiftTime(bc.time),value:bBot},{time:shiftTime(aggrEnd),value:bBot}]);
+      all.push(btl,bbl);
+    }
+    const fvg=zone.fvg_candle;
+    if (fvg&&fvg.top!=null) {
+      const fc=fvg.fvg_type==='bullish'?'rgba(70,130,220,0.55)':'rgba(220,100,50,0.55)';
+      const fOpts={color:fc,lineWidth:1,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false};
+      const fS=shiftTime(fvg.time),fE=shiftTime(zone.end);
+      const ft=chart.addLineSeries(fOpts); ft.setData([{time:fS,value:fvg.top},{time:fE,value:fvg.top}]);
+      const fb=chart.addLineSeries(fOpts); fb.setData([{time:fS,value:fvg.bottom},{time:fE,value:fvg.bottom}]);
+      const fl2=chart.addLineSeries(fOpts); fl2.setData([{time:fS,value:fvg.top},{time:fS,value:fvg.bottom}]);
+      const fr=chart.addLineSeries(fOpts); fr.setData([{time:fE,value:fvg.top},{time:fE,value:fvg.bottom}]);
+      const ff=chart.addBaselineSeries({baseValue:{type:'price',price:fvg.bottom},topFillColor1:'rgba(70,130,220,0.12)',topFillColor2:'rgba(70,130,220,0.12)',topLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',lineWidth:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      ff.setData([{time:fS,value:fvg.top},{time:fE,value:fvg.top}]);
+      all.push(ft,fb,fl2,fr,ff);
+    }
+    return all;
+  }
+
+  function renderSupplyDemand(result) {
+    const all=[];
+    const zones=(result.zones||[]).filter(z=>z.is_active);
+    const isMisaligned=(result.bias||{}).bias==='misaligned';
+    zones.forEach(zone=>{
+      const isDemand=zone.type==='demand';
+      const zMis=zone.is_misaligned||isMisaligned;
+      let color,fill;
+      if (zMis) { color='rgba(200,160,40,0.8)'; fill='rgba(200,160,40,0.12)'; }
+      else if (isDemand) { color='rgba(70,130,220,0.9)'; fill='rgba(70,130,220,0.18)'; }
+      else { color='rgba(220,100,50,0.9)'; fill='rgba(220,100,50,0.18)'; }
+      const tl=chart.addLineSeries({color,lineWidth:2,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      tl.setData([{time:shiftTime(zone.start),value:zone.top},{time:shiftTime(zone.end),value:zone.top}]);
+      const bl2=chart.addLineSeries({color,lineWidth:2,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      bl2.setData([{time:shiftTime(zone.start),value:zone.bottom},{time:shiftTime(zone.end),value:zone.bottom}]);
+      const fl=chart.addBaselineSeries({baseValue:{type:'price',price:zone.bottom},topFillColor1:fill,topFillColor2:fill,topLineColor:'rgba(0,0,0,0)',bottomFillColor1:'rgba(0,0,0,0)',bottomFillColor2:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',lineWidth:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      fl.setData([{time:shiftTime(zone.start),value:zone.top},{time:shiftTime(zone.end),value:zone.top}]);
+      all.push(tl,bl2,fl);
+    });
+    return all;
+  }
+
+  // ── Bias display ─────────────────────────────────────────────────────
+  function biasLabel(b) {
+    switch(b) {
+      case 'strong_bullish': return '⬆⬆ Strong Bullish';
+      case 'bullish':        return '↑ Bullish';
+      case 'bearish':        return '↓ Bearish';
+      case 'strong_bearish': return '⬇⬇ Strong Bearish';
+      default:               return '⚡ Misaligned';
+    }
+  }
+  function biasDescription(b) {
+    switch(b) {
+      case 'strong_bullish': return 'Both daily & weekly candles closed bullish. High-confidence long bias.';
+      case 'bullish':        return 'Daily or weekly structure is bullish. Prefer demand zones.';
+      case 'bearish':        return 'Daily or weekly structure is bearish. Prefer supply zones.';
+      case 'strong_bearish': return 'Both daily & weekly candles closed bearish. High-confidence short bias.';
+      default:               return 'Daily and weekly bias conflict. Lower confidence — use caution.';
+    }
+  }
+  function updateBiasDisplay(biasInfo) {
+    const pill = document.getElementById('bias-pill');
+    const txt  = document.getElementById('bias-text');
+    if (!biasInfo) {
+      pill.textContent = '— No data'; pill.className='bias-pill';
+      txt.textContent  = 'Bias unavailable';
+      return;
+    }
+    const b = biasInfo.bias||'misaligned';
+    pill.textContent = biasLabel(b);
+    pill.className   = `bias-pill ${b}`;
+    txt.textContent  = biasDescription(b);
+  }
+
+  // ── Detector status ──────────────────────────────────────────────────
+  function updateDetectorStatus(det, biasInfo) {
+    const dot  = document.getElementById('det-dot');
+    const text = document.getElementById('det-status-text');
+
+    if (DETECTOR_TYPE==='accumulation') {
+      const z=det.accumulation;
+      if (!z||z.status==='looking'||z.status==='out_of_session'||z.status==='weekend') {
+        dot.className='det-dot looking';
+        text.textContent='Looking for accumulation';
+      } else if (z.status==='cooldown') {
+        const rem=Math.max(0,z.cooldown_until-Math.floor(Date.now()/1000));
+        const pad=n=>String(n).padStart(2,'0');
+        dot.className='det-dot cooldown';
+        text.textContent=`Cooldown — ${pad(Math.floor(rem/60))}:${pad(rem%60)}`;
+      } else if (z.status==='confirmed') {
+        dot.className='det-dot found';
+        text.textContent='Aggressor candle confirmed ✓';
+      } else if (z.status==='found') {
+        dot.className='det-dot found';
+        text.textContent=`Accumulation found`;
+      } else if (z.status==='active') {
+        dot.className='det-dot potential';
+        text.textContent='Accumulation forming';
+      } else {
+        dot.className='det-dot looking';
+        text.textContent='Looking';
+      }
+    } else if (DETECTOR_TYPE==='supply_demand') {
+      const sd=det.supply_demand;
+      const bias=(sd&&sd.bias)||biasInfo||{};
+      const zones=sd?sd.zones||[]:[];
+      const active=zones.filter(z=>z.is_active);
+      if (bias.bias==='strong_bullish'||bias.bias==='bullish') dot.className='det-dot bullish';
+      else if (bias.bias==='strong_bearish'||bias.bias==='bearish') dot.className='det-dot bearish';
+      else dot.className='det-dot looking';
+      if (active.length>0) text.textContent=`${active.length} active zone${active.length>1?'s':''}`;
+      else if (bias.bias==='misaligned') text.textContent='Bias misaligned — scanning';
+      else text.textContent=bias.bias&&bias.bias.includes('bullish')?'Seeking demand zones':'Seeking supply zones';
+    }
+  }
+
+  // ── Candle click ─────────────────────────────────────────────────────
+  let _rawCandles = [];
+  let _detectorResults = {};
+
+  function showCandleDetail(c) {
+    const isBull = c.close >= c.open;
+    const det   = document.getElementById('candle-detail');
+    const change = c.open>0 ? ((c.close-c.open)/c.open*100) : 0;
+    det.innerHTML = `
+      <div class="cd-row"><span class="cd-label">Time</span><span class="cd-val">${fmtTime(c.time)}</span></div>
+      <div class="cd-row"><span class="cd-label">Open</span><span class="cd-val">${fmtPrice(c.open,PAIR_ID)}</span></div>
+      <div class="cd-row"><span class="cd-label">High</span><span class="cd-val">${fmtPrice(c.high,PAIR_ID)}</span></div>
+      <div class="cd-row"><span class="cd-label">Low</span><span class="cd-val">${fmtPrice(c.low,PAIR_ID)}</span></div>
+      <div class="cd-row"><span class="cd-label">Close</span><span class="cd-val ${isBull?'up':'down'}">${fmtPrice(c.close,PAIR_ID)}</span></div>
+      <div class="cd-row"><span class="cd-label">Change</span><span class="cd-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>`;
+  }
+
+  // Subscribe to crosshair move to show candle data in tooltip
+  chart.subscribeCrosshairMove((param) => {
+    const tooltip = document.getElementById('candle-tooltip');
+    if (!param.time || !param.seriesData) { tooltip.style.display='none'; return; }
+    const data = param.seriesData.get(candleSeries);
+    if (!data) { tooltip.style.display='none'; return; }
+    const rawTime = data.time - TZ_OFFSET;
+    const isBull = data.close >= data.open;
+    const change = data.open>0 ? ((data.close-data.open)/data.open*100) : 0;
+    tooltip.style.display = '';
+    tooltip.innerHTML = `
+      <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
+      <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open,PAIR_ID)}</span></div>
+      <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high,PAIR_ID)}</span></div>
+      <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low,PAIR_ID)}</span></div>
+      <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull?'up':'down'}">${fmtPrice(data.close,PAIR_ID)}</span></div>
+      <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>`;
+  });
+
+  // Click to lock candle detail in right panel
+  container.addEventListener('click', (e) => {
+    const logical = chart.timeScale().coordinateToLogical(e.clientX - container.getBoundingClientRect().left);
+    if (logical==null) return;
+    const shifted = Math.round(chart.timeScale().logicalToCoordinate(logical));
+    // find closest candle by searching raw candles
+    if (!_rawCandles.length) return;
+    const ts = _rawCandles.reduce((best,c) => Math.abs(shiftTime(c.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) < Math.abs(shiftTime(best.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) ? c : best, _rawCandles[0]);
+    if (ts) showCandleDetail(ts);
+  });
+
+  // ── Data load ─────────────────────────────────────────────────────────
+  async function loadData() {
+    if (isWeekend()) return;
+    try {
+      const [dataRes, biasRes] = await Promise.all([
+        fetch(`/proxy/${PAIR_ID}/api/data?interval=${currentInterval}`),
+        fetch(`/proxy/${PAIR_ID}/api/bias`).catch(()=>null),
+      ]);
+      if (!dataRes.ok) return;
+      const data = await dataRes.json();
+      const biasInfo = biasRes&&biasRes.ok ? await biasRes.json().catch(()=>null) : null;
+
+      _rawCandles = data.candles||[];
+      _detectorResults = data.detectors||{};
+
+      // Set candle data
+      candleSeries.setData([]);
+      const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
+      if (shifted.length) candleSeries.setData(shifted);
+
+      // Clear and redraw detector overlays
+      clearSeries();
+      const det = data.detectors||{};
+      if (det.accumulation) activeSeries.accumulation = renderAccumulation(det.accumulation);
+      if (det.supply_demand) activeSeries.supply_demand = renderSupplyDemand(det.supply_demand);
+
+      updateBiasDisplay(biasInfo);
+      updateDetectorStatus(det, biasInfo);
+
+    } catch(e) { console.error('loadData error:', e); }
+  }
+
+  // ── News loading ──────────────────────────────────────────────────────
+  let _newsLoading = false;
+  async function loadNews() {
+    if (_newsLoading) return;
+    _newsLoading = true;
+    const btn  = document.getElementById('news-refresh');
+    const list = document.getElementById('news-list');
+    btn.disabled = true;
+    list.innerHTML = '<div class="news-loading">Fetching news<span class="news-dot">...</span></div>';
+
+    try {
+      const res = await fetch(`/api/news/${PAIR_ID}`);
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      renderNews(data.articles||[]);
+    } catch(e) {
+      list.innerHTML = `<div class="news-loading">Failed to load news. Try again.</div>`;
+    } finally {
+      _newsLoading = false;
+      btn.disabled = false;
+    }
+  }
+
+  function renderNews(articles) {
+    const list = document.getElementById('news-list');
+    if (!articles.length) {
+      list.innerHTML = '<div class="news-loading">No recent news found.</div>';
+      return;
+    }
+    list.innerHTML = articles.map(a => {
+      const sentimentClass = a.sentiment||'neutral';
+      const sentimentLabel = {bullish:'↑ Bullish',bearish:'↓ Bearish',neutral:'— Neutral'}[sentimentClass]||'—';
+      return `
+        <div class="news-item">
+          <div class="news-source">${escHtml(a.source||'')}</div>
+          <div class="news-headline">${escHtml(a.headline)}</div>
+          <span class="news-sentiment ${sentimentClass}">${sentimentLabel}</span>
+        </div>`;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  document.getElementById('news-refresh').addEventListener('click', loadNews);
+
+  // ── Init ─────────────────────────────────────────────────────────────
+  loadData();
+  loadNews();
+  setInterval(loadData, 3000);
+</script>
+</body>
+</html>
