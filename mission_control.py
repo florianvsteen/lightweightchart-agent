@@ -18,6 +18,7 @@ import json
 import requests
 
 from flask import Flask, render_template, jsonify, redirect
+from news import get_news as _get_news
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -174,134 +175,18 @@ def proxy_debug(pair_id):
         return f"Could not reach pair server: {e}", 502
 
 
-# ── News API ────────────────────────────────────────────────────────────
-
-# Simple in-memory cache: { pair_id: {"ts": epoch, "articles": [...]} }
-_news_cache: dict = {}
-_NEWS_TTL_SECONDS = 300  # 5 minutes
-
-PAIR_NEWS_CONTEXT = {
-    # Forex
-    "EURUSD": "EUR/USD forex pair, Euro US Dollar, ECB Federal Reserve monetary policy",
-    "GBPUSD": "GBP/USD forex pair, British Pound US Dollar, Bank of England Fed policy",
-    "USDJPY": "USD/JPY forex pair, US Dollar Japanese Yen, Bank of Japan yen intervention",
-    "EURGBP": "EUR/GBP forex pair, Euro British Pound, ECB Bank of England",
-    "AUDUSD": "AUD/USD forex pair, Australian Dollar, RBA rate decision",
-    "USDCAD": "USD/CAD forex pair, US Dollar Canadian Dollar, oil prices Bank of Canada",
-    "USDCHF": "USD/CHF forex pair, US Dollar Swiss Franc, SNB safe haven",
-    "NZDUSD": "NZD/USD forex pair, New Zealand Dollar RBNZ",
-    "EURJPY": "EUR/JPY cross, Euro Yen",
-    "GBPJPY": "GBP/JPY cross, British Pound Yen",
-    "AUDJPY": "AUD/JPY cross, Australian Dollar Yen",
-    "CADJPY": "CAD/JPY cross, Canadian Dollar Yen",
-    # Metals
-    "XAUUSD": "Gold price XAU/USD, gold market safe haven inflation hedge",
-    "XAGUSD": "Silver price XAG/USD, silver market",
-    # Crypto
-    "BTCUSD": "Bitcoin BTC/USD price, crypto market",
-    "ETHUSD": "Ethereum ETH/USD price, crypto market",
-    # Indices
-    "US30":   "Dow Jones Industrial Average DJIA US30",
-    "NAS100": "NASDAQ 100 tech stocks US tech market",
-    "SPX500": "S&P 500 index US equities",
-}
-
-
-def _fetch_news_via_claude(pair_id: str) -> list:
-    """
-    Use the Claude API with web_search tool to fetch live news for a pair.
-    Returns list of {headline, source, sentiment} dicts.
-    """
-    context = PAIR_NEWS_CONTEXT.get(pair_id.upper(), pair_id)
-    prompt = (
-        f"Search for the latest financial news about {context}. "
-        f"Return ONLY a JSON array of up to 8 articles with these fields: "
-        f'headline (string), source (string), sentiment ("bullish", "bearish", or "neutral"). '
-        f"Focus on news from the past 24 hours. "
-        f"Return ONLY the JSON array, no other text, no markdown code fences."
-    )
-
-    try:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        headers = {
-            "x-api-key":         api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type":      "application/json",
-            "anthropic-beta":    "tools-2024-04-04",
-        }
-        body = {
-            "model":      "claude-sonnet-4-20250514",
-            "max_tokens": 1000,
-            "tools": [
-                {"type": "web_search_20250305", "name": "web_search"}
-            ],
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-        }
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=body,
-            timeout=30,
-        )
-        if not r.ok:
-            print(f"[news] Claude API error {r.status_code}: {r.text[:200]}")
-            return []
-
-        data = r.json()
-        # Extract the text block from content
-        text_content = ""
-        for block in data.get("content", []):
-            if block.get("type") == "text":
-                text_content = block.get("text", "")
-                break
-
-        if not text_content:
-            return []
-
-        # Strip potential markdown fences
-        clean = text_content.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[-1]
-            if clean.endswith("```"):
-                clean = clean[:-3].strip()
-
-        articles = json.loads(clean)
-        if not isinstance(articles, list):
-            return []
-
-        # Validate and clamp
-        result = []
-        for a in articles[:8]:
-            if isinstance(a, dict) and "headline" in a:
-                result.append({
-                    "headline":  str(a.get("headline", ""))[:300],
-                    "source":    str(a.get("source", ""))[:80],
-                    "sentiment": a.get("sentiment", "neutral") if a.get("sentiment") in ("bullish","bearish","neutral") else "neutral",
-                })
-        return result
-
-    except Exception as e:
-        print(f"[news] Error fetching news for {pair_id}: {e}")
-        return []
-
-
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
-    import time
     pair_id = pair_id.upper()
 
     if pair_id not in PAIRS:
         return jsonify({"error": "unknown pair"}), 404
 
-    cached = _news_cache.get(pair_id)
-    if cached and (time.time() - cached["ts"]) < _NEWS_TTL_SECONDS:
-        return jsonify({"articles": cached["articles"], "cached": True})
+    # Resolve the yfinance ticker from config so news.py uses the right symbol
+    cfg       = PAIRS[pair_id]
+    yf_ticker = cfg.get("yf_ticker") or cfg.get("ticker")
 
-    articles = _fetch_news_via_claude(pair_id)
-
-    _news_cache[pair_id] = {"ts": time.time(), "articles": articles}
+    articles = _get_news(pair_id, yf_ticker)
     return jsonify({"articles": articles, "cached": False})
 
 
