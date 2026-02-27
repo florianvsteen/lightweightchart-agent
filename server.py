@@ -616,8 +616,13 @@ class PairServer:
     def _debug(self):
         from config import PAIRS
         tz = os.environ.get("TZ", "Europe/Brussels")
+        # Use proxy prefix so links work behind a reverse proxy.
+        # If a PROXY_PREFIX env var is set (e.g. "/proxy"), pair links become
+        # /proxy/{pair_id}/debug instead of http://host:{port}/debug.
+        proxy_prefix = os.environ.get("PROXY_PREFIX", "").rstrip("/")
         pairs_list = [
-            {"id": pid, "label": cfg["label"], "port": cfg["port"]}
+            {"id": pid, "label": cfg["label"], "port": cfg["port"],
+             "url": f"{proxy_prefix}/{pid}" if proxy_prefix else None}
             for pid, cfg in PAIRS.items()
         ]
         return render_template("debug.html",
@@ -625,6 +630,7 @@ class PairServer:
             label=self.label,
             timezone=tz,
             port=self.port,
+            proxy_prefix=proxy_prefix,
             pairs=pairs_list,
         )
 
@@ -1310,7 +1316,12 @@ class PairServer:
     def run(self):
         print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
 
-        t = threading.Thread(target=self._detection_loop, daemon=True, name=f"detector-{self.pair_id}")
+        # Apply ProxyFix so Flask respects X-Forwarded-For/Proto/Host headers
+        # from the reverse proxy, preventing redirects to raw port URLs.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+        t = threading.Thread(target=self._detection_loop, daemon=True, name=f="detector-{self.pair_id}")
         t.start()
 
         self.app.run(host="0.0.0.0", port=self.port, use_reloader=False, threaded=True)
