@@ -168,7 +168,6 @@
     align-items: flex-start;
     justify-content: space-between;
     margin-bottom: 14px;
-    padding-right: 72px; /* space for chart link */
   }
 
   .pair-name {
@@ -405,7 +404,6 @@ function buildGrid() {
     card.id = `card-${pair.id}`;
     card.innerHTML = `
       <a class="card-link-overlay" href="/chart-view/${pair.id}"></a>
-      <a class="card-chart-link" href="/chart-view/${pair.id}">↗ Chart</a>
       <div class="card-header">
         <div>
           <div class="pair-name">${pair.id}</div>
