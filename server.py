@@ -1257,24 +1257,26 @@ class PairServer:
                     page.goto(page_url)
                     # Wait for chart to render, then scroll to center the target candle
                     page.wait_for_timeout(4000)
-                    # Execute JS to center the candle in view
+                    # Execute JS to position the candle in view (zoomed out, with right-side padding)
                     if center_ts:
                         page.evaluate(f"""
                             (() => {{
-                                // Try to center the breakout candle if chart is available
                                 try {{
                                     const ts = {center_ts};
-                                    if (window._chartRef) {{
-                                        const tzOffset = window._tzOffset || 0;
-                                        const shiftedTs = ts + tzOffset;
-                                        const range = window._chartRef.timeScale().getVisibleLogicalRange();
-                                        const width = range ? (range.to - range.from) : 60;
-                                        const half = width / 2;
-                                        window._chartRef.timeScale().setVisibleRange({{
-                                            from: shiftedTs - half * 60,
-                                            to:   shiftedTs + half * 60,
-                                        }});
+                                    if (!window._chartRef || !window._rawCandles || !window._rawCandles.length) return;
+                                    const candles = window._rawCandles;
+                                    // Find the logical index of the target candle
+                                    let bestIdx = 0, bestDiff = Infinity;
+                                    for (let i = 0; i < candles.length; i++) {{
+                                        const diff = Math.abs(candles[i].time - ts);
+                                        if (diff < bestDiff) {{ bestDiff = diff; bestIdx = i; }}
                                     }}
+                                    // Show ~80 bars total, target candle at ~65% from left (space on right)
+                                    const totalBars = 80;
+                                    const rightPad  = Math.round(totalBars * 0.35);
+                                    const from = bestIdx - (totalBars - rightPad);
+                                    const to   = bestIdx + rightPad;
+                                    window._chartRef.timeScale().setVisibleLogicalRange({{ from, to }});
                                 }} catch(e) {{}}
                             }})();
                         """)
