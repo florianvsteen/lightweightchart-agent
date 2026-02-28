@@ -640,7 +640,7 @@ async function fetchReplay(idx) {
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
   try {
-    const res = await fetch(BASE_URL + '/debug/replay?idx=' + idx, { signal: replayFetchCtrl.signal });
+    const res = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF, { signal: replayFetchCtrl.signal });
     const data = await res.json();
     if (data.error) return;
     replayData = data;
