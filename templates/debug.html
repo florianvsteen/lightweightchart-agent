@@ -485,34 +485,25 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Fill: built only from timestamps already visible on the chart.
-  // In replay mode the chart shows liveData.candles.slice(0, replayIdx) —
-  // that is exactly what seekTo rendered, regardless of replayData.candles.
-  // Using synthetic timestamps (or replayData.candles from a different idx)
-  // causes LWC to insert new time-scale slots and push the box into the future.
-  const visibleCandles = (replayMode && liveData?.candles)
-    ? liveData.candles.slice(0, replayIdx)
-    : (liveData?.candles ?? []);
-
-  const fillColor   = toRgba(lineColor, fillAlpha);
-  const transparent = 'rgba(0,0,0,0)';
-  const pts = visibleCandles
-    .filter(c => c.time >= startTs && c.time <= endTs)
-    .map(c => ({ time: shiftTime(c.time), value: top }));
-
-  if (pts.length > 0) {
-    const nextCandle = visibleCandles.find(c => c.time > endTs);
-    if (nextCandle) pts.push({ time: shiftTime(nextCandle.time), value: bottom });
-    const fa = chart.addAreaSeries({
-      lineColor: transparent, topColor: fillColor, bottomColor: fillColor,
-      lineWidth: 0, baseLineVisible: false,
-      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-    });
-    fa.setData(pts);
-    overlaySeriesList.push(fa);
-  }
-
-  overlaySeriesList.push(tl, bl);
+  // Fill using addBaselineSeries — same as the working original.
+  // To stop the fill bleeding past endTs, we find the next real candle
+  // after endTs and add a closing point at bottom there, collapsing the fill.
+  // We use liveData.candles (full set) for timestamp lookup since those are
+  // the timestamps registered on the chart's time scale in both live and replay.
+  const allCandles = liveData?.candles ?? [];
+  const nextCandle = allCandles.find(c => c.time > endTs);
+  const fl = chart.addBaselineSeries({
+    baseValue: { type: 'price', price: bottom },
+    topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
+    topLineColor: 'rgba(0,0,0,0)',
+    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
+    bottomLineColor: 'rgba(0,0,0,0)',
+    lineWidth: 0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+  });
+  const fillPts = [{ time: s, value: top }, { time: e, value: top }];
+  if (nextCandle) fillPts.push({ time: shiftTime(nextCandle.time), value: bottom });
+  fl.setData(fillPts);
+  overlaySeriesList.push(tl, bl, fl);
 }
 
 function drawVLine(ts, color) {
