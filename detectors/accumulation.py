@@ -637,7 +637,7 @@ def explain_candle(
             single_reject = [w for w in checked if w.get("reject") and len(w["reject"].split(" ")) > 0]
             if single_reject:
                 best = min(single_reject, key=lambda w: abs(w.get("chop", 0) - 0.44))
-                lines.append(f"  Closest window ({best['window']} candles): "
+                lines.append(f"  Closest to an accumulation from this point were the last ({best['window']} candles): "
                              f"slope {best.get('slope')}, chop {best.get('chop')}, adx {best.get('adx')}")
         return lines
 
