@@ -660,7 +660,7 @@ class PairServer:
             lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 20)
             adx_threshold = params.get("adx_threshold", 25)
-            #threshold_pct = params.get("threshold_pct", 0.003)
+            threshold_pct = params.get("threshold_pct", 0.003)
             min_touchpoints = params.get("min_touchpoints", 0)
 
             session = get_current_session()
@@ -814,7 +814,7 @@ class PairServer:
             lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 15)
             adx_threshold = params.get("adx_threshold", 25)
-            #threshold_pct = params.get("threshold_pct", 0.003)
+            threshold_pct = params.get("threshold_pct", 0.003)
             min_touchpoints = params.get("min_touchpoints", 0)
 
             total = len(full_df)
