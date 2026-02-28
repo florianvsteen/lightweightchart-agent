@@ -478,21 +478,33 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
     return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
   };
-  const s = shiftTime(startTs), e = shiftTime(endTs);
-  const lOpts = { lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false };
+
+  // In replay mode the chart time scale only contains liveData.candles.slice(0, replayIdx).
+  // We must only use timestamps from that set — anything outside gets placed in future space.
+  // Clamp endTs and startTs to the last candle actually on the chart.
+  const chartCandles = replayMode
+    ? liveData.candles.slice(0, replayIdx)
+    : (liveData?.candles ?? []);
+
+  const lastChartTs = chartCandles.length ? chartCandles[chartCandles.length - 1].time : endTs;
+  const clampedEnd  = Math.min(endTs,   lastChartTs);
+  const clampedStart= Math.min(startTs, lastChartTs);
+
+  const s = shiftTime(clampedStart);
+  const e = shiftTime(clampedEnd);
+
+  const sharedScale = { priceScaleId: 'right' };
+  const lOpts = { ...sharedScale, lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false };
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Fill using addBaselineSeries — same as the working original.
-  // To stop the fill bleeding past endTs, we find the next real candle
-  // after endTs and add a closing point at bottom there, collapsing the fill.
-  // We use liveData.candles (full set) for timestamp lookup since those are
-  // the timestamps registered on the chart's time scale in both live and replay.
-  const allCandles = liveData?.candles ?? [];
-  const nextCandle = allCandles.find(c => c.time > endTs);
+  // Find the next candle timestamp after endTs that's on the chart,
+  // so the baseline fill can be collapsed exactly at the window boundary.
+  const nextCandle = chartCandles.find(c => c.time > endTs);
   const fl = chart.addBaselineSeries({
+    ...sharedScale,
     baseValue: { type: 'price', price: bottom },
     topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
     topLineColor: 'rgba(0,0,0,0)',
@@ -503,6 +515,7 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   const fillPts = [{ time: s, value: top }, { time: e, value: top }];
   if (nextCandle) fillPts.push({ time: shiftTime(nextCandle.time), value: bottom });
   fl.setData(fillPts);
+
   overlaySeriesList.push(tl, bl, fl);
 }
 
