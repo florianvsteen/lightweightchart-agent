@@ -47,7 +47,7 @@ def _pairs_js():
             "label":       cfg.get("label", pair_id),
             "port":        cfg.get("port", 0),
             "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
-            "always_open": cfg.get("always_open", False),
+            "always_open": cfg.get("market_timing") == "CRYPTO",
         }
         for pair_id, cfg in PAIRS.items()
     ]
