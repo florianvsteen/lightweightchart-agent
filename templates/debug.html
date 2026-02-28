@@ -822,6 +822,7 @@ async function runDetector() {
     // so that df[-1] IS the aggressor candidate.
     const res  = await fetch(BASE_URL + '/debug/replay?idx=' + (replayIdx - 1) + '&interval=' + currentTF);
     const data = await res.json();
+    console.log('replay response:', data);  // ← here
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
     renderAccumPanel(data, true);
