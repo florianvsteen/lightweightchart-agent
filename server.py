@@ -796,7 +796,8 @@ class PairServer:
             from datetime import timezone
             from detectors.accumulation import _slope_pct, _choppiness, _adx, _count_touchpoints
 
-            full_df = _provider_get_df(self.ticker, "1m", self.period)
+            interval = request.args.get("interval", "1m")
+            full_df = _provider_get_df(self.ticker, interval, self.period)
             full_df = full_df.dropna()
 
             if full_df is None or len(full_df) < 5:
