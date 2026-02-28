@@ -663,6 +663,7 @@ class PairServer:
             return jsonify({
                 "pair":              self.pair_id,
                 "session":           get_current_session(self.market_timing),
+                "status":            result.get("status", "looking"),   # ← add this
                 "adx_threshold":     params.get("adx_threshold", 25),
                 "last_close":        round(float(df["Close"].iloc[-2]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
@@ -671,6 +672,10 @@ class PairServer:
                 "windows":           windows,
                 "best_zone":         result.get("best_zone"),
                 "secondary_zone":    result.get("secondary_zone"),
+                "breakout_candle":   result.get("breakout_candle"),
+                "breakout_dir":      result.get("breakout_dir"),        # ← add this
+                "breakout_body":     result.get("breakout_body"),       # ← add this
+                "impulse_ratio":     result.get("impulse_ratio"),       # ← add this
                 "candles":           result.get("candles", []),
             })
         except Exception as e:
@@ -719,8 +724,9 @@ class PairServer:
                 "idx":               idx,
                 "total":             total,
                 "session":           get_current_session(self.market_timing),
+                "status":            result.get("status", "looking"),   # ← add this
                 "adx_threshold":     params.get("adx_threshold", 25),
-                "last_close":        round(float(df["Close"].iloc[-2]), 5),
+                "last_close":        round(float(df["Close"].iloc[-1]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
                 "passed":            result.get("passed", 0),
                 "rejection_summary": reasons,
@@ -728,6 +734,9 @@ class PairServer:
                 "best_zone":         result.get("best_zone"),
                 "secondary_zone":    result.get("secondary_zone"),
                 "breakout_candle":   result.get("breakout_candle"),
+                "breakout_dir":      result.get("breakout_dir"),        # ← add this
+                "breakout_body":     result.get("breakout_body"),       # ← add this
+                "impulse_ratio":     result.get("impulse_ratio"),       # ← add this
                 "candles":           result.get("candles", []),
             })
         except Exception as e:
