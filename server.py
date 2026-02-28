@@ -695,8 +695,7 @@ class PairServer:
             interval = request.args.get("interval", "1m")
             full_df  = _provider_get_df(self.ticker, interval, self.period)
             full_df  = full_df.dropna()
-            full_df  = full_df.iloc[:-1].copy()  # ← strip still-forming candle, same as _debug_data
-
+            
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
 
