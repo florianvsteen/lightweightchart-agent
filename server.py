@@ -615,6 +615,29 @@ class PairServer:
 
     def _debug(self):
         from config import PAIRS
+
+
+def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, tolerance=0.0002):
+    """
+    Same logic as _count_touchpoints but returns list of (index, side) tuples
+    for each counted alternating touch, so the frontend can mark them on the chart.
+    """
+    box_height = box_top - box_bottom
+    if box_height <= 0:
+        return []
+    tol = box_height * tolerance
+    last_side = None
+    touches = []
+    for i in range(len(body_highs)):
+        touched_top    = body_highs[i] >= box_top    - tol
+        touched_bottom = body_lows[i]  <= box_bottom + tol
+        if touched_top and last_side != 'top':
+            last_side = 'top'
+            touches.append((i, 'top'))
+        elif touched_bottom and last_side != 'bottom':
+            last_side = 'bottom'
+            touches.append((i, 'bottom'))
+    return touches
         tz = os.environ.get("TZ", "Europe/Brussels")
         # Use proxy prefix so links work behind a reverse proxy.
         # If a PROXY_PREFIX env var is set (e.g. "/proxy"), pair links become
@@ -718,6 +741,11 @@ class PairServer:
                 b_highs   = np.maximum(opens, closes)
                 b_lows    = np.minimum(opens, closes)
                 touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
+                touch_pts  = _get_touchpoint_indices(b_highs, b_lows, h_max, l_min)
+                touch_ts   = [
+                    {"time": int(df.index[i + tidx].timestamp()), "side": side}
+                    for tidx, side in touch_pts
+                ]
 
                 reject = None
                 if slope >= slope_limit:
@@ -742,6 +770,7 @@ class PairServer:
                     "adx_limit":   adx_threshold,
                     "is_active":   is_active,
                     "touchpoints": touches,
+                    "touch_ts":    touch_ts,
                     "min_touchpoints": min_touchpoints,
                     "reject":      reject,
                     "pass":        reject is None,
@@ -885,6 +914,11 @@ class PairServer:
                 b_highs   = np.maximum(opens, closes)
                 b_lows    = np.minimum(opens, closes)
                 touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
+                touch_pts  = _get_touchpoint_indices(b_highs, b_lows, h_max, l_min)
+                touch_ts   = [
+                    {"time": int(df.index[i + tidx].timestamp()), "side": side}
+                    for tidx, side in touch_pts
+                ]
 
                 is_active  = (last_body_low >= l_min) and (last_body_high <= h_max)
                 broke_up   = last_body_high > h_max
@@ -925,6 +959,7 @@ class PairServer:
                     "impulse_ratio": impulse_ratio,
                     "is_confirmed":  is_confirmed,
                     "touchpoints":   touches,
+                    "touch_ts":      touch_ts,
                     "min_touchpoints": min_touchpoints,
                     "reject":        reject,
                     "pass":          reject is None,
