@@ -641,6 +641,7 @@ async function loadLiveData() {
   try {
     const res  = await fetch(BASE_URL + '/debug/data?interval=' + currentTF);
     liveData   = await res.json();
+    console.log('candles[0]:', liveData.candles[0]?.time, 'candles[1]:', liveData.candles[1]?.time);
     if (!liveData.candles || liveData.candles.length === 0) {
       document.getElementById('aggressor-card').innerHTML =
         '<div class="aggressor-card no-zone"><div class="aggressor-verdict muted">No data</div>' +
