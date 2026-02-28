@@ -647,7 +647,7 @@ async function loadLiveData() {
         '<div class="aggressor-ohlc">' + (liveData.error || 'No candle data available') + '</div></div>';
       return;
     }
-    renderChart(liveData.candles, true);
+    renderChart(liveData.candles);
     renderAccumPanel(liveData, false);
     updateTopbarAccum(liveData, false);
     applyLiveOverlays(liveData);
@@ -679,6 +679,7 @@ function drawAggressorMarker(bo, isConfirmed) {
   const src = liveData?.candles;
   const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
   drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, col, 0.18);
+  drawVLine(bo.time, col);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -709,7 +710,7 @@ function enterReplayMode() {
 
   _updateScrubLabel();
   // Show all candles; clear overlays; reset panel to prompt user
-  renderChart(liveData.candles, true);
+  renderChart(liveData.candles);
   clearOverlays();
   _showReplayPrompt();
 }
@@ -735,7 +736,7 @@ function exitReplayMode() {
   document.getElementById('replay-banner-info').textContent = 'seeking…';
 
   if (liveData) {
-    renderChart(liveData.candles, true);
+    renderChart(liveData.candles);
     renderAccumPanel(liveData, false);
     updateTopbarAccum(liveData, false);
     applyLiveOverlays(liveData);
@@ -821,14 +822,10 @@ async function runDetector() {
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
   try {
-    // Pass idx = replayIdx - 1 (0-based last visible candle index)
-    // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
-    // so that df[-1] IS the aggressor candidate.
-    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + (replayIdx - 1) + '&interval=' + currentTF);
+    // Pass idx = replayIdx (count of visible candles, 1-based).
+    // Backend does full_df.iloc[:idx] → df[-1] IS the last visible candle = aggressor candidate.
+    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
     const data = await res.json();
-    console.log('replay response:', data);  // ← here
-    console.log('breakout_candle time:', data.breakout_candle?.time, '→', new Date(data.breakout_candle?.time * 1000).toISOString());
-    console.log('last candle time:', liveData.candles[replayIdx-1]?.time, '→', new Date(liveData.candles[replayIdx-1]?.time * 1000).toISOString());
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
     renderAccumPanel(data, true);
@@ -1266,7 +1263,7 @@ function renderBias(tf) {
     document.getElementById('sd-content').style.display = 'none';
     return;
   }
-  renderChart(candles);
+  renderChart(candles, true);
   clearOverlays();
   const biasCandle = candles.find(c => c.bias_candle);
   if (biasCandle) {
