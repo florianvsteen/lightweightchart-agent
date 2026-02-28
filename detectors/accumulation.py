@@ -278,8 +278,18 @@ def detect(
         # If broke out AND impulsive              → status = "confirmed"
         # Otherwise                               → status = "looking"
 
-        breakout_idx   = len(df) - 2          # last fully closed candle
-        last_accum_idx = len(df) - 3          # windows end here (inclusive)
+        # 1. Handle Replay Slicing (The "Fake Present")
+        # If end_idx is passed from the scrubber, we cut off the future.
+        if end_idx is not None:
+            df = df.iloc[:int(end_idx) + 1].copy()
+            # In Replay, the last visible candle IS the breakout candidate
+            breakout_idx   = len(df) - 1 
+            last_accum_idx = len(df) - 2
+        else:
+            # In Live Mode, df[-1] is still forming. 
+            # We use df[-2] as the last fully closed breakout candidate.
+            breakout_idx   = len(df) - 2
+            last_accum_idx = len(df) - 3
         scan_start     = max(0, len(df) - lookback)
 
         # Breakout candle body
