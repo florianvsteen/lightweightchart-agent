@@ -679,6 +679,7 @@ function drawAggressorMarker(bo, isConfirmed) {
   const src = liveData?.candles;
   const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
   drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, col, 0.18);
+  drawVLine(bo.time, col);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
