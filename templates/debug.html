@@ -639,9 +639,14 @@ async function loadLiveData() {
 }
 
 let replayFetchCtrl = null;
+let replayFetchPending = false;
 async function fetchReplay(idx) {
-  if (replayFetchCtrl) replayFetchCtrl.abort();
+  // Only abort if a fetch is genuinely still in flight.
+  // Aborting a completed controller has no effect, but resetting it here
+  // would cause the new fetch's signal to be pre-aborted on some runtimes.
+  if (replayFetchCtrl && replayFetchPending) replayFetchCtrl.abort();
   replayFetchCtrl = new AbortController();
+  replayFetchPending = true;
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
   try {
@@ -662,7 +667,10 @@ async function fetchReplay(idx) {
     } else drawWindowOverlay(null, replayData);
   } catch(e) {
     if (e.name !== 'AbortError') console.error('Replay fetch:', e);
-  } finally { btn.textContent = '▶ Run Detector'; btn.disabled = false; }
+  } finally {
+    replayFetchPending = false;
+    btn.textContent = '▶ Run Detector'; btn.disabled = false;
+  }
 }
 
 let _replayDisplayedCount = 0;
