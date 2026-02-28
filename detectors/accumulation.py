@@ -80,7 +80,7 @@ def _count_touchpoints(
     lows: np.ndarray,
     box_top: float,
     box_bottom: float,
-    tolerance: float = 0.0002,
+    tolerance: float = 0.1,
 ) -> int:
     """
     Count alternating wick touches on the box top and bottom.
@@ -103,7 +103,7 @@ def _count_touchpoints(
     return count
 
 
-def _get_touchpoint_indices(highs, lows, box_top, box_bottom, tolerance=0.0002):
+def _get_touchpoint_indices(highs, lows, box_top, box_bottom, tolerance=0.1):
     """
     Same logic as _count_touchpoints but returns [(candle_index, side), ...]
     so callers can map touches back to specific candle timestamps.
@@ -288,9 +288,9 @@ def detect(
             if avg_p == 0:
                 continue
 
-            # Box boundaries: wick highs/lows across the window
-            h_max = float(highs.max())
-            l_min = float(lows.min())
+            # Box boundaries: 95th/5th percentile of wicks to ignore outlier spikes
+            h_max = float(np.percentile(highs, 95))
+            l_min = float(np.percentile(lows, 5))
 
             # Invalid window: any candle whose close escapes the box
             # (excluding df[-2] which is the breakout candle we're evaluating)
