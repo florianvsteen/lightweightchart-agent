@@ -795,6 +795,7 @@ class PairServer:
             import pandas as pd
             from datetime import timezone
             from detectors.accumulation import _slope_pct, _choppiness, _adx, _count_touchpoints
+            from sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
             full_df = _provider_get_df(self.ticker, interval, self.period)
