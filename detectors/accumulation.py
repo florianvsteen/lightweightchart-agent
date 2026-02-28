@@ -314,8 +314,10 @@ def detect(
 
             body_highs = np.maximum(opens, closes)
             body_lows  = np.minimum(opens, closes)
-            h_max = float(highs.max())
-            l_min = float(lows.min())
+            #h_max = float(highs.max())
+            #l_min = float(lows.min())
+            h_max = float(body_highs.max())
+            l_min = float(body_lows.min())
             range_pct = (h_max - l_min) / avg_p
 
             slope   = _slope_pct(closes, avg_p)
