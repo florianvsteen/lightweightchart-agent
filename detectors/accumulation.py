@@ -34,6 +34,14 @@ Touchpoint counting (alternating):
   same side. min_touchpoints is configured per-pair in config.py.
 
 Session hours and weekend halt logic live in sessions.py.
+
+REPLAY MODE NOTE:
+  When called from the debug replay endpoint, the df is pre-sliced so that
+  df[-1] IS the breakout candidate (the last visible candle on the chart).
+  Pass replay=True to activate this behaviour. Do NOT also pass end_idx —
+  that parameter is kept only for backward-compat with any callers that
+  slice externally and pass end_idx; in that case the function ignores the
+  duplicate slice guard.
 """
 
 import numpy as np
@@ -211,7 +219,8 @@ def detect(
     alert_cooldown_minutes: int = 15,
     min_touchpoints: int = 0,
     debug: bool = False,
-    end_idx: int = None,  # <--- ADD THIS HERE
+    end_idx: int = None,   # kept for backward-compat; prefer replay=True
+    replay: bool = False,  # NEW: set True when df is pre-sliced to the replay position
 ) -> dict | None:
     """
     Args:
@@ -219,19 +228,20 @@ def detect(
         min_candles:        Minimum window size for valid accumulation. Default 20.
         adx_threshold:      Maximum ADX value allowed (default 25 = no trend).
         threshold_pct:      Slope scaling factor per instrument.
-        valid_sessions:         List of session names in which detection is active
-                                (e.g. ["london", "new_york"]). None = all sessions.
-        market_timing:          Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
-        always_open:            Deprecated. Use market_timing=CRYPTO instead.
+        valid_sessions:     List of session names in which detection is active
+                            (e.g. ["london", "new_york"]). None = all sessions.
+        market_timing:      Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
+        always_open:        Deprecated. Use market_timing=CRYPTO instead.
         alert_cooldown_minutes: Accepted for forward-compat; enforced by server, not here.
-        min_touchpoints:        Minimum number of alternating body touches required.
-                                Counted as: top → bottom → top → bottom...
-                                Each touch on the opposite wall increments the count.
-                                Repeated touches on the same wall are ignored until
-                                the opposite wall is tagged.
-                                0 = disabled (default). Configured per-pair in config.py.
-                                Example: 4 requires at least 2 top touches and 2 bottom
-                                touches in alternating order.
+        min_touchpoints:    Minimum number of alternating body touches required.
+        replay:             When True, treat df[-1] as the breakout candidate
+                            (the df has already been sliced to the replay position).
+                            When False (default / live mode), df[-1] is still forming
+                            and df[-2] is used as the breakout candidate.
+        end_idx:            Deprecated alternative to replay=True. If provided and
+                            replay is False, the df will be sliced here for
+                            backward-compat. Prefer passing a pre-sliced df with
+                            replay=True instead.
     """
     try:
         if is_weekend_halt(market_timing):
@@ -248,11 +258,12 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-        if end_idx is not None:
-            # We treat 'end_idx' as the 'current' candle on the chart.
-            # We slice the dataframe so everything after this index 'doesn't exist'.
+        # ── Backward-compat: end_idx slice (only when replay flag not set) ──
+        # When replay=True the caller has already sliced df correctly.
+        # end_idx is kept only so old callers don't break.
+        if end_idx is not None and not replay:
             df = df.iloc[:int(end_idx) + 1].copy()
-          
+
         session = get_current_session(market_timing)
         if session is None:
             return None
@@ -264,33 +275,28 @@ def detect(
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
-        # Candle layout (newest → oldest):
-        #   df[-1]  forming candle          — never touched
-        #   df[-2]  breakout/impulse candle — last fully closed candle
-        #   df[-3…] accumulation window     — windows end at df[-2] exclusive
+        # ── Candle layout ─────────────────────────────────────────────
         #
-        # A confirmed accumulation requires:
-        #   1. A valid sideways window (slope/chop/adx checks pass)
-        #   2. df[-2] body is OUTSIDE the box (broke up or down)
-        #   3. df[-2] body range > avg body range of candles inside the window (impulsive)
+        # LIVE MODE (replay=False):
+        #   df[-1]  → still-forming candle  (never touched)
+        #   df[-2]  → breakout candidate    (last fully closed candle)
+        #   df[-3…] → accumulation window
         #
-        # If the last candle is still inside the box → status = "active"
-        # If broke out AND impulsive              → status = "confirmed"
-        # Otherwise                               → status = "looking"
+        # REPLAY MODE (replay=True):
+        #   df is pre-sliced so df[-1] IS the last visible candle on the chart.
+        #   That candle is the breakout candidate — there is no "still forming"
+        #   candle to skip.
+        #   df[-1]  → breakout candidate    (last visible candle)
+        #   df[-2…] → accumulation window
 
-        # 1. Handle Replay Slicing (The "Fake Present")
-        # If end_idx is passed from the scrubber, we cut off the future.
-        if end_idx is not None:
-            df = df.iloc[:int(end_idx) + 1].copy()
-            # In Replay, the last visible candle IS the breakout candidate
-            breakout_idx   = len(df) - 1 
+        if replay:
+            breakout_idx   = len(df) - 1
             last_accum_idx = len(df) - 2
         else:
-            # In Live Mode, df[-1] is still forming. 
-            # We use df[-2] as the last fully closed breakout candidate.
             breakout_idx   = len(df) - 2
             last_accum_idx = len(df) - 3
-        scan_start     = max(0, len(df) - lookback)
+
+        scan_start = max(0, len(df) - lookback)
 
         # Breakout candle body
         bo_open_raw  = float(df['Open'].iloc[breakout_idx])
@@ -330,8 +336,6 @@ def detect(
 
             body_highs = np.maximum(opens, closes)
             body_lows  = np.minimum(opens, closes)
-            #h_max = float(highs.max())
-            #l_min = float(lows.min())
             h_max = float(body_highs.max())
             l_min = float(body_lows.min())
             range_pct = (h_max - l_min) / avg_p
