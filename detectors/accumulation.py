@@ -433,6 +433,28 @@ def detect(
             )
             return low_adx + rest
 
+        # ── Annotate each passing debug window with breakout status ──────────
+        # This lets the window list show "↑ broke / ✓ confirmed" per window,
+        # not just for the single best candidate.
+        if debug and debug_windows is not None:
+            for dw in debug_windows:
+                if not dw.get("pass"):
+                    continue
+                dw_top    = dw["top"]
+                dw_bottom = dw["bottom"]
+                dw_broke_up   = last_body_high > dw_top
+                dw_broke_down = last_body_low  < dw_bottom
+                dw_broke_out  = dw_broke_up or dw_broke_down
+                dw_avg_body   = dw.get("avg_body", 0)
+                dw_confirmed  = dw_broke_out and (bo_body_size > dw_avg_body)
+                dw["broke_out"]      = dw_broke_out
+                dw["broke_up"]       = dw_broke_up
+                dw["is_confirmed"]   = dw_confirmed
+                dw["impulse_ratio"]  = round(bo_body_size / dw_avg_body, 2) if dw_avg_body > 0 else None
+                # is_active: breakout candle body is still inside this window's box
+                if not dw_broke_out:
+                    dw["is_active"] = True
+
         def _with_debug(result):
             if debug and debug_windows is not None:
                 result["windows"]         = debug_windows
