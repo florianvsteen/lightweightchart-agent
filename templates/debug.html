@@ -478,23 +478,41 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
     return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
   };
-  const s = shiftTime(startTs), e = shiftTime(endTs);
+
+  // Derive candle interval from live/replay data so the fill bars align exactly
+  // with the chart's candle slots. Falls back to 60s for 1-minute bars.
+  const _candleData = (liveData || replayData)?.candles;
+  const intervalSecs = (_candleData?.length > 1)
+    ? (_candleData[1].time - _candleData[0].time)
+    : 60;
+
+  const s = shiftTime(startTs);
+  const e = shiftTime(endTs);
+
   const lOpts = { lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false };
+
+  // Top & bottom border lines.
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
-  const fl = chart.addBaselineSeries({
-    baseValue: { type: 'price', price: bottom },
-    topFillColor1: toRgba(lineColor, fillAlpha), topFillColor2: toRgba(lineColor, fillAlpha),
-    topLineColor: 'rgba(0,0,0,0)',
-    bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: 'rgba(0,0,0,0)',
-    bottomLineColor: 'rgba(0,0,0,0)',
-    lineWidth: 0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+
+  // Fill: histogram series with base=bottom and value=top.
+  // Each bar occupies exactly one candle slot — no bleeding past endTs.
+  const fillColor = toRgba(lineColor, fillAlpha);
+  const fl = chart.addHistogramSeries({
+    base:             bottom,
+    color:            fillColor,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    priceScaleId:     'right',   // share price scale with candles
   });
-  // Add a closing point at e+1 that collapses back to bottom, so the baseline
-  // fill doesn't bleed past the window's end timestamp to the chart's right edge.
-  fl.setData([{ time: s, value: top }, { time: e, value: top }, { time: e + 1, value: bottom }]);
+  const bars = [];
+  for (let t = s; t <= e; t += intervalSecs) {
+    bars.push({ time: t, value: top, color: fillColor });
+  }
+  fl.setData(bars);
+
   overlaySeriesList.push(tl, bl, fl);
 }
 
