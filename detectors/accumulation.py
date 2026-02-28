@@ -265,12 +265,20 @@ def detect(
             df = df.iloc[:int(end_idx) + 1].copy()
 
         session = get_current_session(market_timing)
-        if session is None:
-            return None
 
-        # Gate detection to configured sessions only.
-        if valid_sessions and session not in valid_sessions:
-            return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
+        # Out-of-session handling:
+        # In debug mode we skip the session gate so the page always has data.
+        # In live mode we return a status dict (not None) so callers get a
+        # usable response even between sessions.
+        if not debug:
+            if session is None:
+                return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
+            if valid_sessions and session not in valid_sessions:
+                return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
+
+        # Fallback session label for debug display when between windows.
+        if session is None:
+            session = "out_of_session"
 
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
