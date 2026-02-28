@@ -829,7 +829,7 @@ async function runDetector() {
     // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
     // so that df[-1] IS the aggressor candidate.
     const sendIdx = replayIdx;
-    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + (replayIdx - 1) + '&interval=' + currentTF);
+    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
     const data = await res.json();
     console.log('replay response:', data);  // ← here
     console.log('breakout_candle time:', data.breakout_candle?.time, '→', new Date(data.breakout_candle?.time * 1000).toISOString());
