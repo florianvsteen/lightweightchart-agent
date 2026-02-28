@@ -558,9 +558,14 @@ function drawVLine(ts, color) {
   overlaySeriesList.push(s);
 }
 
-function renderChart(candles) {
+function renderChart(candles, fit) {
+  const prevRange = chart.timeScale().getVisibleLogicalRange();
   candleSeries.setData(candles.map(c => ({...c, time: shiftTime(c.time)})));
-  chart.timeScale().fitContent();
+  if (fit || !prevRange) {
+    chart.timeScale().fitContent();
+  } else {
+    chart.timeScale().setVisibleLogicalRange(prevRange);
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -586,17 +591,17 @@ function switchMode(mode) {
 
   if (mode === 'accum') {
     if (replayMode) exitReplayMode();
-    else if (liveData) { renderChart(liveData.candles); applyLiveOverlays(liveData); updateTopbarAccum(liveData, false); }
+    else if (liveData) { renderChart(liveData.candles, true); applyLiveOverlays(liveData); updateTopbarAccum(liveData, false); }
     else loadLiveData();
   } else if (mode === 'sd') {
     document.getElementById('tag-session').textContent = 'S/D MODE';
     document.getElementById('tag-info').textContent    = currentTF + ' · supply & demand';
     if (currentTF === '1D' || currentTF === '1W') { if (biasData) renderBias(biasData); else loadBias(currentTF); }
-    else { if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); } else loadSD(); }
+    else { if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles, true); renderSD(sdData); } else loadSD(); }
   } else if (mode === 'fvg') {
     document.getElementById('tag-session').textContent = 'FVG MODE';
     document.getElementById('tag-info').textContent    = currentTF + ' · fair value gap';
-    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles); renderFVG(fvgData); }
+    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles, true); renderFVG(fvgData); }
     else loadFVG();
   }
 }
@@ -1232,7 +1237,7 @@ async function loadSD() {
     const res = await fetch(BASE_URL + '/debug/sd?interval=' + currentTF);
     sdData = await res.json();
     if (sdData.error) { document.getElementById('sd-loading').textContent = '✗ ' + sdData.error; return; }
-    if (sdData.candles?.length) renderChart(sdData.candles);
+    if (sdData.candles?.length) renderChart(sdData.candles, true);
     renderSD(sdData);
   } catch(e) { document.getElementById('sd-loading').textContent = '✗ ' + e.message; }
 }
@@ -1261,7 +1266,7 @@ function renderBias(tf) {
     document.getElementById('sd-content').style.display = 'none';
     return;
   }
-  renderChart(candles);
+  renderChart(candles, true);
   clearOverlays();
   const biasCandle = candles.find(c => c.bias_candle);
   if (biasCandle) {
@@ -1386,7 +1391,7 @@ async function loadFVG() {
     const res = await fetch(BASE_URL + '/debug/fvg?interval=' + currentTF);
     fvgData = await res.json();
     if (fvgData.error) { document.getElementById('fvg-loading').textContent = '✗ ' + fvgData.error; return; }
-    if (fvgData.candles?.length) renderChart(fvgData.candles);
+    if (fvgData.candles?.length) renderChart(fvgData.candles, true);
     renderFVG(fvgData);
   } catch(e) { document.getElementById('fvg-loading').textContent = '✗ ' + e.message; }
 }
