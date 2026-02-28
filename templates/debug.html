@@ -354,15 +354,9 @@
 const PAIR_ID  = {{ pair_id | tojson }};
 const TIMEZONE = {{ timezone | tojson }};
 
-// BASE_URL: prefix for all debug fetch calls.
-// When served via /proxy/EURUSD/debug, strip trailing /debug so that
-// fetch(BASE_URL + '/debug/data') resolves to /proxy/EURUSD/debug/data.
-// When accessed directly on the pair's own port, BASE_URL = '' (empty).
 const BASE_URL = window.location.pathname.replace(/\/debug$/, '');
 
 function switchPair(pairId) {
-  // Swap the current pair segment in BASE_URL for the new pairId, then navigate.
-  // Works both via proxy (/proxy/EURUSD → /proxy/GBPUSD) and direct port ('' → '').
   const newBase = BASE_URL.replace(/\/[^/]+$/, '/' + pairId);
   window.location.href = window.location.origin + newBase + '/debug';
 }
@@ -416,13 +410,13 @@ window.addEventListener('resize', () => chart.applyOptions({
 chart.subscribeClick(param => {
   if (!param.time) return;
 
- if (replayMode && liveData && currentMode === 'accum') {
+  if (replayMode && liveData && currentMode === 'accum') {
     const rawTime = param.time - TZ_OFFSET;
     const idx = liveData.candles.findIndex(c => c.time === rawTime);
-    if (idx >= 0) seekTo(idx + 1, false); 
+    if (idx >= 0) seekTo(idx + 1, false);
     return;
   }
- 
+
   if (currentMode === 'sd' && sdData?.candidates) {
     const clickedTs = param.time - TZ_OFFSET;
     const candidates = sdData.candidates;
@@ -480,9 +474,6 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
   };
 
-  // In replay mode the chart time scale only contains liveData.candles.slice(0, replayIdx).
-  // We must only use timestamps from that set — anything outside gets placed in future space.
-  // Clamp endTs and startTs to the last candle actually on the chart.
   const chartCandles = replayMode
     ? liveData.candles.slice(0, replayIdx)
     : (liveData?.candles ?? []);
@@ -501,8 +492,6 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Find the next candle timestamp after endTs that's on the chart,
-  // so the baseline fill can be collapsed exactly at the window boundary.
   const nextCandle = chartCandles.find(c => c.time > endTs);
   const fl = chart.addBaselineSeries({
     ...sharedScale,
@@ -638,53 +627,72 @@ async function loadLiveData() {
   } catch(e) { console.error('loadLiveData:', e); }
 }
 
-let replayFetchCtrl = null;
-let replayFetchPending = false;
+// FIX: Separate manual vs auto-seek fetch paths.
+// Manual (btn-analyze): never aborted, always runs to completion.
+// Auto-seek (from seekTo): debounced 120ms so rapid stepping doesn't
+// hammer the server. Only the latest position gets fetched.
+let _autoSeekTimer = null;
+let _manualFetchInFlight = false;
 
 async function fetchReplay(idx, isManual = false) {
-  if (!isManual && replayFetchCtrl && replayFetchPending) {
-    replayFetchCtrl.abort();
-  }
-
-  let ctrl = null;
-  if (!isManual) {
-    replayFetchCtrl = new AbortController();
-    ctrl = replayFetchCtrl;
-  }
-
-  replayFetchPending = true;
-  const btn = document.getElementById('btn-analyze');
-  btn.textContent = '⏳…'; btn.disabled = true;
-  try {
-    const fetchOpts = ctrl ? { signal: ctrl.signal } : {};
-    const res = await fetch(
-      BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF,
-      fetchOpts
-    );
-    const data = await res.json();
-    if (data.error) return;
-    replayData = data;
-    renderSummary(replayData);
-    renderWindowList(replayData.windows || []);
-    updateTopbarAccum(replayData, true);
-    clearOverlays();
-    if (selectedWindow == null && replayData.best_zone) {
-      drawWindowOverlay(replayData.best_zone, replayData);
-      drawSecondaryZone(replayData.secondary_zone);
-    } else if (selectedWindow != null) {
-      const w = (replayData.windows || []).find(x => x.window === selectedWindow);
-      drawWindowOverlay(w || null, replayData);
-    } else {
-      drawWindowOverlay(null, replayData);
+  if (isManual) {
+    // Manual click: always run, never abort, show spinner
+    _manualFetchInFlight = true;
+    const btn = document.getElementById('btn-analyze');
+    btn.textContent = '⏳…'; btn.disabled = true;
+    try {
+      const res  = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF);
+      const data = await res.json();
+      if (data.error) return;
+      replayData = data;
+      renderSummary(replayData);
+      renderWindowList(replayData.windows || []);
+      updateTopbarAccum(replayData, true);
+      _applyOverlays(replayData);
+    } catch(e) {
+      console.error('Replay fetch (manual):', e);
+    } finally {
+      _manualFetchInFlight = false;
+      btn.textContent = '▶ Run Detector'; btn.disabled = false;
     }
-  } catch(e) {
-    if (e.name !== 'AbortError') console.error('Replay fetch:', e);
-  } finally {
-    replayFetchPending = false;
-    btn.textContent = '▶ Run Detector'; btn.disabled = false;
+    return;
+  }
+
+  // Auto-seek: debounce so rapid stepping only fires once after settling
+  if (_autoSeekTimer) clearTimeout(_autoSeekTimer);
+  _autoSeekTimer = setTimeout(async () => {
+    _autoSeekTimer = null;
+    if (_manualFetchInFlight) return; // manual in progress — skip auto-refresh
+    try {
+      const res  = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF);
+      const data = await res.json();
+      if (data.error) return;
+      replayData = data;
+      renderSummary(replayData);
+      renderWindowList(replayData.windows || []);
+      updateTopbarAccum(replayData, true);
+      _applyOverlays(replayData);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.error('Replay fetch (auto):', e);
+    }
+  }, 120); // 120ms debounce — fast enough for single steps, batches rapid seeking
+}
+
+// FIX: Separate overlay application so it can be called from both paths.
+// Does NOT call clearOverlays() before drawing — clears then immediately redraws.
+function _applyOverlays(data) {
+  clearOverlays();
+  if (selectedWindow == null && data.best_zone) {
+    drawWindowOverlay(data.best_zone, data);
+    drawSecondaryZone(data.secondary_zone);
+  } else if (selectedWindow != null) {
+    const w = (data.windows || []).find(x => x.window === selectedWindow);
+    drawWindowOverlay(w || null, data);
+  } else {
+    drawWindowOverlay(null, data);
   }
 }
- 
+
 let _replayDisplayedCount = 0;
 
 async function seekTo(idx, isStep) {
@@ -715,9 +723,9 @@ async function seekTo(idx, isStep) {
   document.getElementById('scrub-ts').textContent = last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + total;
 
-  // If the detector has been run before, auto-refresh replay data so the
-  // window list and overlays stay in sync with the current chart position.
-  if (replayData) fetchReplay(idx);
+  // FIX: Only auto-fetch if detector has been run at least once.
+  // Don't clear overlays here — fetchReplay will clear+redraw when data arrives.
+  if (replayData) fetchReplay(idx, false);
 }
 
 function renderSummary(d) {
@@ -735,6 +743,8 @@ function renderSummary(d) {
   ).join('');
 
   const bo = d.breakout_candle;
+  // FIX: df[-1] in replay mode, df[-2] in live mode
+  const boLabel = replayMode ? 'df[-1]' : 'df[-2]';
   const bHtml = bo ? (() => {
     const isBull = bo.close > bo.open;
     const bCol   = isBull ? 'var(--pass)' : 'var(--red)';
@@ -748,7 +758,7 @@ function renderSummary(d) {
         : '✗ 0 / ' + passingWindows.length + ' — not impulsive enough';
     const impCol = confirmed.length > 0 ? 'var(--pass)' : 'var(--red)';
     return '<div style="margin:10px 0;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Last Closed Candle — Breakout Check (df[-2])</div>' +
+      '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Last Closed Candle — Breakout Check (' + boLabel + ')</div>' +
       '<div style="background:var(--bg);border:1px solid ' + bCol + ';border-radius:3px;padding:6px 8px;margin-bottom:6px">' +
         '<div style="font-size:10px;color:' + bCol + ';font-weight:700;margin-bottom:3px">' + bDir + '</div>' +
         '<div style="font-size:10px">O ' + fmtPrice(bo.open) + '  C ' + fmtPrice(bo.close) + '  H ' + fmtPrice(bo.high) + '  L ' + fmtPrice(bo.low) + '</div>' +
@@ -878,7 +888,7 @@ function selectWindow(windowSize) {
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:rgba(240,196,90,0.05);border:1px solid rgba(240,196,90,0.2);border-radius:4px">' +
           '<div style="font-size:9px;color:var(--yellow);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">● Zone Active</div>' +
-          '<div style="font-size:10px;color:var(--muted)">Last closed candle (df[-2]) is still inside the box. Waiting for breakout.</div>' +
+          '<div style="font-size:10px;color:var(--muted)">Last closed candle (' + (replayMode?'df[-1]':'df[-2]') + ') is still inside the box. Waiting for breakout.</div>' +
         '</div>';
     } else if (w.broke_out) {
       const dir    = w.broke_up ? '↑ BULLISH BREAKOUT' : '↓ BEARISH BREAKOUT';
@@ -890,7 +900,7 @@ function selectWindow(windowSize) {
         : 'Breakout body (' + fmtPrice(Math.abs(bo ? bo.close - bo.open : 0)) + ') ≤ avg window body (' + fmtPrice(w.avg_body) + ') — not impulsive';
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
-          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (df[-2])</div>' +
+          '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Candle (' + (replayMode?'df[-1]':'df[-2]') + ')</div>' +
           '<div style="font-size:10px;color:' + dirCol + ';font-weight:700;margin-bottom:6px">' + dir + '</div>' +
           '<div style="background:var(--bg);border:1px solid ' + dirCol + ';border-radius:3px;padding:5px 8px;margin-bottom:8px">' +
             '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">O ' + (bo?fmtPrice(bo.open):'—') + '  C ' + (bo?fmtPrice(bo.close):'—') + '  H ' + (bo?fmtPrice(bo.high):'—') + '  L ' + (bo?fmtPrice(bo.low):'—') + '</div>' +
@@ -922,8 +932,6 @@ function drawWindowOverlay(w, data) {
   const fill = w.pass ? 0.06 : 0.04;
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
 
-  // Draw touchpoint markers — small triangles above/below each counted touch.
-  console.log("drawWindowOverlay w.touch_ts:", w?.touch_ts, "length:", w?.touch_ts?.length);
   if (w.touch_ts?.length) {
     const topCol    = 'rgba(90,240,196,0.9)';
     const bottomCol = 'rgba(240,90,126,0.9)';
@@ -937,9 +945,6 @@ function drawWindowOverlay(w, data) {
         size:     1,
       }))
       .sort((a, b) => a.time - b.time);
-    // setMarkers lives on the candleSeries — store them so clearOverlays can wipe them
-    console.log("touch_ts raw:", w.touch_ts);
-    console.log("markers to set:", markers);
     candleSeries.setMarkers(markers);
     overlaySeriesList._touchMarkers = true;
   }
@@ -974,6 +979,8 @@ function enterReplayMode() {
 }
 
 function exitReplayMode() {
+  // FIX: Cancel any pending auto-seek timer when exiting
+  if (_autoSeekTimer) { clearTimeout(_autoSeekTimer); _autoSeekTimer = null; }
   stopPlay(); replayMode = false; replayData = null; selectedWindow = null;
   _replayDisplayedCount = 0;
   document.getElementById('btn-live').classList.add('active');
@@ -1013,12 +1020,29 @@ function stopPlay() {
 document.getElementById('btn-live').addEventListener('click', exitReplayMode);
 document.getElementById('btn-replay').addEventListener('click', () => { if (!replayMode && liveData) enterReplayMode(); });
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
-document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, true); });
-document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
-document.getElementById('btn-analyze').addEventListener('click', () => { if (replayMode) fetchReplay(replayIdx, true); });
+
+// FIX: next/prev buttons disable themselves briefly to prevent double-firing
+document.getElementById('btn-prev').addEventListener('click', () => {
+  stopPlay();
+  const newIdx = replayIdx - 1;
+  if (newIdx >= 18) seekTo(newIdx, true);
+});
+document.getElementById('btn-next').addEventListener('click', () => {
+  stopPlay();
+  const newIdx = replayIdx + 1;
+  if (newIdx <= liveData.candles.length) seekTo(newIdx, true);
+});
+
+document.getElementById('btn-analyze').addEventListener('click', () => {
+  if (replayMode) fetchReplay(replayIdx, true);  // isManual = true
+});
+
 document.getElementById('scrubber').addEventListener('input', function() {
   if (!replayMode) return;
   stopPlay();
+  // FIX: Cancel pending auto-seek when user starts scrubbing — a new one will
+  // be issued at the end of scrubbing via seekTo's fetchReplay call
+  if (_autoSeekTimer) { clearTimeout(_autoSeekTimer); _autoSeekTimer = null; }
   const idx = parseInt(this.value) + 1;
   const slice = liveData.candles.slice(0, idx);
   candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
@@ -1026,8 +1050,11 @@ document.getElementById('scrubber').addEventListener('input', function() {
   document.getElementById('scrub-ts').textContent = last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + liveData.candles.length;
   replayIdx = idx;
-  clearOverlays();
+  _replayDisplayedCount = idx;
+  // FIX: Auto-refresh after scrubbing if detector has been run
+  if (replayData) fetchReplay(idx, false);
 });
+
 document.querySelectorAll('.rtab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
