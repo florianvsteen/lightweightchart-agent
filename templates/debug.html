@@ -640,17 +640,27 @@ async function loadLiveData() {
 
 let replayFetchCtrl = null;
 let replayFetchPending = false;
-async function fetchReplay(idx) {
-  // Only abort if a fetch is genuinely still in flight.
-  // Aborting a completed controller has no effect, but resetting it here
-  // would cause the new fetch's signal to be pre-aborted on some runtimes.
-  if (replayFetchCtrl && replayFetchPending) replayFetchCtrl.abort();
-  replayFetchCtrl = new AbortController();
+
+async function fetchReplay(idx, isManual = false) {
+  if (!isManual && replayFetchCtrl && replayFetchPending) {
+    replayFetchCtrl.abort();
+  }
+
+  let ctrl = null;
+  if (!isManual) {
+    replayFetchCtrl = new AbortController();
+    ctrl = replayFetchCtrl;
+  }
+
   replayFetchPending = true;
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
   try {
-    const res = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF, { signal: replayFetchCtrl.signal });
+    const fetchOpts = ctrl ? { signal: ctrl.signal } : {};
+    const res = await fetch(
+      BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF,
+      fetchOpts
+    );
     const data = await res.json();
     if (data.error) return;
     replayData = data;
@@ -664,7 +674,9 @@ async function fetchReplay(idx) {
     } else if (selectedWindow != null) {
       const w = (replayData.windows || []).find(x => x.window === selectedWindow);
       drawWindowOverlay(w || null, replayData);
-    } else drawWindowOverlay(null, replayData);
+    } else {
+      drawWindowOverlay(null, replayData);
+    }
   } catch(e) {
     if (e.name !== 'AbortError') console.error('Replay fetch:', e);
   } finally {
@@ -672,7 +684,7 @@ async function fetchReplay(idx) {
     btn.textContent = '▶ Run Detector'; btn.disabled = false;
   }
 }
-
+ 
 let _replayDisplayedCount = 0;
 
 async function seekTo(idx, isStep) {
@@ -1003,7 +1015,7 @@ document.getElementById('btn-replay').addEventListener('click', () => { if (!rep
 document.getElementById('btn-play').addEventListener('click', () => { replayTimer ? stopPlay() : startPlay(); });
 document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); seekTo(replayIdx-1, true); });
 document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); seekTo(replayIdx+1, true); });
-document.getElementById('btn-analyze').addEventListener('click', () => { if (replayMode) fetchReplay(replayIdx); });
+document.getElementById('btn-analyze').addEventListener('click', () => { if (replayMode) fetchReplay(replayIdx, true); });
 document.getElementById('scrubber').addEventListener('input', function() {
   if (!replayMode) return;
   stopPlay();
