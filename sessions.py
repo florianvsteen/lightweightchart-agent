@@ -62,18 +62,17 @@ def _ts_minutes(ts: int) -> int:
     return dt.hour * 60 + dt.minute
 
 
-def is_weekend_halt(market_timing: str = FOREX) -> bool:
+def is_weekend_halt(market_timing: str = FOREX, at_time: datetime = None) -> bool:
     """
     Return True if the market is currently in its weekend halt window.
     CRYPTO never halts. FOREX and NYSE halt Fri 23:00 – Sun 22:00 UTC.
+    If at_time is provided, evaluate at that time instead of now.
     """
     if market_timing == CRYPTO:
         return False
-
-    now  = datetime.now(timezone.utc)
+    now  = at_time if at_time is not None else datetime.now(timezone.utc)
     dow  = now.weekday()   # 0=Mon … 6=Sun
     hour = now.hour
-
     if dow == 4 and hour >= 23:   # Friday ≥ 23:00
         return True
     if dow == 5:                   # All of Saturday
