@@ -80,24 +80,21 @@ def _count_touchpoints(
     lows: np.ndarray,
     box_top: float,
     box_bottom: float,
-    zone: float = 0.2,
 ) -> int:
     """
-    Count alternating wick touches on box boundaries.
-    A wick in the top `zone` fraction of the box counts as a top touch.
-    A wick in the bottom `zone` fraction counts as a bottom touch.
+    Count alternating wick touches on exact box boundaries.
     Consecutive touches on the same side are ignored (must alternate top/bottom).
     """
     if box_top <= box_bottom:
         return 0
-    box_height = box_top - box_bottom
-    top_threshold = box_top - box_height * zone
-    bot_threshold = box_bottom + box_height * zone
+
     last_side = None
     count = 0
+
     for i in range(len(highs)):
-        touched_top = highs[i] >= top_threshold
-        touched_bot = lows[i]  <= bot_threshold
+        touched_top = highs[i] >= box_top
+        touched_bot = lows[i] <= box_bottom
+
         if touched_top and touched_bot:
             if last_side != 'top':
                 last_side = 'top'
@@ -111,24 +108,30 @@ def _count_touchpoints(
         elif touched_bot and last_side != 'bottom':
             last_side = 'bottom'
             count += 1
+            
     return count
 
 
-def _get_touchpoint_indices(highs, lows, box_top, box_bottom, zone=0.2):
+def _get_touchpoint_indices(
+    highs: np.ndarray, 
+    lows: np.ndarray, 
+    box_top: float, 
+    box_bottom: float
+) -> list:
     """
     Same logic as _count_touchpoints but returns [(candle_index, side), ...]
     so callers can map touches back to specific candle timestamps.
     """
     if box_top <= box_bottom:
         return []
-    box_height = box_top - box_bottom
-    top_threshold = box_top - box_height * zone
-    bot_threshold = box_bottom + box_height * zone
+
     last_side = None
     touches = []
+
     for i in range(len(highs)):
-        touched_top = highs[i] >= top_threshold
-        touched_bot = lows[i]  <= bot_threshold
+        touched_top = highs[i] >= box_top
+        touched_bot = lows[i] <= box_bottom
+
         if touched_top and touched_bot:
             if last_side != 'top':
                 last_side = 'top'
@@ -142,6 +145,7 @@ def _get_touchpoint_indices(highs, lows, box_top, box_bottom, zone=0.2):
         elif touched_bot and last_side != 'bottom':
             last_side = 'bottom'
             touches.append((i, 'bottom'))
+            
     return touches
 
 
