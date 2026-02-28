@@ -627,55 +627,28 @@ async function loadLiveData() {
   } catch(e) { console.error('loadLiveData:', e); }
 }
 
-// FIX: Separate manual vs auto-seek fetch paths.
-// Manual (btn-analyze): never aborted, always runs to completion.
-// Auto-seek (from seekTo): debounced 120ms so rapid stepping doesn't
-// hammer the server. Only the latest position gets fetched.
-let _autoSeekTimer = null;
+// Detector runs only on manual "▶ Run Detector" click.
 let _manualFetchInFlight = false;
 
-async function fetchReplay(idx, isManual = false) {
-  if (isManual) {
-    // Manual click: always run, never abort, show spinner
-    _manualFetchInFlight = true;
-    const btn = document.getElementById('btn-analyze');
-    btn.textContent = '⏳…'; btn.disabled = true;
-    try {
-      const res  = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF);
-      const data = await res.json();
-      if (data.error) return;
-      replayData = data;
-      renderSummary(replayData);
-      renderWindowList(replayData.windows || []);
-      updateTopbarAccum(replayData, true);
-      _applyOverlays(replayData);
-    } catch(e) {
-      console.error('Replay fetch (manual):', e);
-    } finally {
-      _manualFetchInFlight = false;
-      btn.textContent = '▶ Run Detector'; btn.disabled = false;
-    }
-    return;
+async function fetchReplay(idx) {
+  _manualFetchInFlight = true;
+  const btn = document.getElementById('btn-analyze');
+  btn.textContent = '⏳…'; btn.disabled = true;
+  try {
+    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF);
+    const data = await res.json();
+    if (data.error) return;
+    replayData = data;
+    renderSummary(replayData);
+    renderWindowList(replayData.windows || []);
+    updateTopbarAccum(replayData, true);
+    _applyOverlays(replayData);
+  } catch(e) {
+    console.error('Replay fetch:', e);
+  } finally {
+    _manualFetchInFlight = false;
+    btn.textContent = '▶ Run Detector'; btn.disabled = false;
   }
-
-  // Auto-seek: debounce so rapid stepping only fires once after settling
-  if (_autoSeekTimer) clearTimeout(_autoSeekTimer);
-  _autoSeekTimer = setTimeout(async () => {
-    _autoSeekTimer = null;
-    if (_manualFetchInFlight) return; // manual in progress — skip auto-refresh
-    try {
-      const res  = await fetch(BASE_URL + '/debug/replay?idx=' + idx + '&interval=' + currentTF);
-      const data = await res.json();
-      if (data.error) return;
-      replayData = data;
-      renderSummary(replayData);
-      renderWindowList(replayData.windows || []);
-      updateTopbarAccum(replayData, true);
-      _applyOverlays(replayData);
-    } catch(e) {
-      if (e.name !== 'AbortError') console.error('Replay fetch (auto):', e);
-    }
-  }, 120); // 120ms debounce — fast enough for single steps, batches rapid seeking
 }
 
 // FIX: Separate overlay application so it can be called from both paths.
@@ -723,9 +696,8 @@ async function seekTo(idx, isStep) {
   document.getElementById('scrub-ts').textContent = last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + total;
 
-  // FIX: Only auto-fetch if detector has been run at least once.
-  // Don't clear overlays here — fetchReplay will clear+redraw when data arrives.
-  if (replayData) fetchReplay(idx, false);
+  // Detector runs ONLY when the user clicks "▶ Run Detector" manually.
+  // Stepping/scrubbing never auto-triggers it.
 }
 
 function renderSummary(d) {
@@ -979,8 +951,6 @@ function enterReplayMode() {
 }
 
 function exitReplayMode() {
-  // FIX: Cancel any pending auto-seek timer when exiting
-  if (_autoSeekTimer) { clearTimeout(_autoSeekTimer); _autoSeekTimer = null; }
   stopPlay(); replayMode = false; replayData = null; selectedWindow = null;
   _replayDisplayedCount = 0;
   document.getElementById('btn-live').classList.add('active');
@@ -1034,7 +1004,7 @@ document.getElementById('btn-next').addEventListener('click', () => {
 });
 
 document.getElementById('btn-analyze').addEventListener('click', () => {
-  if (replayMode) fetchReplay(replayIdx, true);  // isManual = true
+  if (replayMode) fetchReplay(replayIdx);
 });
 
 document.getElementById('scrubber').addEventListener('input', function() {
@@ -1042,7 +1012,6 @@ document.getElementById('scrubber').addEventListener('input', function() {
   stopPlay();
   // FIX: Cancel pending auto-seek when user starts scrubbing — a new one will
   // be issued at the end of scrubbing via seekTo's fetchReplay call
-  if (_autoSeekTimer) { clearTimeout(_autoSeekTimer); _autoSeekTimer = null; }
   const idx = parseInt(this.value) + 1;
   const slice = liveData.candles.slice(0, idx);
   candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
@@ -1051,8 +1020,6 @@ document.getElementById('scrubber').addEventListener('input', function() {
   document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + liveData.candles.length;
   replayIdx = idx;
   _replayDisplayedCount = idx;
-  // FIX: Auto-refresh after scrubbing if detector has been run
-  if (replayData) fetchReplay(idx, false);
 });
 
 document.querySelectorAll('.rtab').forEach(tab => {
