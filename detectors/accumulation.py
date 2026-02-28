@@ -336,6 +336,8 @@ def detect(
             lows   = window['Low'].values.flatten().astype(float)
 
             if len(closes) < window_size:
+                if debug:
+                    debug_windows.append({"window": window_size, "skip": f"slice too short ({len(closes)} < {window_size})"})
                 continue
 
             avg_p = closes.mean()
@@ -471,6 +473,17 @@ def detect(
                      "close": round(float(r["Close"]), 5)}
                     for idx, r in df.iterrows()
                 ]
+                # Diagnostic: always include scan parameters so we can debug empty results
+                result["_scan_info"] = {
+                    "df_len":          len(df),
+                    "breakout_idx":    breakout_idx,
+                    "last_accum_idx":  last_accum_idx,
+                    "scan_start":      scan_start,
+                    "lookback":        lookback,
+                    "min_candles":     min_candles,
+                    "window_range":    f"range({min_candles}, {lookback+1})",
+                    "debug_windows_count": len(debug_windows),
+                }
             return result
 
         # Primary pool: "found" zones first, then "potential"
