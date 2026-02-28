@@ -416,6 +416,13 @@ window.addEventListener('resize', () => chart.applyOptions({
 chart.subscribeClick(param => {
   if (!param.time) return;
 
+ if (replayMode && liveData && currentMode === 'accum') {
+    const rawTime = param.time - TZ_OFFSET;
+    const idx = liveData.candles.findIndex(c => c.time === rawTime);
+    if (idx >= 0) seekTo(idx + 1, false); 
+    return;
+  }
+ 
   if (currentMode === 'sd' && sdData?.candidates) {
     const clickedTs = param.time - TZ_OFFSET;
     const candidates = sdData.candidates;
