@@ -292,14 +292,6 @@ def detect(
             h_max = float(np.percentile(highs, 95))
             l_min = float(np.percentile(lows, 5))
 
-            # Invalid window: any candle whose close escapes the box
-            # (excluding df[-2] which is the breakout candle we're evaluating)
-            closes_in_box = np.all((closes >= l_min) & (closes <= h_max))
-            if not closes_in_box:
-                reject_reason = "close outside box"
-            else:
-                reject_reason = None
-
             body_highs = np.maximum(opens, closes)
             body_lows  = np.minimum(opens, closes)
 
@@ -326,16 +318,15 @@ def detect(
             ]
 
             # Determine rejection reason
-            reject = reject_reason
-            if reject is None:
-                if slope >= slope_limit:
-                    reject = f"slope {round(slope,8)} >= limit {round(slope_limit,8)}"
-                elif adx_val is not None and adx_val > adx_threshold:
-                    reject = f"adx {round(adx_val,2)} > {adx_threshold}"
-                elif chop < 0.36:
-                    reject = f"chop {round(chop,4)} < 0.36"
-                elif min_touchpoints > 0 and touchpoints < min_touchpoints:
-                    reject = f"touchpoints {touchpoints} < {min_touchpoints}"
+            reject = None
+            if slope >= slope_limit:
+                reject = f"slope {round(slope,8)} >= limit {round(slope_limit,8)}"
+            elif adx_val is not None and adx_val > adx_threshold:
+                reject = f"adx {round(adx_val,2)} > {adx_threshold}"
+            elif chop < 0.36:
+                reject = f"chop {round(chop,4)} < 0.36"
+            elif min_touchpoints > 0 and touchpoints < min_touchpoints:
+                reject = f"touchpoints {touchpoints} < {min_touchpoints}"
 
             if debug:
                 debug_windows.append({
@@ -360,7 +351,6 @@ def detect(
                     "is_impulsive":    is_impulsive,
                     "impulse_ratio":   impulse_ratio,
                     "is_confirmed":    is_confirmed,
-                    "close_outside_box": not closes_in_box,
                     "reject":          reject,
                     "pass":            reject is None,
                 })
