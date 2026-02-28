@@ -647,7 +647,7 @@ class PairServer:
 
             if df is None or len(df) < 5:
                 return jsonify({
-                    "pair": self.pair_id, "session": None, "effective_range": None,
+                    "pair": self.pair_id, "session": None,
                     "adx_threshold": None, "last_close": None,
                     "windows_checked": 0, "passed": 0,
                     "rejection_summary": {}, "windows": [], "best_zone": None,
@@ -802,7 +802,7 @@ class PairServer:
 
             if full_df is None or len(full_df) < 5:
                 return jsonify({
-                    "idx": 0, "total": 0, "session": None, "effective_range": None,
+                    "idx": 0, "total": 0, "session": None,
                     "adx_threshold": None, "last_close": None,
                     "windows_checked": 0, "passed": 0,
                     "rejection_summary": {}, "windows": [], "best_zone": None,
@@ -839,7 +839,6 @@ class PairServer:
             hour = last_ts.hour
 
             session = get_current_session()
-
             breakout_idx   = len(df) - 2
             last_accum_idx = len(df) - 3
             scan_start     = max(0, len(df) - lookback)
@@ -956,7 +955,6 @@ class PairServer:
                 "idx":               idx,
                 "total":             total,
                 "session":           session,
-                "effective_range":   effective_range_pct,
                 "adx_threshold":     adx_threshold,
                 "last_close":        round(float(df['Close'].iloc[-2]), 5),
                 "windows_checked":   len(windows),
