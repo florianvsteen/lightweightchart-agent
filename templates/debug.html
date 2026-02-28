@@ -917,6 +917,8 @@ function drawWindowOverlay(w, data) {
       }))
       .sort((a, b) => a.time - b.time);
     // setMarkers lives on the candleSeries — store them so clearOverlays can wipe them
+    console.log("touch_ts raw:", w.touch_ts);
+    console.log("markers to set:", markers);
     candleSeries.setMarkers(markers);
     overlaySeriesList._touchMarkers = true;
   }
