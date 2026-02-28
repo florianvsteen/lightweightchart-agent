@@ -800,7 +800,6 @@ function selectWindow(windowSize) {
   document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
   const rows = [
-    { key:'Range %',     val:(w.range_pct*100).toFixed(4)+'%', limit: w.range_limit?(w.range_limit*100).toFixed(4)+'% max':'no limit', pass:!w.range_limit||w.range_pct<=w.range_limit, ratio:w.range_limit?w.range_pct/w.range_limit:0.5 },
     { key:'Slope',       val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,           ratio:w.slope/w.slope_limit },
     { key:'Chop',        val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                    ratio:w.chop/0.44 },
     { key:'ADX',         val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit, ratio:w.adx!=null?w.adx/w.adx_limit:0 },
