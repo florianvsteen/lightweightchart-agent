@@ -1,11 +1,6 @@
 """
 config.py — Central configuration for all trading pairs.
 
-Per-session accumulation thresholds (max_range_pct):
-  Asian session   — quieter, tighter ranges expected
-  London session  — moderate volatility
-  New York session — most volatile, widest valid boxes
-
 market_timing options (defined in sessions.py):
   FOREX  — Forex pairs. Sessions: Asian 01-07, London 08-12, NY 13-19 UTC. Weekend halt.
   NYSE   — US equities/indices. Sessions: London 08-12, NYSE 14:30-21 UTC. Weekend halt.
@@ -32,9 +27,6 @@ PAIRS = {
                 "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.001,
-                "london_range_pct":   0.002,
-                "new_york_range_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
                 "min_touchpoints": 5,
@@ -58,9 +50,6 @@ PAIRS = {
                 "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.0008,
-                "london_range_pct":   0.001,
-                "new_york_range_pct": 0.0025,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
                 "min_touchpoints": 5,
@@ -84,9 +73,6 @@ PAIRS = {
                 "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.002,
-                "asian_range_pct":    0.0015,
-                "london_range_pct":   0.002,
-                "new_york_range_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
                 "min_touchpoints": 5,
@@ -180,7 +166,7 @@ PAIRS = {
     "BTCUSD": {
         "yf_ticker": "BTCUSD",
         "mt5_ticker": "BTCUSD",
-        "port": 5000,
+        "port": 5007,
         "label": "BTC/USD",
         "interval": "1m",
         "period": "1d",
@@ -194,14 +180,10 @@ PAIRS = {
                 "min_candles": 20,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
-                "asian_range_pct":    0.001,
-                "london_range_pct":   0.002,
-                "new_york_range_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
                 "min_touchpoints": 5,
             },
         },
     },
-  
 }
