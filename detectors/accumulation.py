@@ -90,10 +90,19 @@ def _count_touchpoints(
     last_side = None
     count = 0
     for i in range(len(highs)):
-        if highs[i] >= box_top and last_side != 'top':
+        touched_top = highs[i] >= box_top
+        touched_bot = lows[i]  <= box_bottom
+        if touched_top and touched_bot:
+            if last_side != 'top':
+                last_side = 'top'
+                count += 1
+            elif last_side != 'bottom':
+                last_side = 'bottom'
+                count += 1
+        elif touched_top and last_side != 'top':
             last_side = 'top'
             count += 1
-        elif lows[i] <= box_bottom and last_side != 'bottom':
+        elif touched_bot and last_side != 'bottom':
             last_side = 'bottom'
             count += 1
     return count
@@ -109,10 +118,19 @@ def _get_touchpoint_indices(highs, lows, box_top, box_bottom):
     last_side = None
     touches = []
     for i in range(len(highs)):
-        if highs[i] >= box_top and last_side != 'top':
+        touched_top = highs[i] >= box_top
+        touched_bot = lows[i]  <= box_bottom
+        if touched_top and touched_bot:
+            if last_side != 'top':
+                last_side = 'top'
+                touches.append((i, 'top'))
+            elif last_side != 'bottom':
+                last_side = 'bottom'
+                touches.append((i, 'bottom'))
+        elif touched_top and last_side != 'top':
             last_side = 'top'
             touches.append((i, 'top'))
-        elif lows[i] <= box_bottom and last_side != 'bottom':
+        elif touched_bot and last_side != 'bottom':
             last_side = 'bottom'
             touches.append((i, 'bottom'))
     return touches
