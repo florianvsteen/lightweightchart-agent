@@ -211,6 +211,7 @@ def detect(
     alert_cooldown_minutes: int = 15,
     min_touchpoints: int = 0,
     debug: bool = False,
+    end_idx: int = None,  # <--- ADD THIS HERE
 ) -> dict | None:
     """
     Args:
@@ -247,6 +248,11 @@ def detect(
             df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
         df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
+        if end_idx is not None:
+            # We treat 'end_idx' as the 'current' candle on the chart.
+            # We slice the dataframe so everything after this index 'doesn't exist'.
+            df = df.iloc[:int(end_idx) + 1].copy()
+          
         session = get_current_session(market_timing)
         if session is None:
             return None
