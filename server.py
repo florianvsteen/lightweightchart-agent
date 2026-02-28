@@ -703,7 +703,7 @@ class PairServer:
             idx   = max(min_candles + 3, min(idx, total))
             df    = full_df.iloc[:idx].copy()
 
-            result = accum_detect(df, debug=True, market_timing=self.market_timing, **params)
+            result = accum_detect(df, debug=True, replay=True, market_timing=self.market_timing, **params)
             if not result:
                 result = {"status": "looking", "windows": [], "best_zone": None,
                           "secondary_zone": None, "candles": []}
