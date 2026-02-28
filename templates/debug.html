@@ -478,61 +478,38 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     const m = color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
     return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
   };
-
-  const s = shiftTime(startTs);
-  const e = shiftTime(endTs);
-
+  const s = shiftTime(startTs), e = shiftTime(endTs);
   const lOpts = { lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false };
-
-  // Top & bottom border lines — always correct.
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Fill: build data points using ONLY timestamps that already exist in the
-  // visible candle series. Generating synthetic timestamps causes Lightweight
-  // Charts to insert new bars on the time scale, pushing the fill into the future.
-  // By filtering the actual candle array we guarantee every point lands on an
-  // existing slot with no side-effects on the time axis.
-  const fillColor = toRgba(lineColor, fillAlpha);
+  // Fill: built only from timestamps already visible on the chart.
+  // In replay mode the chart shows liveData.candles.slice(0, replayIdx) —
+  // that is exactly what seekTo rendered, regardless of replayData.candles.
+  // Using synthetic timestamps (or replayData.candles from a different idx)
+  // causes LWC to insert new time-scale slots and push the box into the future.
+  const visibleCandles = (replayMode && liveData?.candles)
+    ? liveData.candles.slice(0, replayIdx)
+    : (liveData?.candles ?? []);
+
+  const fillColor   = toRgba(lineColor, fillAlpha);
   const transparent = 'rgba(0,0,0,0)';
+  const pts = visibleCandles
+    .filter(c => c.time >= startTs && c.time <= endTs)
+    .map(c => ({ time: shiftTime(c.time), value: top }));
 
-  // Get whichever candle array is currently on-screen (replay slice or live).
-  const visibleCandles = (replayMode && replayData?.candles)
-    ? replayData.candles
-    : liveData?.candles;
-
-  if (visibleCandles?.length) {
-    // Filter to candles within [startTs, endTs] (unshifted comparison, then shift for chart).
-    const pts = visibleCandles
-      .filter(c => c.time >= startTs && c.time <= endTs)
-      .map(c => ({ time: shiftTime(c.time), value: top }));
-
-    if (pts.length > 0) {
-      // addAreaSeries fills from the data line DOWN to the baseline.
-      // topColor/bottomColor set to fillColor keeps the fill uniform.
-      // lineColor transparent hides the area's own line (borders drawn above).
-      const fa = chart.addAreaSeries({
-        lineColor:              transparent,
-        topColor:               fillColor,
-        bottomColor:            fillColor,
-        lineWidth:              0,
-        baseLineVisible:        false,
-        priceLineVisible:       false,
-        lastValueVisible:       false,
-        crosshairMarkerVisible: false,
-      });
-      // Append a closing point at bottom one entry past the last window candle
-      // so the area fill collapses to zero height immediately after the window.
-      // We find the next candle after endTs in the visible set for this.
-      const nextCandle = visibleCandles.find(c => c.time > endTs);
-      const closingPts = nextCandle
-        ? [{ time: shiftTime(nextCandle.time), value: bottom }]
-        : [];
-      fa.setData([...pts, ...closingPts]);
-      overlaySeriesList.push(fa);
-    }
+  if (pts.length > 0) {
+    const nextCandle = visibleCandles.find(c => c.time > endTs);
+    if (nextCandle) pts.push({ time: shiftTime(nextCandle.time), value: bottom });
+    const fa = chart.addAreaSeries({
+      lineColor: transparent, topColor: fillColor, bottomColor: fillColor,
+      lineWidth: 0, baseLineVisible: false,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    fa.setData(pts);
+    overlaySeriesList.push(fa);
   }
 
   overlaySeriesList.push(tl, bl);
@@ -712,6 +689,10 @@ async function seekTo(idx, isStep) {
   const last = slice[slice.length - 1];
   document.getElementById('scrub-ts').textContent = last ? fmtTime(last.time) + ' ' + TIMEZONE : '—';
   document.getElementById('scrub-label').textContent = 'candle ' + idx + ' / ' + total;
+
+  // If the detector has been run before, auto-refresh replay data so the
+  // window list and overlays stay in sync with the current chart position.
+  if (replayData) fetchReplay(idx);
 }
 
 function renderSummary(d) {
