@@ -828,14 +828,8 @@ async function runDetector() {
     // Pass idx = replayIdx - 1 (0-based last visible candle index)
     // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
     // so that df[-1] IS the aggressor candidate.
-    const sendIdx = replayIdx;
     const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
     const data = await res.json();
-    console.log('replay response:', data);  // ← here
-    console.log('breakout_candle time:', data.breakout_candle?.time, '→', new Date(data.breakout_candle?.time * 1000).toISOString());
-    console.log('last candle time:', liveData.candles[replayIdx-1]?.time, '→', new Date(liveData.candles[replayIdx-1]?.time * 1000).toISOString());
-    console.log('sent idx:', sendIdx, 'replayIdx at log time:', replayIdx);
-    console.log('last candle time:', liveData.candles[sendIdx-1]?.time);
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
     renderAccumPanel(data, true);
