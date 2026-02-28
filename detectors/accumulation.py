@@ -620,13 +620,13 @@ def explain_candle(
         for reason, count in sorted(reasons.items(), key=lambda x: -x[1]):
             pct = round(count / total * 100)
             if reason == "slope":
-                lines.append(f"  • {count} windows ({pct}%) — slope too steep (price was trending, not sideways)")
+                lines.append(f"  • Price was trending, not sideways (Slope)")
             elif reason == "adx":
-                lines.append(f"  • {count} windows ({pct}%) — ADX too high (strong directional trend present)")
+                lines.append(f"  • Strong directional trend present (ADX)")
             elif reason == "chop":
-                lines.append(f"  • {count} windows ({pct}%) — choppiness too low (price not reversing enough)")
+                lines.append(f"  • Price not choppy enough")
             elif reason == "touchpoints":
-                lines.append(f"  • {count} windows ({pct}%) — not enough alternating touches on zone boundaries")
+                lines.append(f"  • Not enough alternating touches on zone boundaries")
             else:
                 lines.append(f"  • {count} windows ({pct}%) — {reason}")
     
