@@ -265,8 +265,8 @@ def detect(
         if end_idx is not None and not replay:
             df = df.iloc[:int(end_idx) + 1].copy()
 
-        session = get_current_session(market_timing)
-
+        session = get_current_session(market_timing, at_time=at_time)
+      
         # Out-of-session handling:
         # In debug mode we skip the session gate so the page always has data.
         # In live mode we return a status dict (not None) so callers get a
@@ -582,7 +582,8 @@ def explain_candle(
     # Slice so detect() sees candle[ci] as df[-2] (last closed candle)
     df_slice = df.iloc[: ci + 2]
 
-    result = detect(df_slice, market_timing=market_timing, **params)
+    at_time = df.iloc[ci].name.to_pydatetime()
+    result = detect(df_slice, market_timing=market_timing, at_time=at_time, **params)
 
     if result is None:
         lines.append("Not enough data to evaluate.")
