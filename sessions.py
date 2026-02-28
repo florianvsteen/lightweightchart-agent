@@ -83,17 +83,16 @@ def is_weekend_halt(market_timing: str = FOREX) -> bool:
     return False
 
 
-def get_current_session(market_timing: str = FOREX) -> str | None:
+def get_current_session(market_timing: str = FOREX, at_time: datetime = None) -> str | None:
     """
     Return the name of the currently active session, or None if out of session.
     Returns None during weekend halt.
+    If at_time is provided, evaluate session at that time instead of now.
     """
-    if is_weekend_halt(market_timing):
+    if is_weekend_halt(market_timing, at_time=at_time):
         return None
-
-    mins    = _now_minutes()
+    mins    = _now_minutes() if at_time is None else (at_time.hour * 60 + at_time.minute)
     windows = SESSIONS.get(market_timing, SESSIONS[FOREX])
-
     for name, (sh, sm, eh, em) in windows.items():
         start = sh * 60 + sm
         end   = eh * 60 + em
