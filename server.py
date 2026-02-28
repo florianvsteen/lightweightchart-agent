@@ -665,7 +665,7 @@ class PairServer:
                 "session":           get_current_session(self.market_timing),
                 "status":            result.get("status", "looking"),   # ← add this
                 "adx_threshold":     params.get("adx_threshold", 25),
-                "last_close":        round(float(df["Close"].iloc[-2]), 5),
+                "last_close": round(float(df["Close"].iloc[-1]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
                 "passed":            result.get("passed", 0),
                 "rejection_summary": reasons,
@@ -727,7 +727,7 @@ class PairServer:
                 "session":           get_current_session(self.market_timing),
                 "status":            result.get("status", "looking"),   # ← add this
                 "adx_threshold":     params.get("adx_threshold", 25),
-                "last_close":        round(float(df["Close"].iloc[-1]), 5),
+                "last_close": round(float(df["Close"].iloc[-1]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
                 "passed":            result.get("passed", 0),
                 "rejection_summary": reasons,
