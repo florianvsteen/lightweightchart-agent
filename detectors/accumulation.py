@@ -221,6 +221,7 @@ def detect(
     debug: bool = False,
     end_idx: int = None,   # kept for backward-compat; prefer replay=True
     replay: bool = False,  # NEW: set True when df is pre-sliced to the replay position
+    at_time: datetime = None,  # if provided, evaluate session at this time instead of now
 ) -> dict | None:
     """
     Args:
