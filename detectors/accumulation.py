@@ -6,7 +6,6 @@ Detects SIDEWAYS accumulation based on DIRECTIONLESSNESS + LOW ADX.
 Rules:
   - Scans the last `lookback` candles (configurable, default 100)
   - Tests windows from `min_candles` up to `lookback` size
-  - max_range_pct varies per session (asian/london/new_york)
   - SLOPE must be near flat (linear regression on closes)
   - CHOPPINESS must be high (price reverses up/down frequently)
   - ADX must be below adx_threshold (default 25) — no directional strength
@@ -187,10 +186,6 @@ def detect(
     min_candles: int = 20,
     adx_threshold: float = 25,
     threshold_pct: float = 0.003,
-    max_range_pct: float = None,
-    asian_range_pct: float = None,
-    london_range_pct: float = None,
-    new_york_range_pct: float = None,
     valid_sessions: list = None,
     market_timing: str = FOREX,
     always_open: bool = False,   # deprecated — use market_timing instead
@@ -203,10 +198,6 @@ def detect(
         min_candles:        Minimum window size for valid accumulation. Default 20.
         adx_threshold:      Maximum ADX value allowed (default 25 = no trend).
         threshold_pct:      Slope scaling factor per instrument.
-        max_range_pct:          Fallback max box height % if no session override.
-        asian_range_pct:        Max box height during Asian session.
-        london_range_pct:       Max box height during London session.
-        new_york_range_pct:     Max box height during New York session.
         valid_sessions:         List of session names in which detection is active
                                 (e.g. ["london", "new_york"]). None = all sessions.
         market_timing:          Market type — FOREX, NYSE, or CRYPTO (from sessions.py).
@@ -244,13 +235,6 @@ def detect(
         if valid_sessions and session not in valid_sessions:
             return {"detector": "accumulation", "status": "out_of_session", "is_active": False}
 
-        session_range = {
-            "asian":    asian_range_pct,
-            "london":   london_range_pct,
-            "new_york": new_york_range_pct,
-        }.get(session)
-        effective_range_pct = session_range if session_range is not None else max_range_pct
-
         CHOP_FOUND     = 0.44
         CHOP_POTENTIAL = 0.36
 
@@ -260,7 +244,7 @@ def detect(
         #   df[-3…] accumulation window     — windows end at df[-2] exclusive
         #
         # A confirmed accumulation requires:
-        #   1. A valid sideways window (slope/chop/adx/range checks pass)
+        #   1. A valid sideways window (slope/chop/adx checks pass)
         #   2. df[-2] body is OUTSIDE the box (broke up or down)
         #   3. df[-2] body range > avg body range of candles inside the window (impulsive)
         #
@@ -310,10 +294,6 @@ def detect(
             h_max = float(body_highs.max())
             l_min = float(body_lows.min())
             range_pct = (h_max - l_min) / avg_p
-
-            if effective_range_pct is not None:
-                if range_pct > effective_range_pct:
-                    continue
 
             slope = _slope_pct(closes, avg_p)
             if slope >= slope_limit:
