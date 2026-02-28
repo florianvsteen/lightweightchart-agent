@@ -828,7 +828,6 @@ function selectWindow(windowSize) {
   document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
   const rows = [
-    { key:'Close in box', val:w.close_outside_box?'✗ FAIL':'✓ OK', limit:'no close outside', pass:!w.close_outside_box, ratio:0 },
     { key:'Slope',        val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,           ratio:w.slope/w.slope_limit },
     { key:'Chop',         val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                    ratio:w.chop/0.44 },
     { key:'ADX',          val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit, ratio:w.adx!=null?w.adx/w.adx_limit:0 },
