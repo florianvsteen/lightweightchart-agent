@@ -903,6 +903,7 @@ function drawWindowOverlay(w, data) {
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
 
   // Draw touchpoint markers — small triangles above/below each counted touch.
+  console.log("drawWindowOverlay w.touch_ts:", w?.touch_ts, "length:", w?.touch_ts?.length);
   if (w.touch_ts?.length) {
     const topCol    = 'rgba(90,240,196,0.9)';
     const bottomCol = 'rgba(240,90,126,0.9)';
