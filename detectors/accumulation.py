@@ -545,7 +545,7 @@ def detect(
         if secondary_zone:
             secondary_zone.pop("_window_start_idx", None)
         candidate["secondary_zone"] = secondary_zone
-        return candidate
+        return _with_debug(candidate)  # ← wrap with _with_debug
 
     except Exception as e:
         print(f"[accumulation] Detection error: {e}")
