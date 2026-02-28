@@ -708,6 +708,8 @@ class PairServer:
             idx   = raw_idx if raw_idx >= 1 else total
             idx   = max(min_candles + 3, min(idx, total))
             df    = full_df.iloc[:idx].copy() if idx < total else full_df.copy()
+            print(f"[REPLAY DEBUG] raw_idx={raw_idx} total={total} idx={idx} df_len={len(df)} df[-1]={int(df.index[-1].timestamp())} df[-2]={int(df.index[-2].timestamp())}")
+
 
             result = accum_detect(df, debug=True, replay=True, market_timing=self.market_timing, **params)
             if not result:
