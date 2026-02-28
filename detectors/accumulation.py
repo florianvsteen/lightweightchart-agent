@@ -582,7 +582,7 @@ def explain_candle(
     df_slice = df.iloc[: ci + 2]
 
     at_time = df.iloc[ci].name.to_pydatetime()
-    result = detect(df_slice, market_timing=market_timing, at_time=at_time, **params)
+    result = detect(df_slice, market_timing=market_timing, debug=True, at_time=at_time, **params)
 
     if result is None:
         lines.append("Not enough data to evaluate.")
@@ -602,11 +602,43 @@ def explain_candle(
         return lines
 
     if status == "looking":
-        lines.append(
-            "No valid accumulation zone found before this candle. "
-            "The scan window either had no candidate zones, or all candidates "
-            "were rejected (too wide, trending, or not choppy enough)."
-        )
+        lines.append("No valid accumulation zone found before this candle.")
+        windows = result.get("windows", [])
+        checked = [w for w in windows if "skip" not in w and not w.get("pass")]
+        if not checked:
+            lines.append("No windows were evaluated (too few candles).")
+            return lines
+    
+        # Count rejection reasons
+        reasons = {}
+        for w in checked:
+            key = (w.get("reject") or "unknown").split(" ")[0]
+            reasons[key] = reasons.get(key, 0) + 1
+    
+        total = len(checked)
+        lines.append(f"Evaluated {total} window(s), all rejected:")
+        for reason, count in sorted(reasons.items(), key=lambda x: -x[1]):
+            pct = round(count / total * 100)
+            if reason == "slope":
+                lines.append(f"  • {count} windows ({pct}%) — slope too steep (price was trending, not sideways)")
+            elif reason == "adx":
+                lines.append(f"  • {count} windows ({pct}%) — ADX too high (strong directional trend present)")
+            elif reason == "chop":
+                lines.append(f"  • {count} windows ({pct}%) — choppiness too low (price not reversing enough)")
+            elif reason == "touchpoints":
+                lines.append(f"  • {count} windows ({pct}%) — not enough alternating touches on zone boundaries")
+            else:
+                lines.append(f"  • {count} windows ({pct}%) — {reason}")
+    
+        # Show the closest-to-passing window
+        passed_windows = [w for w in windows if w.get("pass")]
+        if not passed_windows:
+            # Find window with fewest rejections (just one reason = closest to passing)
+            single_reject = [w for w in checked if w.get("reject") and len(w["reject"].split(" ")) > 0]
+            if single_reject:
+                best = min(single_reject, key=lambda w: abs(w.get("chop", 0) - 0.44))
+                lines.append(f"  Closest window ({best['window']} candles): "
+                             f"slope {best.get('slope')}, chop {best.get('chop')}, adx {best.get('adx')}")
         return lines
 
     # A zone was found (active, found, potential, or confirmed)
