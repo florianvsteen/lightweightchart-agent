@@ -33,29 +33,6 @@ except ImportError:
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
-
-def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, tolerance=0.0002):
-    """
-    Same logic as _count_touchpoints but returns list of (candle_index, side) tuples
-    for each counted alternating touch, so the frontend can mark them on the chart.
-    """
-    box_height = box_top - box_bottom
-    if box_height <= 0:
-        return []
-    tol = box_height * tolerance
-    last_side = None
-    touches = []
-    for i in range(len(body_highs)):
-        touched_top    = body_highs[i] >= box_top    - tol
-        touched_bottom = body_lows[i]  <= box_bottom + tol
-        if touched_top and last_side != 'top':
-            last_side = 'top'
-            touches.append((i, 'top'))
-        elif touched_bottom and last_side != 'bottom':
-            last_side = 'bottom'
-            touches.append((i, 'bottom'))
-    return touches
-
 PERIOD_MAP = {
     "1m":  "1d",
     "2m":  "1d",
@@ -638,7 +615,6 @@ class PairServer:
 
     def _debug(self):
         from config import PAIRS
-
         tz = os.environ.get("TZ", "Europe/Brussels")
         # Use proxy prefix so links work behind a reverse proxy.
         # If a PROXY_PREFIX env var is set (e.g. "/proxy"), pair links become
@@ -660,159 +636,46 @@ class PairServer:
 
     def _debug_data(self):
         try:
-            import numpy as np
-            from detectors.accumulation import (
-                get_current_session, _slope_pct, _choppiness, _adx, _count_touchpoints
-            )
+            from detectors.accumulation import detect as accum_detect
+            from sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
-            cache = {}
-            df = self._get_df(interval, cache)
+            df = self._get_df(interval, {})
 
             if df is None or len(df) < 5:
-                return jsonify({
-                    "pair": self.pair_id, "session": None,
-                    "adx_threshold": None, "last_close": None,
-                    "windows_checked": 0, "passed": 0,
-                    "rejection_summary": {}, "windows": [], "best_zone": None,
-                    "secondary_zone": None, "candles": [],
-                    "error": "No data available (market closed or download failed)",
-                })
+                return jsonify({"error": "No data available"}), 200
 
-            params        = dict(self.detector_params.get("accumulation", {}))
+            params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
-            lookback      = params.get("lookback", 40)
-            min_candles   = params.get("min_candles", 20)
-            adx_threshold = params.get("adx_threshold", 25)
-            threshold_pct = params.get("threshold_pct", 0.003)
-            min_touchpoints = params.get("min_touchpoints", 0)
 
-            session = get_current_session()
+            result = accum_detect(df, debug=True, market_timing=self.market_timing, **params)
+            if not result:
+                result = {"status": "looking", "windows": [], "best_zone": None,
+                          "secondary_zone": None, "candles": []}
 
-            if isinstance(df.columns, __import__('pandas').MultiIndex):
-                df = df.copy()
-                df.columns = df.columns.get_level_values(0)
-            df = df.loc[:, ~df.columns.duplicated()].copy()
-            for col in ['Open','High','Low','Close']:
-                df[col] = __import__('pandas').to_numeric(df[col].squeeze(), errors='coerce')
-            df = df.dropna(subset=['Open','High','Low','Close'])
+            windows = result.get("windows", [])
+            reasons = {}
+            for w in windows:
+                if not w.get("pass") and "skip" not in w and w.get("reject"):
+                    key = w["reject"].split(" ")[0]
+                    reasons[key] = reasons.get(key, 0) + 1
 
-            last_closed_idx = len(df) - 2
-            scan_start      = max(0, len(df) - lookback)
-
-            last_closed_open  = float(df['Open'].iloc[-2])
-            last_closed_close = float(df['Close'].iloc[-2])
-            last_body_high    = max(last_closed_open, last_closed_close)
-            last_body_low     = min(last_closed_open, last_closed_close)
-
-            candles = [
-                {
-                    "time":  int(idx.timestamp()),
-                    "open":  float(r["Open"]),
-                    "high":  float(r["High"]),
-                    "low":   float(r["Low"]),
-                    "close": float(r["Close"]),
-                }
-                for idx, r in df.iterrows()
-            ]
-
-            windows = []
-            for window_size in range(min_candles, lookback + 1):
-                slope_limit = (threshold_pct * 0.10) / window_size
-                i = last_closed_idx - window_size + 1
-                if i < 0 or i < scan_start:
-                    windows.append({"window": window_size, "skip": "out of scan range"})
-                    continue
-
-                window = df.iloc[i: i + window_size]
-                closes = window['Close'].values.flatten().astype(float)
-                opens  = window['Open'].values.flatten().astype(float)
-                highs  = window['High'].values.flatten().astype(float)
-                lows   = window['Low'].values.flatten().astype(float)
-
-                avg_p = closes.mean()
-                body_highs = np.maximum(opens, closes)
-                body_lows  = np.minimum(opens, closes)
-                h_max = float(body_highs.max())
-                l_min = float(body_lows.min())
-                slope     = round(_slope_pct(closes, avg_p), 8)
-                chop      = round(_choppiness(closes), 4)
-                adx_val   = _adx(highs, lows, closes)
-                is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
-                b_highs   = np.maximum(opens, closes)
-                b_lows    = np.minimum(opens, closes)
-                touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
-                touch_pts  = _get_touchpoint_indices(b_highs, b_lows, h_max, l_min)
-                touch_ts   = [
-                    {"time": int(df.index[i + tidx].timestamp()), "side": side}
-                    for tidx, side in touch_pts
-                ]
-
-                reject = None
-                if slope >= slope_limit:
-                    reject = f"slope {slope} >= limit {round(slope_limit,8)}"
-                elif adx_val is not None and adx_val > adx_threshold:
-                    reject = f"adx {round(adx_val,2)} > {adx_threshold}"
-                elif chop < 0.36:
-                    reject = f"chop {chop} < 0.36"
-                elif min_touchpoints > 0 and touches < min_touchpoints:
-                    reject = f"touchpoints {touches} < {min_touchpoints}"
-
-                windows.append({
-                    "window":      window_size,
-                    "start_ts":    int(df.index[i].timestamp()),
-                    "end_ts":      int(df.index[i + window_size - 1].timestamp()),
-                    "top":         round(h_max, 5),
-                    "bottom":      round(l_min, 5),
-                    "slope":       slope,
-                    "slope_limit": round(slope_limit, 8),
-                    "chop":        chop,
-                    "adx":         round(adx_val, 2) if adx_val is not None else None,
-                    "adx_limit":   adx_threshold,
-                    "is_active":   is_active,
-                    "touchpoints": touches,
-                    "touch_ts":    touch_ts,
-                    "min_touchpoints": min_touchpoints,
-                    "reject":      reject,
-                    "pass":        reject is None,
-                })
-
-            passed   = [w for w in windows if w.get("pass")]
-            rejected = [w for w in windows if not w.get("pass") and "skip" not in w]
-            reasons  = {}
-            for r in rejected:
-                key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
-                reasons[key] = reasons.get(key, 0) + 1
-
-            def _rank_windows(ws):
-                low_adx = sorted(
-                    [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
-                    key=lambda w: w["slope"]
-                )
-                rest = sorted(
-                    [w for w in ws if not (w.get("adx") is not None and w["adx"] < 10)],
-                    key=lambda w: w["slope"]
-                )
-                return low_adx + rest
-
-            ranked = _rank_windows(passed)
-            best_zone      = ranked[0] if ranked else None
-            secondary_zone = ranked[1] if len(ranked) > 1 else None
             return jsonify({
                 "pair":              self.pair_id,
-                "session":           session,
-                "adx_threshold":     adx_threshold,
-                "last_close":        round(float(df['Close'].iloc[-2]), 5),
-                "windows_checked":   len([w for w in windows if "skip" not in w]),
-                "passed":            len(passed),
+                "session":           get_current_session(self.market_timing),
+                "adx_threshold":     params.get("adx_threshold", 25),
+                "last_close":        round(float(df["Close"].iloc[-2]), 5),
+                "windows_checked":   result.get("windows_checked", 0),
+                "passed":            result.get("passed", 0),
                 "rejection_summary": reasons,
                 "windows":           windows,
-                "best_zone":         best_zone,
-                "secondary_zone":    secondary_zone,
-                "candles":           candles,
+                "best_zone":         result.get("best_zone"),
+                "secondary_zone":    result.get("secondary_zone"),
+                "candles":           result.get("candles", []),
             })
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
     def _debug_replay(self):
         try:
@@ -821,195 +684,51 @@ class PairServer:
             raw_idx = -1
 
         try:
-            import numpy as np
-            import pandas as pd
-            from datetime import timezone
-            from detectors.accumulation import _slope_pct, _choppiness, _adx, _count_touchpoints
+            from detectors.accumulation import detect as accum_detect
             from sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
-            full_df = _provider_get_df(self.ticker, interval, self.period)
-            full_df = full_df.dropna()
+            full_df  = _provider_get_df(self.ticker, interval, self.period)
+            full_df  = full_df.dropna()
 
             if full_df is None or len(full_df) < 5:
-                return jsonify({
-                    "idx": 0, "total": 0, "session": None,
-                    "adx_threshold": None, "last_close": None,
-                    "windows_checked": 0, "passed": 0,
-                    "rejection_summary": {}, "windows": [], "best_zone": None,
-                    "secondary_zone": None, "breakout_candle": None, "candles": [],
-                    "error": "No data available (market closed or download failed)",
-                })
+                return jsonify({"error": "No data available"}), 200
 
-            params        = dict(self.detector_params.get("accumulation", {}))
+            params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
-            lookback      = params.get("lookback", 40)
-            min_candles   = params.get("min_candles", 15)
-            adx_threshold = params.get("adx_threshold", 25)
-            threshold_pct = params.get("threshold_pct", 0.003)
-            min_touchpoints = params.get("min_touchpoints", 0)
+            min_candles = params.get("min_candles", 20)
 
             total = len(full_df)
-            idx = raw_idx if raw_idx > 0 else total
-            idx = max(min_candles + 3, min(idx, total))
+            idx   = raw_idx if raw_idx > 0 else total
+            idx   = max(min_candles + 3, min(idx, total))
+            df    = full_df.iloc[:idx].copy()
 
-            df = full_df.iloc[:idx].copy()
+            result = accum_detect(df, debug=True, market_timing=self.market_timing, **params)
+            if not result:
+                result = {"status": "looking", "windows": [], "best_zone": None,
+                          "secondary_zone": None, "candles": []}
 
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            df = df.loc[:, ~df.columns.duplicated()].copy()
-            for col in ['Open', 'High', 'Low', 'Close']:
-                df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
-            df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
-
-            last_ts = df.index[-1]
-            if last_ts.tzinfo is None:
-                last_ts = last_ts.tz_localize('UTC')
-            else:
-                last_ts = last_ts.tz_convert('UTC')
-            hour = last_ts.hour
-
-            session = get_current_session()
-            breakout_idx   = len(df) - 2
-            last_accum_idx = len(df) - 3
-            scan_start     = max(0, len(df) - lookback)
-
-            bo_open_raw  = float(df['Open'].iloc[breakout_idx])
-            bo_close_raw = float(df['Close'].iloc[breakout_idx])
-            bo_high_raw  = float(df['High'].iloc[breakout_idx])
-            bo_low_raw   = float(df['Low'].iloc[breakout_idx])
-            bo_body_size = abs(bo_close_raw - bo_open_raw)
-            last_body_high = max(bo_open_raw, bo_close_raw)
-            last_body_low  = min(bo_open_raw, bo_close_raw)
-
-            breakout_candle = {
-                "time":  int(df.index[breakout_idx].timestamp()),
-                "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
-                "low":   round(bo_low_raw, 5),  "close": round(bo_close_raw, 5),
-            }
-
-            windows = []
-            for window_size in range(min_candles, lookback + 1):
-                slope_limit = (threshold_pct * 0.10) / window_size
-                i = last_accum_idx - window_size + 1
-                if i < 0 or i < scan_start:
-                    continue
-
-                window = df.iloc[i: i + window_size]
-                closes = window['Close'].values.flatten().astype(float)
-                opens  = window['Open'].values.flatten().astype(float)
-                highs  = window['High'].values.flatten().astype(float)
-                lows   = window['Low'].values.flatten().astype(float)
-
-                avg_p = closes.mean()
-                if avg_p == 0:
-                    continue
-                body_highs = np.maximum(opens, closes)
-                body_lows  = np.minimum(opens, closes)
-                h_max     = float(body_highs.max())
-                l_min     = float(body_lows.min())
-                avg_body  = float(np.abs(closes - opens).mean())
-                slope     = round(_slope_pct(closes, avg_p), 8)
-                chop      = round(_choppiness(closes), 4)
-                adx_val   = _adx(highs, lows, closes)
-                b_highs   = np.maximum(opens, closes)
-                b_lows    = np.minimum(opens, closes)
-                touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
-                touch_pts  = _get_touchpoint_indices(b_highs, b_lows, h_max, l_min)
-                touch_ts   = [
-                    {"time": int(df.index[i + tidx].timestamp()), "side": side}
-                    for tidx, side in touch_pts
-                ]
-
-                is_active  = (last_body_low >= l_min) and (last_body_high <= h_max)
-                broke_up   = last_body_high > h_max
-                broke_down = last_body_low  < l_min
-                broke_out  = broke_up or broke_down
-
-                is_impulsive   = bo_body_size > avg_body if broke_out else False
-                impulse_ratio  = round(bo_body_size / avg_body, 2) if (broke_out and avg_body > 0) else None
-                is_confirmed   = broke_out and is_impulsive
-
-                reject = None
-                if slope >= slope_limit:
-                    reject = f"slope {slope} >= limit {round(slope_limit,8)}"
-                elif adx_val is not None and adx_val > adx_threshold:
-                    reject = f"adx {round(adx_val,2)} > {adx_threshold}"
-                elif chop < 0.36:
-                    reject = f"chop {chop} < 0.36"
-                elif min_touchpoints > 0 and touches < min_touchpoints:
-                    reject = f"touchpoints {touches} < {min_touchpoints}"
-
-                windows.append({
-                    "window":        window_size,
-                    "start_ts":      int(df.index[i].timestamp()),
-                    "end_ts":        int(df.index[i + window_size - 1].timestamp()),
-                    "top":           round(h_max, 5),
-                    "bottom":        round(l_min, 5),
-                    "avg_body":      round(avg_body, 6),
-                    "slope":         slope,
-                    "slope_limit":   round(slope_limit, 8),
-                    "chop":          chop,
-                    "adx":           round(adx_val, 2) if adx_val is not None else None,
-                    "adx_limit":     adx_threshold,
-                    "is_active":     is_active,
-                    "broke_out":     broke_out,
-                    "broke_up":      broke_up,
-                    "broke_down":    broke_down,
-                    "is_impulsive":  is_impulsive,
-                    "impulse_ratio": impulse_ratio,
-                    "is_confirmed":  is_confirmed,
-                    "touchpoints":   touches,
-                    "touch_ts":      touch_ts,
-                    "min_touchpoints": min_touchpoints,
-                    "reject":        reject,
-                    "pass":          reject is None,
-                })
-
-            passed   = [w for w in windows if w.get("pass")]
-            rejected = [w for w in windows if not w.get("pass")]
-            reasons  = {}
-            for r in rejected:
-                key = r["reject"].split(" ")[0] if r.get("reject") else "unknown"
-                reasons[key] = reasons.get(key, 0) + 1
-
-            def _rank_windows(ws):
-                low_adx = sorted(
-                    [w for w in ws if w.get("adx") is not None and w["adx"] < 10],
-                    key=lambda w: w["slope"]
-                )
-                rest = sorted(
-                    [w for w in ws if not (w.get("adx") is not None and w["adx"] < 10)],
-                    key=lambda w: w["slope"]
-                )
-                return low_adx + rest
-
-            ranked    = _rank_windows(passed)
-            best_zone      = ranked[0] if ranked else None
-            secondary_zone = ranked[1] if len(ranked) > 1 else None
+            windows = result.get("windows", [])
+            reasons = {}
+            for w in windows:
+                if not w.get("pass") and "skip" not in w and w.get("reject"):
+                    key = w["reject"].split(" ")[0]
+                    reasons[key] = reasons.get(key, 0) + 1
 
             return jsonify({
                 "idx":               idx,
                 "total":             total,
-                "session":           session,
-                "adx_threshold":     adx_threshold,
-                "last_close":        round(float(df['Close'].iloc[-2]), 5),
-                "windows_checked":   len(windows),
-                "passed":            len(passed),
+                "session":           get_current_session(self.market_timing),
+                "adx_threshold":     params.get("adx_threshold", 25),
+                "last_close":        round(float(df["Close"].iloc[-2]), 5),
+                "windows_checked":   result.get("windows_checked", 0),
+                "passed":            result.get("passed", 0),
                 "rejection_summary": reasons,
                 "windows":           windows,
-                "best_zone":         best_zone,
-                "secondary_zone":    secondary_zone,
-                "breakout_candle":   breakout_candle,
-                "candles":           [
-                    {"time": int(r.Index.timestamp()), "open": round(float(r.Open),5),
-                     "high": round(float(r.High),5),  "low":  round(float(r.Low),5),
-                     "close": round(float(r.Close),5)}
-                    for r in df.itertuples() if not (
-                        __import__('math').isnan(float(r.Open)) or
-                        __import__('math').isnan(float(r.Close))
-                    )
-                ],
+                "best_zone":         result.get("best_zone"),
+                "secondary_zone":    result.get("secondary_zone"),
+                "breakout_candle":   result.get("breakout_candle"),
+                "candles":           result.get("candles", []),
             })
         except Exception as e:
             import traceback
