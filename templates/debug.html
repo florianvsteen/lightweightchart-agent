@@ -470,6 +470,7 @@ chart.subscribeClick(param => {
 function clearOverlays() {
   overlaySeriesList.forEach(s => { try { chart.removeSeries(s); } catch(e){} });
   overlaySeriesList = [];
+  candleSeries.setMarkers([]);
 }
 
 function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
@@ -900,6 +901,23 @@ function drawWindowOverlay(w, data) {
   const col  = w.pass ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.55)';
   const fill = w.pass ? 0.06 : 0.04;
   drawBox(w.start_ts, w.end_ts, w.top, w.bottom, col, fill);
+
+  // Draw touchpoint markers — small triangles above/below each counted touch.
+  if (w.touch_ts?.length) {
+    const topCol    = 'rgba(90,240,196,0.9)';
+    const bottomCol = 'rgba(240,90,126,0.9)';
+    const markers = w.touch_ts.map((tp, idx) => ({
+      time:     shiftTime(tp.time),
+      position: tp.side === 'top' ? 'aboveBar' : 'belowBar',
+      shape:    tp.side === 'top' ? 'arrowDown' : 'arrowUp',
+      color:    tp.side === 'top' ? topCol : bottomCol,
+      text:     String(idx + 1),
+      size:     1,
+    }));
+    // setMarkers lives on the candleSeries — store them so clearOverlays can wipe them
+    candleSeries.setMarkers(markers);
+    overlaySeriesList._touchMarkers = true;
+  }
   if (!w.broke_out || !data) return;
   const bo = data.breakout_candle;
   if (!bo) return;
