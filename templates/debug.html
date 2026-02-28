@@ -466,7 +466,7 @@ chart.subscribeClick(param => {
   if (currentMode === 'accum' && replayMode && liveData) {
     const rawTime = param.time - TZ_OFFSET;
     const idx = liveData.candles.findIndex(c => c.time === rawTime);
-    if (idx >= 0) seekTo(idx + 1);  // +1 because replayIdx is count of visible candles
+    if (idx >= 0) seekTo(idx + 1, false);  // click = jump, fitContent
     return;
   }
 
@@ -739,15 +739,31 @@ function exitReplayMode() {
 }
 
 // seekTo: update chart display to show `count` candles (1-based)
+// isStep=true  → preserve the current visible range (◀/▶/autoplay)
+// isStep=false → fitContent (scrubber jump, click-on-candle)
 // Does NOT run detector — user must click ▶ Run Detector
-function seekTo(count) {
+function seekTo(count, isStep) {
   const total = liveData.candles.length;
   count = Math.max(18, Math.min(count, total));
   replayIdx = count;
 
   const slice = liveData.candles.slice(0, count);
-  candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
-  // Don't fit content every seek — only on big jumps (scrubber). Step keeps range.
+
+  if (isStep) {
+    // Save range BEFORE mutating data so the chart doesn't auto-fit
+    const prevRange = chart.timeScale().getVisibleLogicalRange();
+    candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
+    // Shift range by +1 to follow the new candle, keeping the same window width
+    if (prevRange) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: prevRange.from + 1,
+        to:   prevRange.to   + 1,
+      });
+    }
+  } else {
+    candleSeries.setData(slice.map(c => ({...c, time: shiftTime(c.time)})));
+    chart.timeScale().fitContent();
+  }
 
   document.getElementById('scrubber').value = count - 1;
   _updateScrubLabel();
@@ -1160,7 +1176,7 @@ function startPlay() {
   document.getElementById('btn-play').textContent = '⏸';
   replayTimer = setInterval(() => {
     if (replayIdx >= liveData.candles.length) { stopPlay(); return; }
-    seekTo(replayIdx + 1);
+    seekTo(replayIdx + 1, true);  // step forward, preserve range
   }, speed);
 }
 function stopPlay() {
@@ -1172,10 +1188,10 @@ document.getElementById('btn-play').addEventListener('click', () => {
   replayTimer ? stopPlay() : startPlay();
 });
 document.getElementById('btn-prev').addEventListener('click', () => {
-  stopPlay(); if (replayIdx > 18) seekTo(replayIdx - 1);
+  stopPlay(); if (replayIdx > 18) seekTo(replayIdx - 1, true);  // step back
 });
 document.getElementById('btn-next').addEventListener('click', () => {
-  stopPlay(); if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1);
+  stopPlay(); if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1, true);  // step forward
 });
 document.getElementById('btn-analyze').addEventListener('click', runDetector);
 
