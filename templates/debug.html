@@ -492,7 +492,9 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     bottomLineColor: 'rgba(0,0,0,0)',
     lineWidth: 0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
   });
-  fl.setData([{ time: s, value: top }, { time: e, value: top }]);
+  // Add a closing point at e+1 that collapses back to bottom, so the baseline
+  // fill doesn't bleed past the window's end timestamp to the chart's right edge.
+  fl.setData([{ time: s, value: top }, { time: e, value: top }, { time: e + 1, value: bottom }]);
   overlaySeriesList.push(tl, bl, fl);
 }
 
