@@ -828,6 +828,7 @@ async function runDetector() {
     // Pass idx = replayIdx - 1 (0-based last visible candle index)
     // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
     // so that df[-1] IS the aggressor candidate.
+    const sendIdx = replayIdx;
     const res  = await fetch(BASE_URL + '/debug/replay?idx=' + (replayIdx - 1) + '&interval=' + currentTF);
     const data = await res.json();
     console.log('replay response:', data);  // ← here
