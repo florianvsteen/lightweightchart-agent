@@ -906,14 +906,16 @@ function drawWindowOverlay(w, data) {
   if (w.touch_ts?.length) {
     const topCol    = 'rgba(90,240,196,0.9)';
     const bottomCol = 'rgba(240,90,126,0.9)';
-    const markers = w.touch_ts.map((tp, idx) => ({
-      time:     shiftTime(tp.time),
-      position: tp.side === 'top' ? 'aboveBar' : 'belowBar',
-      shape:    tp.side === 'top' ? 'arrowDown' : 'arrowUp',
-      color:    tp.side === 'top' ? topCol : bottomCol,
-      text:     String(idx + 1),
-      size:     1,
-    }));
+    const markers = w.touch_ts
+      .map((tp, idx) => ({
+        time:     shiftTime(tp.time),
+        position: tp.side === 'top' ? 'aboveBar' : 'belowBar',
+        shape:    tp.side === 'top' ? 'arrowDown' : 'arrowUp',
+        color:    tp.side === 'top' ? topCol : bottomCol,
+        text:     String(idx + 1),
+        size:     1,
+      }))
+      .sort((a, b) => a.time - b.time);
     // setMarkers lives on the candleSeries — store them so clearOverlays can wipe them
     candleSeries.setMarkers(markers);
     overlaySeriesList._touchMarkers = true;
