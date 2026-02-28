@@ -479,41 +479,63 @@ function drawBox(startTs, endTs, top, bottom, lineColor, fillAlpha) {
     return m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')' : color;
   };
 
-  // Derive candle interval from live/replay data so the fill bars align exactly
-  // with the chart's candle slots. Falls back to 60s for 1-minute bars.
-  const _candleData = (liveData || replayData)?.candles;
-  const intervalSecs = (_candleData?.length > 1)
-    ? (_candleData[1].time - _candleData[0].time)
-    : 60;
-
   const s = shiftTime(startTs);
   const e = shiftTime(endTs);
 
   const lOpts = { lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false };
 
-  // Top & bottom border lines.
+  // Top & bottom border lines — always correct.
   const tl = chart.addLineSeries({ ...lOpts, color: lineColor });
   tl.setData([{ time: s, value: top }, { time: e, value: top }]);
   const bl = chart.addLineSeries({ ...lOpts, color: lineColor });
   bl.setData([{ time: s, value: bottom }, { time: e, value: bottom }]);
 
-  // Fill: histogram series with base=bottom and value=top.
-  // Each bar occupies exactly one candle slot — no bleeding past endTs.
+  // Fill: build data points using ONLY timestamps that already exist in the
+  // visible candle series. Generating synthetic timestamps causes Lightweight
+  // Charts to insert new bars on the time scale, pushing the fill into the future.
+  // By filtering the actual candle array we guarantee every point lands on an
+  // existing slot with no side-effects on the time axis.
   const fillColor = toRgba(lineColor, fillAlpha);
-  const fl = chart.addHistogramSeries({
-    base:             bottom,
-    color:            fillColor,
-    priceLineVisible: false,
-    lastValueVisible: false,
-    priceScaleId:     'right',   // share price scale with candles
-  });
-  const bars = [];
-  for (let t = s; t <= e; t += intervalSecs) {
-    bars.push({ time: t, value: top, color: fillColor });
-  }
-  fl.setData(bars);
+  const transparent = 'rgba(0,0,0,0)';
 
-  overlaySeriesList.push(tl, bl, fl);
+  // Get whichever candle array is currently on-screen (replay slice or live).
+  const visibleCandles = (replayMode && replayData?.candles)
+    ? replayData.candles
+    : liveData?.candles;
+
+  if (visibleCandles?.length) {
+    // Filter to candles within [startTs, endTs] (unshifted comparison, then shift for chart).
+    const pts = visibleCandles
+      .filter(c => c.time >= startTs && c.time <= endTs)
+      .map(c => ({ time: shiftTime(c.time), value: top }));
+
+    if (pts.length > 0) {
+      // addAreaSeries fills from the data line DOWN to the baseline.
+      // topColor/bottomColor set to fillColor keeps the fill uniform.
+      // lineColor transparent hides the area's own line (borders drawn above).
+      const fa = chart.addAreaSeries({
+        lineColor:              transparent,
+        topColor:               fillColor,
+        bottomColor:            fillColor,
+        lineWidth:              0,
+        baseLineVisible:        false,
+        priceLineVisible:       false,
+        lastValueVisible:       false,
+        crosshairMarkerVisible: false,
+      });
+      // Append a closing point at bottom one entry past the last window candle
+      // so the area fill collapses to zero height immediately after the window.
+      // We find the next candle after endTs in the visible set for this.
+      const nextCandle = visibleCandles.find(c => c.time > endTs);
+      const closingPts = nextCandle
+        ? [{ time: shiftTime(nextCandle.time), value: bottom }]
+        : [];
+      fa.setData([...pts, ...closingPts]);
+      overlaySeriesList.push(fa);
+    }
+  }
+
+  overlaySeriesList.push(tl, bl);
 }
 
 function drawVLine(ts, color) {
