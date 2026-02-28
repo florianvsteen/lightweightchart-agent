@@ -265,7 +265,7 @@ def detect(
         if end_idx is not None and not replay:
             df = df.iloc[:int(end_idx) + 1].copy()
 
-        session = get_current_session(market_timing)
+        get_current_session(market_timing, at_time=at_time)
       
         # Out-of-session handling:
         # In debug mode we skip the session gate so the page always has data.
