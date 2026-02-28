@@ -33,6 +33,29 @@ except ImportError:
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
+
+def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, tolerance=0.0002):
+    """
+    Same logic as _count_touchpoints but returns list of (candle_index, side) tuples
+    for each counted alternating touch, so the frontend can mark them on the chart.
+    """
+    box_height = box_top - box_bottom
+    if box_height <= 0:
+        return []
+    tol = box_height * tolerance
+    last_side = None
+    touches = []
+    for i in range(len(body_highs)):
+        touched_top    = body_highs[i] >= box_top    - tol
+        touched_bottom = body_lows[i]  <= box_bottom + tol
+        if touched_top and last_side != 'top':
+            last_side = 'top'
+            touches.append((i, 'top'))
+        elif touched_bottom and last_side != 'bottom':
+            last_side = 'bottom'
+            touches.append((i, 'bottom'))
+    return touches
+
 PERIOD_MAP = {
     "1m":  "1d",
     "2m":  "1d",
@@ -616,28 +639,6 @@ class PairServer:
     def _debug(self):
         from config import PAIRS
 
-
-def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, tolerance=0.0002):
-    """
-    Same logic as _count_touchpoints but returns list of (index, side) tuples
-    for each counted alternating touch, so the frontend can mark them on the chart.
-    """
-    box_height = box_top - box_bottom
-    if box_height <= 0:
-        return []
-    tol = box_height * tolerance
-    last_side = None
-    touches = []
-    for i in range(len(body_highs)):
-        touched_top    = body_highs[i] >= box_top    - tol
-        touched_bottom = body_lows[i]  <= box_bottom + tol
-        if touched_top and last_side != 'top':
-            last_side = 'top'
-            touches.append((i, 'top'))
-        elif touched_bottom and last_side != 'bottom':
-            last_side = 'bottom'
-            touches.append((i, 'bottom'))
-    return touches
         tz = os.environ.get("TZ", "Europe/Brussels")
         # Use proxy prefix so links work behind a reverse proxy.
         # If a PROXY_PREFIX env var is set (e.g. "/proxy"), pair links become
