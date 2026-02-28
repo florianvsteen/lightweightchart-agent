@@ -616,7 +616,6 @@ def explain_candle(
             reasons[key] = reasons.get(key, 0) + 1
     
         total = len(checked)
-        lines.append(f"Evaluated {total} window(s), all rejected:")
         for reason, count in sorted(reasons.items(), key=lambda x: -x[1]):
             pct = round(count / total * 100)
             if reason == "slope":
