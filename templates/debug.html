@@ -558,9 +558,14 @@ function drawVLine(ts, color) {
   overlaySeriesList.push(s);
 }
 
-function renderChart(candles) {
+function renderChart(candles, fit) {
+  const prevRange = chart.timeScale().getVisibleLogicalRange();
   candleSeries.setData(candles.map(c => ({...c, time: shiftTime(c.time)})));
-  chart.timeScale().fitContent();
+  if (fit || !prevRange) {
+    chart.timeScale().fitContent();
+  } else {
+    chart.timeScale().setVisibleLogicalRange(prevRange);
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
