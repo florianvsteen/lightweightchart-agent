@@ -206,6 +206,7 @@ def detect(
     always_open: bool = False,   # deprecated — use market_timing instead
     alert_cooldown_minutes: int = 15,
     min_touchpoints: int = 0,
+    debug: bool = False,
 ) -> dict | None:
     """
     Args:
@@ -283,12 +284,15 @@ def detect(
         # Collect all candidate zones with their slope for best-selection
         found_candidates     = []
         potential_candidates = []
+        debug_windows        = [] if debug else None
 
         for window_size in range(min_candles, lookback + 1):
             slope_limit = (threshold_pct * 0.10) / window_size
 
             i = last_accum_idx - window_size + 1
             if i < 0 or i < scan_start:
+                if debug:
+                    debug_windows.append({"window": window_size, "skip": "out of scan range"})
                 continue
 
             window = df.iloc[i: i + window_size]
@@ -310,30 +314,51 @@ def detect(
             l_min = float(lows.min())
             range_pct = (h_max - l_min) / avg_p
 
-            slope = _slope_pct(closes, avg_p)
-            if slope >= slope_limit:
-                continue
-
+            slope   = _slope_pct(closes, avg_p)
             adx_val = _adx(highs, lows, closes)
-            if adx_val is not None and adx_val > adx_threshold:
-                continue
-
-            chop   = _choppiness(closes)
-            end_i  = i + window_size - 1   # = last_accum_idx for the largest window
-            # is_active: breakout candle body still inside accumulation box
+            chop    = _choppiness(closes)
+            end_i   = i + window_size - 1
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
-
-            # Average body size of candles inside the window (for impulse check)
-            bodies = np.abs(closes - opens)
-            avg_body = float(bodies.mean()) if len(bodies) > 0 else 0.0
-
-            # Touchpoints: alternating wick touches on box boundaries
+            bodies    = np.abs(closes - opens)
+            avg_body  = float(bodies.mean()) if len(bodies) > 0 else 0.0
             touchpoints = _count_touchpoints(highs, lows, h_max, l_min)
             touch_ts    = [
                 {"time": int(df.index[i + tidx].timestamp()), "side": side}
                 for tidx, side in _get_touchpoint_indices(highs, lows, h_max, l_min)
             ]
-            if min_touchpoints > 0 and touchpoints < min_touchpoints:
+
+            reject = None
+            if slope >= slope_limit:
+                reject = f"slope {round(slope,8)} >= limit {round(slope_limit,8)}"
+            elif adx_val is not None and adx_val > adx_threshold:
+                reject = f"adx {round(adx_val,2)} > {adx_threshold}"
+            elif chop < 0.36:
+                reject = f"chop {round(chop,4)} < 0.36"
+            elif min_touchpoints > 0 and touchpoints < min_touchpoints:
+                reject = f"touchpoints {touchpoints} < {min_touchpoints}"
+
+            if debug:
+                debug_windows.append({
+                    "window":          window_size,
+                    "start_ts":        int(df.index[i].timestamp()),
+                    "end_ts":          int(df.index[end_i].timestamp()),
+                    "top":             round(h_max, 5),
+                    "bottom":          round(l_min, 5),
+                    "slope":           round(slope, 8),
+                    "slope_limit":     round(slope_limit, 8),
+                    "chop":            round(chop, 4),
+                    "adx":             round(adx_val, 2) if adx_val is not None else None,
+                    "adx_limit":       adx_threshold,
+                    "avg_body":        round(avg_body, 6),
+                    "touchpoints":     touchpoints,
+                    "touch_ts":        touch_ts,
+                    "min_touchpoints": min_touchpoints,
+                    "is_active":       is_active,
+                    "reject":          reject,
+                    "pass":            reject is None,
+                })
+
+            if reject:
                 continue
 
             zone = {
@@ -374,12 +399,30 @@ def detect(
             )
             return low_adx + rest
 
+        def _with_debug(result):
+            if debug and debug_windows is not None:
+                result["windows"]         = debug_windows
+                result["windows_checked"] = len([w for w in debug_windows if "skip" not in w])
+                result["passed"]          = len([w for w in debug_windows if w.get("pass")])
+                result["breakout_candle"] = result.get("breakout_candle") or {
+                    "time":  int(df.index[breakout_idx].timestamp()),
+                    "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
+                    "low":   round(bo_low_raw, 5),  "close": round(bo_close_raw, 5),
+                }
+                result["candles"] = [
+                    {"time": int(idx.timestamp()), "open": round(float(r["Open"]), 5),
+                     "high": round(float(r["High"]), 5), "low": round(float(r["Low"]), 5),
+                     "close": round(float(r["Close"]), 5)}
+                    for idx, r in df.iterrows()
+                ]
+            return result
+
         # Primary pool: "found" zones first, then "potential"
         ranked_all = _rank(found_candidates) + _rank(potential_candidates)
 
         # ── Determine which zones to return ───────────────────────────────
         if not ranked_all:
-            return {"detector": "accumulation", "status": "looking", "is_active": False}
+            return _with_debug({"detector": "accumulation", "status": "looking", "is_active": False, "best_zone": None, "secondary_zone": None})
 
         candidate      = ranked_all[0]
         secondary_zone = ranked_all[1] if len(ranked_all) > 1 else None
@@ -391,7 +434,8 @@ def detect(
             if secondary_zone:
                 secondary_zone.pop("_window_start_idx", None)
             candidate["secondary_zone"] = secondary_zone
-            return candidate
+            candidate["best_zone"] = {k: v for k, v in candidate.items() if k not in ("secondary_zone",)}
+            return _with_debug(candidate)
 
         # ── Price broke out — validate as IMPULSIVE ───────────────────────
         box_top    = candidate["top"]
@@ -408,13 +452,14 @@ def detect(
             if secondary_zone:
                 secondary_zone.pop("_window_start_idx", None)
             candidate["secondary_zone"] = secondary_zone
-            return candidate
+            candidate["best_zone"] = {k: v for k, v in candidate.items() if k not in ("secondary_zone",)}
+            return _with_debug(candidate)
 
         # Check impulse: body must be bigger than avg window body
         is_impulsive = bo_body_size > avg_body
 
         if not is_impulsive:
-            return {"detector": "accumulation", "status": "looking", "is_active": False}
+            return _with_debug({"detector": "accumulation", "status": "looking", "is_active": False, "best_zone": None, "secondary_zone": None})
 
         # Confirmed — impulsive breakout outside the box
         candidate.pop("_window_start_idx", None)
