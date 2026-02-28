@@ -704,7 +704,8 @@ class PairServer:
             min_candles = params.get("min_candles", 20)
 
             total = len(full_df)
-            idx   = raw_idx if raw_idx >= 1 else total  # ← only this changes
+            idx   = raw_idx if raw_idx > 0 else total  # original
+            #idx   = raw_idx if raw_idx >= 1 else total  # ← changed testing
             idx   = max(min_candles + 3, min(idx, total))
             df    = full_df.iloc[:idx].copy()
 
