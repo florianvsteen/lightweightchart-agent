@@ -828,13 +828,14 @@ function selectWindow(windowSize) {
   document.getElementById('detail-title').textContent = 'Window ' + windowSize + ' — ' + titleSuffix;
 
   const rows = [
-    { key:'Slope',       val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,           ratio:w.slope/w.slope_limit },
-    { key:'Chop',        val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                    ratio:w.chop/0.44 },
-    { key:'ADX',         val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit, ratio:w.adx!=null?w.adx/w.adx_limit:0 },
-    { key:'ADX<10',      val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
-    { key:'Touchpoints', val:(w.touchpoints??'—')+(w.min_touchpoints>0?' / '+w.min_touchpoints+' req':''), limit:w.min_touchpoints>0?'≥'+w.min_touchpoints:'disabled', pass:w.min_touchpoints>0?(w.touchpoints>=w.min_touchpoints):null, ratio:w.min_touchpoints>0?(w.touchpoints/w.min_touchpoints):0 },
-    { key:'Top',         val:w.top,   limit:'', pass:null, ratio:0 },
-    { key:'Bottom',      val:w.bottom,limit:'', pass:null, ratio:0 },
+    { key:'Close in box', val:w.close_outside_box?'✗ FAIL':'✓ OK', limit:'no close outside', pass:!w.close_outside_box, ratio:0 },
+    { key:'Slope',        val:w.slope,      limit:w.slope_limit,   pass:w.slope<w.slope_limit,           ratio:w.slope/w.slope_limit },
+    { key:'Chop',         val:w.chop,       limit:'≥0.44/0.36',    pass:w.chop>=0.36,                    ratio:w.chop/0.44 },
+    { key:'ADX',          val:w.adx??'N/A', limit:'<'+w.adx_limit, pass:w.adx==null||w.adx<w.adx_limit, ratio:w.adx!=null?w.adx/w.adx_limit:0 },
+    { key:'ADX<10',       val:w.adx!=null?(w.adx<10?'✓ priority':'—'):'N/A', limit:'priority tier', pass:w.adx!=null&&w.adx<10, ratio:0 },
+    { key:'Touchpoints',  val:(w.touchpoints??'—')+(w.min_touchpoints>0?' / '+w.min_touchpoints+' req':''), limit:w.min_touchpoints>0?'≥'+w.min_touchpoints:'disabled', pass:w.min_touchpoints>0?(w.touchpoints>=w.min_touchpoints):null, ratio:w.min_touchpoints>0?(w.touchpoints/w.min_touchpoints):0 },
+    { key:'Top (wick)',    val:w.top,   limit:'', pass:null, ratio:0 },
+    { key:'Bottom (wick)', val:w.bottom,limit:'', pass:null, ratio:0 },
   ];
 
   const accumHtml = rows.map(r => {
