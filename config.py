@@ -177,4 +177,31 @@ PAIRS = {
             },
         },
     },
+    "BTCUSD": {
+        "yf_ticker": "BTCUSD",
+        "mt5_ticker": "BTCUSD",
+        "port": 5000,
+        "label": "BTC/USD",
+        "interval": "1m",
+        "period": "1d",
+        "default_interval": "1m",
+        "market_timing": CRYPTO,
+        "detectors": ["accumulation"],
+        "detector_params": {
+            "accumulation": {
+                "timeframe": "1m",
+                "lookback": 40,
+                "min_candles": 20,
+                "adx_threshold": 20,
+                "threshold_pct": 0.003,
+                "asian_range_pct":    0.001,
+                "london_range_pct":   0.002,
+                "new_york_range_pct": 0.003,
+                "valid_sessions":     ["london", "new_york"],
+                "alert_cooldown_minutes": 15,
+                "min_touchpoints": 5,
+            },
+        },
+    },
+  
 }
