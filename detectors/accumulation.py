@@ -80,45 +80,39 @@ def _count_touchpoints(
     lows: np.ndarray,
     box_top: float,
     box_bottom: float,
-    tolerance: float = 0.1,
 ) -> int:
     """
-    Count alternating wick touches on the box top and bottom.
-    A touch is registered when a wick comes within `tolerance` of the boundary.
+    Count alternating wick touches: high >= box_top or low <= box_bottom.
     Consecutive touches on the same side are ignored (must alternate top/bottom).
     """
-    box_height = box_top - box_bottom
-    if box_height <= 0:
+    if box_top <= box_bottom:
         return 0
-    tol = box_height * tolerance
     last_side = None
     count = 0
     for i in range(len(highs)):
-        if highs[i] >= box_top - tol and last_side != 'top':
+        if highs[i] >= box_top and last_side != 'top':
             last_side = 'top'
             count += 1
-        elif lows[i] <= box_bottom + tol and last_side != 'bottom':
+        elif lows[i] <= box_bottom and last_side != 'bottom':
             last_side = 'bottom'
             count += 1
     return count
 
 
-def _get_touchpoint_indices(highs, lows, box_top, box_bottom, tolerance=0.1):
+def _get_touchpoint_indices(highs, lows, box_top, box_bottom):
     """
     Same logic as _count_touchpoints but returns [(candle_index, side), ...]
     so callers can map touches back to specific candle timestamps.
     """
-    box_height = box_top - box_bottom
-    if box_height <= 0:
+    if box_top <= box_bottom:
         return []
-    tol = box_height * tolerance
     last_side = None
     touches = []
     for i in range(len(highs)):
-        if highs[i] >= box_top - tol and last_side != 'top':
+        if highs[i] >= box_top and last_side != 'top':
             last_side = 'top'
             touches.append((i, 'top'))
-        elif lows[i] <= box_bottom + tol and last_side != 'bottom':
+        elif lows[i] <= box_bottom and last_side != 'bottom':
             last_side = 'bottom'
             touches.append((i, 'bottom'))
     return touches
