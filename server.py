@@ -676,7 +676,7 @@ class PairServer:
                 "breakout_dir":      result.get("breakout_dir"),        # ← add this
                 "breakout_body":     result.get("breakout_body"),       # ← add this
                 "impulse_ratio":     result.get("impulse_ratio"),       # ← add this
-                "candles":           result.get("candles", []),
+                "candles":           result.get("candles", [])[:-1],
             })
         except Exception as e:
             import traceback
