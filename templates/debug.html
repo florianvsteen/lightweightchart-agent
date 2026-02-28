@@ -558,14 +558,9 @@ function drawVLine(ts, color) {
   overlaySeriesList.push(s);
 }
 
-function renderChart(candles, fit) {
-  const prevRange = chart.timeScale().getVisibleLogicalRange();
+function renderChart(candles) {
   candleSeries.setData(candles.map(c => ({...c, time: shiftTime(c.time)})));
-  if (fit || !prevRange) {
-    chart.timeScale().fitContent();
-  } else {
-    chart.timeScale().setVisibleLogicalRange(prevRange);
-  }
+  chart.timeScale().fitContent();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -591,17 +586,17 @@ function switchMode(mode) {
 
   if (mode === 'accum') {
     if (replayMode) exitReplayMode();
-    else if (liveData) { renderChart(liveData.candles, true); applyLiveOverlays(liveData); updateTopbarAccum(liveData, false); }
+    else if (liveData) { renderChart(liveData.candles); applyLiveOverlays(liveData); updateTopbarAccum(liveData, false); }
     else loadLiveData();
   } else if (mode === 'sd') {
     document.getElementById('tag-session').textContent = 'S/D MODE';
     document.getElementById('tag-info').textContent    = currentTF + ' · supply & demand';
     if (currentTF === '1D' || currentTF === '1W') { if (biasData) renderBias(biasData); else loadBias(currentTF); }
-    else { if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles, true); renderSD(sdData); } else loadSD(); }
+    else { if (sdData) { if (sdData.candles?.length) renderChart(sdData.candles); renderSD(sdData); } else loadSD(); }
   } else if (mode === 'fvg') {
     document.getElementById('tag-session').textContent = 'FVG MODE';
     document.getElementById('tag-info').textContent    = currentTF + ' · fair value gap';
-    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles, true); renderFVG(fvgData); }
+    if (fvgData) { if (fvgData.candles?.length) renderChart(fvgData.candles); renderFVG(fvgData); }
     else loadFVG();
   }
 }
@@ -679,7 +674,6 @@ function drawAggressorMarker(bo, isConfirmed) {
   const src = liveData?.candles;
   const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
   drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, col, 0.18);
-  drawVLine(bo.time, col);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -822,10 +816,14 @@ async function runDetector() {
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
   try {
-    // Pass idx = replayIdx (count of visible candles, 1-based).
-    // Backend does full_df.iloc[:idx] → df[-1] IS the last visible candle = aggressor candidate.
-    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
+    // Pass idx = replayIdx - 1 (0-based last visible candle index)
+    // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
+    // so that df[-1] IS the aggressor candidate.
+    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + (replayIdx - 1) + '&interval=' + currentTF);
     const data = await res.json();
+    console.log('replay response:', data);  // ← here
+    console.log('breakout_candle time:', data.breakout_candle?.time, '→', new Date(data.breakout_candle?.time * 1000).toISOString());
+    console.log('last candle time:', liveData.candles[replayIdx-1]?.time, '→', new Date(liveData.candles[replayIdx-1]?.time * 1000).toISOString());
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
     renderAccumPanel(data, true);
@@ -1234,7 +1232,7 @@ async function loadSD() {
     const res = await fetch(BASE_URL + '/debug/sd?interval=' + currentTF);
     sdData = await res.json();
     if (sdData.error) { document.getElementById('sd-loading').textContent = '✗ ' + sdData.error; return; }
-    if (sdData.candles?.length) renderChart(sdData.candles, true);
+    if (sdData.candles?.length) renderChart(sdData.candles);
     renderSD(sdData);
   } catch(e) { document.getElementById('sd-loading').textContent = '✗ ' + e.message; }
 }
@@ -1263,7 +1261,7 @@ function renderBias(tf) {
     document.getElementById('sd-content').style.display = 'none';
     return;
   }
-  renderChart(candles, true);
+  renderChart(candles);
   clearOverlays();
   const biasCandle = candles.find(c => c.bias_candle);
   if (biasCandle) {
@@ -1388,7 +1386,7 @@ async function loadFVG() {
     const res = await fetch(BASE_URL + '/debug/fvg?interval=' + currentTF);
     fvgData = await res.json();
     if (fvgData.error) { document.getElementById('fvg-loading').textContent = '✗ ' + fvgData.error; return; }
-    if (fvgData.candles?.length) renderChart(fvgData.candles, true);
+    if (fvgData.candles?.length) renderChart(fvgData.candles);
     renderFVG(fvgData);
   } catch(e) { document.getElementById('fvg-loading').textContent = '✗ ' + e.message; }
 }
