@@ -282,9 +282,9 @@ def detect(
             if avg_p == 0:
                 continue
 
-            # Box boundaries: 95th/5th percentile of wicks to ignore outlier spikes
-            h_max = float(np.percentile(highs, 95))
-            l_min = float(np.percentile(lows, 5))
+            # Box boundaries: highest wick high and lowest wick low
+            h_max = float(highs.max())
+            l_min = float(lows.min())
 
             body_highs = np.maximum(opens, closes)
             body_lows  = np.minimum(opens, closes)
