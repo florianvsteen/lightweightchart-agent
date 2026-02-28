@@ -76,61 +76,34 @@ def _is_v_shape(closes: np.ndarray) -> bool:
 
 
 def _count_touchpoints(
-    body_highs: np.ndarray,
-    body_lows: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
     box_top: float,
     box_bottom: float,
     tolerance: float = 0.0002,
 ) -> int:
     """
-    Count alternating touches on the box top and bottom using candle bodies.
-
-    Rules:
-      - First touch can be on either the top or bottom.
-      - After a top touch, the next counted touch must be on the bottom.
-      - After a bottom touch, the next counted touch must be on the top.
-      - Consecutive touches on the same side are ignored until the opposite
-        side is touched — this ensures only genuine bounces are counted.
-      - A touch is registered when a body comes within `tolerance` of the
-        boundary (tolerance = box_height * 0.0002 by default).
-
-    Example with min_touchpoints=4:
-      top → bottom → top → bottom  =  4  ✓
-      top → top → bottom → top     =  3  (second top skipped until bottom seen)
-
-    Args:
-        highs: array of per-candle wick highs
-        lows:  array of per-candle wick lows
-        box_top:    upper boundary of the accumulation box
-        box_bottom: lower boundary of the accumulation box
-        tolerance:  fraction of box height used as proximity threshold
-
-    Returns:
-        Total number of alternating touches.
+    Count alternating wick touches on the box top and bottom.
+    A touch is registered when a wick comes within `tolerance` of the boundary.
+    Consecutive touches on the same side are ignored (must alternate top/bottom).
     """
     box_height = box_top - box_bottom
     if box_height <= 0:
         return 0
     tol = box_height * tolerance
-
-    last_side = None   # 'top' or 'bottom' — tracks which side was last counted
+    last_side = None
     count = 0
-
-    for i in range(len(body_highs)):
-        touched_top    = body_highs[i] >= box_top    - tol
-        touched_bottom = body_lows[i]  <= box_bottom + tol
-
-        if touched_top and last_side != 'top':
+    for i in range(len(highs)):
+        if highs[i] >= box_top - tol and last_side != 'top':
             last_side = 'top'
             count += 1
-        elif touched_bottom and last_side != 'bottom':
+        elif lows[i] <= box_bottom + tol and last_side != 'bottom':
             last_side = 'bottom'
             count += 1
-
     return count
 
 
-def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, tolerance=0.0002):
+def _get_touchpoint_indices(highs, lows, box_top, box_bottom, tolerance=0.0002):
     """
     Same logic as _count_touchpoints but returns [(candle_index, side), ...]
     so callers can map touches back to specific candle timestamps.
@@ -141,13 +114,11 @@ def _get_touchpoint_indices(body_highs, body_lows, box_top, box_bottom, toleranc
     tol = box_height * tolerance
     last_side = None
     touches = []
-    for i in range(len(body_highs)):
-        touched_top    = body_highs[i] >= box_top    - tol
-        touched_bottom = body_lows[i]  <= box_bottom + tol
-        if touched_top and last_side != 'top':
+    for i in range(len(highs)):
+        if highs[i] >= box_top - tol and last_side != 'top':
             last_side = 'top'
             touches.append((i, 'top'))
-        elif touched_bottom and last_side != 'bottom':
+        elif lows[i] <= box_bottom + tol and last_side != 'bottom':
             last_side = 'bottom'
             touches.append((i, 'bottom'))
     return touches
