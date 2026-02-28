@@ -660,12 +660,10 @@ class PairServer:
             lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 20)
             adx_threshold = params.get("adx_threshold", 25)
-            threshold_pct = params.get("threshold_pct", 0.003)
+            #threshold_pct = params.get("threshold_pct", 0.003)
             min_touchpoints = params.get("min_touchpoints", 0)
 
             session = get_current_session()
-            session_range_key = f"{session}_range_pct" if session else None
-            effective_range_pct = params.get(session_range_key) or params.get("max_range_pct")
 
             if isinstance(df.columns, __import__('pandas').MultiIndex):
                 df = df.copy()
@@ -713,7 +711,6 @@ class PairServer:
                 body_lows  = np.minimum(opens, closes)
                 h_max = float(body_highs.max())
                 l_min = float(body_lows.min())
-                range_pct = round((h_max - l_min) / avg_p, 6)
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
@@ -723,9 +720,7 @@ class PairServer:
                 touches   = _count_touchpoints(b_highs, b_lows, h_max, l_min)
 
                 reject = None
-                if effective_range_pct and range_pct > effective_range_pct:
-                    reject = f"range {range_pct} > limit {effective_range_pct}"
-                elif slope >= slope_limit:
+                if slope >= slope_limit:
                     reject = f"slope {slope} >= limit {round(slope_limit,8)}"
                 elif adx_val is not None and adx_val > adx_threshold:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
@@ -740,8 +735,6 @@ class PairServer:
                     "end_ts":      int(df.index[i + window_size - 1].timestamp()),
                     "top":         round(h_max, 5),
                     "bottom":      round(l_min, 5),
-                    "range_pct":   range_pct,
-                    "range_limit": effective_range_pct,
                     "slope":       slope,
                     "slope_limit": round(slope_limit, 8),
                     "chop":        chop,
@@ -778,7 +771,6 @@ class PairServer:
             return jsonify({
                 "pair":              self.pair_id,
                 "session":           session,
-                "effective_range":   effective_range_pct,
                 "adx_threshold":     adx_threshold,
                 "last_close":        round(float(df['Close'].iloc[-2]), 5),
                 "windows_checked":   len([w for w in windows if "skip" not in w]),
@@ -822,7 +814,7 @@ class PairServer:
             lookback      = params.get("lookback", 40)
             min_candles   = params.get("min_candles", 15)
             adx_threshold = params.get("adx_threshold", 25)
-            threshold_pct = params.get("threshold_pct", 0.003)
+            #threshold_pct = params.get("threshold_pct", 0.003)
             min_touchpoints = params.get("min_touchpoints", 0)
 
             total = len(full_df)
@@ -845,16 +837,7 @@ class PairServer:
                 last_ts = last_ts.tz_convert('UTC')
             hour = last_ts.hour
 
-            session = None
-            if 1 <= hour < 7:    session = "asian"
-            elif 8 <= hour < 12: session = "london"
-            elif 13 <= hour < 19: session = "new_york"
-
-            session_range_key   = f"{session}_range_pct" if session else None
-            effective_range_pct = (
-                params.get(session_range_key)
-                or params.get("max_range_pct")
-            )
+            session = get_current_session()
 
             breakout_idx   = len(df) - 2
             last_accum_idx = len(df) - 3
@@ -895,7 +878,6 @@ class PairServer:
                 h_max     = float(body_highs.max())
                 l_min     = float(body_lows.min())
                 avg_body  = float(np.abs(closes - opens).mean())
-                range_pct = round((h_max - l_min) / avg_p, 6)
                 slope     = round(_slope_pct(closes, avg_p), 8)
                 chop      = round(_choppiness(closes), 4)
                 adx_val   = _adx(highs, lows, closes)
@@ -913,9 +895,7 @@ class PairServer:
                 is_confirmed   = broke_out and is_impulsive
 
                 reject = None
-                if effective_range_pct and range_pct > effective_range_pct:
-                    reject = f"range {range_pct} > limit {effective_range_pct}"
-                elif slope >= slope_limit:
+                if slope >= slope_limit:
                     reject = f"slope {slope} >= limit {round(slope_limit,8)}"
                 elif adx_val is not None and adx_val > adx_threshold:
                     reject = f"adx {round(adx_val,2)} > {adx_threshold}"
@@ -931,8 +911,6 @@ class PairServer:
                     "top":           round(h_max, 5),
                     "bottom":        round(l_min, 5),
                     "avg_body":      round(avg_body, 6),
-                    "range_pct":     range_pct,
-                    "range_limit":   effective_range_pct,
                     "slope":         slope,
                     "slope_limit":   round(slope_limit, 8),
                     "chop":          chop,
