@@ -99,7 +99,7 @@ def chart_view(pair_id):
         "mission-control-charts.html",
         pair_id=pair_id,
         label=cfg["label"],
-        always_open=cfg.get("always_open", False),
+        always_open=cfg.get("market_timing") == "CRYPTO",
         timezone=tz,
         default_interval=default_interval,
         detector_type=detector_type,
