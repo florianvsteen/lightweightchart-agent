@@ -693,8 +693,13 @@ class PairServer:
             from sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
-            full_df  = _provider_get_df(self.ticker, interval, self.period)
-            full_df  = full_df.dropna()
+            with self._cache_lock:
+                cached = self._df_cache.get(interval)
+            if cached is not None and len(cached) > 0:
+                full_df = cached.copy()
+            else:
+                full_df = _provider_get_df(self.ticker, interval, self.period)
+            full_df = full_df.dropna()
             
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
