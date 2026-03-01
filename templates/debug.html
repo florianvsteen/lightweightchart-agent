@@ -832,14 +832,20 @@ async function runDetector() {
   if (!replayMode || !liveData) return;
   const btn = document.getElementById('btn-analyze');
   btn.textContent = '⏳…'; btn.disabled = true;
+ 
+  // NEW: Get the timestamp of the EXACT candle the scrubber is on
+  const currentCandle = liveData.candles[replayIdx - 1];
+  const currentTs = currentCandle.time;
+
   try {
-    // Pass idx = replayIdx - 1 (0-based last visible candle index)
-    // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
-    // so that df[-1] IS the aggressor candidate.
-    // Include snapshot timestamps so server filters to exact same candle set
-    let url = BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF;
+    // ADD &end_ts to the URL
+    let url = BASE_URL + '/debug/replay?idx=' + replayIdx + 
+              '&total=' + replayTotal + 
+              '&interval=' + currentTF +
+              '&end_ts=' + currentTs; // Hard lock to this timestamp
+
     if (replaySnapshot) {
-      url += '&start_ts=' + replaySnapshot.startTs + '&end_ts=' + replaySnapshot.endTs;
+      url += '&start_ts=' + replaySnapshot.startTs;
     }
     const res = await fetch(url);
     const data = await res.json();
