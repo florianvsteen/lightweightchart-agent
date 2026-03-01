@@ -692,6 +692,8 @@ function enterReplayMode() {
   selectedWindow = null;
   replayResult   = null;
   replayIdx      = liveData.candles.length;  // start at end (all candles visible)
+  replayTotal    = liveData.candles.length;  // snapshot
+
 
   document.getElementById('btn-live').classList.remove('active');
   document.getElementById('btn-replay').classList.add('active');
@@ -827,7 +829,7 @@ async function runDetector() {
     // Pass idx = replayIdx - 1 (0-based last visible candle index)
     // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
     // so that df[-1] IS the aggressor candidate.
-    const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
+    const res = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF);
     const data = await res.json();
     console.log('runDetector: replayIdx', replayIdx, 'sending idx', replayIdx);
     if (data.error) { console.error('Replay error:', data.error); return; }
