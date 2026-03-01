@@ -212,62 +212,28 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return results
 
 
-def detect_pivot_highs(
-    values: np.ndarray,
-    left_bars: int = 5,
-    right_bars: int = 1  # Updated to 1 for fast confirmation
-) -> List[PivotPoint]:
+def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
+    """Replicates ta.pivothigh(values, 5, 1)"""
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
-        is_pivot = True
         current = values[i]
-        
-        # Check left side (allows flat tops on the left)
-        for j in range(i - left_bars, i):
-            if values[j] > current:
-                is_pivot = False
-                break
-                
-        # Check right side (strict: next candle must be lower)
-        if is_pivot:
-            for j in range(i + 1, i + right_bars + 1):
-                if values[j] >= current:
-                    is_pivot = False
-                    break
-                    
-        if is_pivot:
+        # Must be strictly higher than all bars in the window
+        if all(values[i-left_bars:i] < current) and all(values[i+1:i+right_bars+1] < current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
 
-def detect_pivot_lows(
-    values: np.ndarray,
-    left_bars: int = 5,
-    right_bars: int = 1  # Updated to 1 for fast confirmation
-) -> List[PivotPoint]:
+def detect_pivot_lows(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
+    """Replicates ta.pivotlow(values, 5, 1)"""
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
-        is_pivot = True
         current = values[i]
-        
-        # Check left side (allows flat bottoms on the left)
-        for j in range(i - left_bars, i):
-            if values[j] < current:
-                is_pivot = False
-                break
-                
-        # Check right side (strict: next candle must be higher)
-        if is_pivot:
-            for j in range(i + 1, i + right_bars + 1):
-                if values[j] <= current:
-                    is_pivot = False
-                    break
-                    
-        if is_pivot:
+        # Must be strictly lower than all bars in the window
+        if all(values[i-left_bars:i] > current) and all(values[i+1:i+right_bars+1] > current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
-
+    
 def detect_divergences(
     price_highs: np.ndarray,
     price_lows: np.ndarray,
@@ -276,66 +242,57 @@ def detect_divergences(
     times: List[int],
     left_pivot: int = 5,
     right_pivot: int = 1,
-    max_pivot_bar_gap: int = 8,
-    max_divergence_width: int = 10
+    max_pivot_bar_gap: int = 8
 ) -> List[Dict[str, Any]]:
     divergences = []
 
-    # Get pivots with 1-bar confirmation
+    # Get all pivots using the 1-bar confirmation rule
     ph_pivots = detect_pivot_highs(price_highs, left_pivot, right_pivot)
     pl_pivots = detect_pivot_lows(price_lows, left_pivot, right_pivot)
     ch_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
     cl_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
-    # Bearish Divergence Logic
-    for i in range(1, len(ph_pivots)):
-        ph2 = ph_pivots[i]
-        ch2 = next((p for p in ch_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
-        if not ch2: continue
-            
-        for j in range(i - 1, -1, -1):
-            ph1 = ph_pivots[j]
-            if abs(ph2.bar_index - ph1.bar_index) > max_divergence_width: break
-                
+    # 1. Bearish Divergence: Price Higher High AND CVD Lower High
+    if len(ph_pivots) >= 2 and len(ch_pivots) >= 2:
+        for i in range(1, len(ph_pivots)):
+            ph1, ph2 = ph_pivots[i-1], ph_pivots[i]
+            # Find matching CVD pivots within the allowed bar gap
             ch1 = next((p for p in ch_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
-            if not ch1: continue
-                
-            if ph2.value > ph1.value and ch2.value < ch1.value:
-                divergences.append({
-                    "type": "bearish",
-                    "label": "Bear Div",
-                    "price_time": times[ph2.bar_index],
-                    "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
-                    "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
-                    "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
-                    "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
-                })
-                break
+            ch2 = next((p for p in ch_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
 
-    # Bullish Divergence Logic
-    for i in range(1, len(pl_pivots)):
-        pl2 = pl_pivots[i]
-        cl2 = next((p for p in cl_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
-        if not cl2: continue
-            
-        for j in range(i - 1, -1, -1):
-            pl1 = pl_pivots[j]
-            if abs(pl2.bar_index - pl1.bar_index) > max_divergence_width: break
-                
+            if ch1 and ch2:
+                if ph2.value > ph1.value and ch2.value < ch1.value:
+                    divergences.append({
+                        "type": "bearish",
+                        "label": "Bear Div",
+                        "price_time": times[ph2.bar_index],
+                        "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
+                        "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
+                        "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
+                        "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
+                    })
+
+    # 2. Bullish Divergence: Price Lower Low AND CVD Higher Low
+    if len(pl_pivots) >= 2 and len(cl_pivots) >= 2:
+        for i in range(1, len(pl_pivots)):
+            pl1, pl2 = pl_pivots[i-1], pl_pivots[i]
+            # Find matching CVD pivots within the allowed bar gap
             cl1 = next((p for p in cl_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
-            if not cl1: continue
-                
-            if pl2.value < pl1.value and cl2.value > cl1.value:
-                divergences.append({
-                    "type": "bullish",
-                    "label": "Bull Div",
-                    "price_time": times[pl2.bar_index],
-                    "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
-                    "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
-                    "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
-                    "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
-                })
-                break
+            cl2 = next((p for p in cl_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
+
+            if cl1 and cl2:
+                if pl2.value < pl1.value and cl2.value > cl1.value:
+                    divergences.append({
+                        "type": "bullish",
+                        "label": "Bull Div",
+                        "price_time": times[pl2.bar_index],
+                        "price_value": float(pl2.value),
+                        "cvd_value": float(cl2.value),
+                        "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
+                        "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
+                        "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
+                        "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
+                    })
 
     return divergences
 
@@ -485,9 +442,8 @@ def get_cvd_data(
             cvd_lows=cvd_lows,
             times=times,
             left_pivot=left_pivot,
-            right_pivot=1,  # Force 1-bar confirmation
-            max_pivot_bar_gap=max_pivot_bar_gap,
-            max_divergence_width=10
+            right_pivot=1,  # Strict 1-bar confirmation
+            max_pivot_bar_gap=max_pivot_bar_gap
         )
 
     return {
