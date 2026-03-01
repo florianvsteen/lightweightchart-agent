@@ -737,24 +737,23 @@ class PairServer:
                 full_df = cached.copy()
             else:
                 full_df = _provider_get_df(self.ticker, interval, self.period)
+                
             full_df = full_df.dropna()
-            print(f"[REPLAY] idx={idx} total={total} df_len={len(df)} df[-1]={int(df.index[-1].timestamp())} df[-2]={int(df.index[-2].timestamp())}")
             print(f"[REPLAY] raw_idx={raw_idx} raw_total={request.args.get('total')} full_df_len={len(full_df)}")
             raw_total = request.args.get("total")
             if raw_total:
                 full_df = full_df.iloc[:int(raw_total) + 1]
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
-
             params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             min_candles = params.get("min_candles", 20)
-
             full_df = full_df.iloc[:-1].copy()
             total = len(full_df)
             idx   = raw_idx if raw_idx >= 1 else total
             idx   = max(min_candles + 3, min(idx, total))
             df    = full_df.iloc[:idx].copy() if idx < total else full_df.copy()
+            print(f"[REPLAY] idx={idx} total={total} df_len={len(df)} df[-1]={int(df.index[-1].timestamp())} df[-2]={int(df.index[-2].timestamp())}")
 
             result = accum_detect(df, debug=True, replay=True, market_timing=self.market_timing, **params)
             if not result:
