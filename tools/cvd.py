@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Tuple, Any, Optional
 from dataclasses import dataclass
+from detectors.divergence import detect_divergences
 
 
 # Intrabar analysis intervals (chart interval -> lower timeframe for CVD calculation)
@@ -211,96 +212,6 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     return results
 
-
-def detect_synchronized_pivots(
-    price_highs: np.ndarray, 
-    price_lows: np.ndarray,
-    cvd_highs: np.ndarray, 
-    cvd_lows: np.ndarray
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Surgical Fractal Detection: Finds every 'tip' even if flat.
-    Allows for a 1-bar drift between Price and CVD for maximum detection.
-    """
-    sync_highs = []
-    sync_lows = []
-    n = len(price_highs)
-
-    for i in range(1, n - 1):
-        # --- BEARISH ANCHOR ---
-        # Price Peak at 'i' OR 'i-1'
-        p_is_high = price_highs[i] >= price_highs[i-1] and price_highs[i] >= price_highs[i+1]
-        c_is_high = cvd_highs[i] >= cvd_highs[i-1] and cvd_highs[i] >= cvd_highs[i+1]
-        
-        # If both are high within the same 1-bar window, we anchor to 'i'
-        if p_is_high and c_is_high:
-            sync_highs.append({"index": i, "p_val": price_highs[i], "c_val": cvd_highs[i]})
-
-        # --- BULLISH ANCHOR ---
-        p_is_low = price_lows[i] <= price_lows[i-1] and price_lows[i] <= price_lows[i+1]
-        c_is_low = cvd_lows[i] <= cvd_lows[i-1] and cvd_lows[i] <= cvd_lows[i+1]
-        
-        if p_is_low and c_is_low:
-            sync_lows.append({"index": i, "p_val": price_lows[i], "c_val": cvd_lows[i]})
-
-    return sync_highs, sync_lows
-
-
-def detect_divergences(
-    price_highs: np.ndarray,
-    price_lows: np.ndarray,
-    cvd_highs: np.ndarray,
-    cvd_lows: np.ndarray,
-    times: List[int],
-    max_width: int = 15, # Increased slightly to match your drawings
-    **kwargs
-) -> List[Dict[str, Any]]:
-    divergences = []
-    s_highs, s_lows = detect_synchronized_pivots(price_highs, price_lows, cvd_highs, cvd_lows)
-
-    # --- DEBUGGING OUTPUT ---
-    print("\n--- FRACTAL DETECTOR DEBUG ---")
-    print(f"Total Bars Processed: {len(times)}")
-    print(f"Fractal High Anchors: {len(s_highs)}")
-    print(f"Fractal Low Anchors:  {len(s_lows)}")
-    print("------------------------------\n")
-
-
-    # Bearish: Higher Price High, Lower CVD High
-    for i in range(1, len(s_highs)):
-        h2 = s_highs[i]
-        for j in range(i-1, max(-1, i-10), -1): # Look back up to 10 anchors
-            h1 = s_highs[j]
-            if h2['index'] - h1['index'] > max_width: break
-            
-            if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
-                divergences.append({
-                    "type": "bearish", "label": "Bear Div", "price_time": times[h2['index']],
-                    "price_pivot_1": {"bar": h1['index'], "value": float(h1['p_val'])},
-                    "price_pivot_2": {"bar": h2['index'], "value": float(h2['p_val'])},
-                    "cvd_pivot_1": {"bar": h1['index'], "value": float(h1['c_val'])},
-                    "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
-                })
-                break # Found the best match for this peak
-
-    # Bullish: Lower Price Low, Higher CVD Low
-    for i in range(1, len(s_lows)):
-        l2 = s_lows[i]
-        for j in range(i-1, max(-1, i-10), -1):
-            l1 = s_lows[j]
-            if l2['index'] - l1['index'] > max_width: break
-            
-            if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
-                divergences.append({
-                    "type": "bullish", "label": "Bull Div", "price_time": times[l2['index']],
-                    "price_pivot_1": {"bar": l1['index'], "value": float(l1['p_val'])},
-                    "price_pivot_2": {"bar": l2['index'], "value": float(l2['p_val'])},
-                    "cvd_pivot_1": {"bar": l1['index'], "value": float(l1['c_val'])},
-                    "cvd_pivot_2": {"bar": l2['index'], "value": float(l2['c_val'])}
-                })
-                break
-
-    return divergences
     
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -351,28 +262,16 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 def get_cvd_data(
     df: pd.DataFrame,
     intrabar_df: Optional[pd.DataFrame] = None,
-    left_pivot: int = 5,
-    right_pivot: int = 5,
+    left_pivot: int = 3,  # Adjusted to 3 for better sensitivity as discussed
+    right_pivot: int = 1, # Hardcoded to 1 for the requested 1-bar confirmation
     max_pivot_bar_gap: int = 8,
     detect_divs: bool = True
 ) -> Dict[str, Any]:
     """
     Get complete CVD data including candles, divergences, and stats.
-
-    Main entry point matching the interface expected by server.py.
-
-    Args:
-        df: Main timeframe OHLCV DataFrame
-        intrabar_df: Optional lower timeframe DataFrame for intrabar analysis
-        left_pivot: Left bars for pivot detection
-        right_pivot: Right bars for pivot detection
-        max_pivot_bar_gap: Maximum bar gap between price and CVD pivots
-        detect_divs: Whether to detect divergences
-
-    Returns:
-        Dict with cvd_candles, divergences, stats, has_volume, method
+    Uses the externalized synchronized fractal detector.
     """
-    # Clean dataframes
+    # 1. Clean dataframes
     df = clean_dataframe(df)
     if df is None or len(df) < 2:
         return {
@@ -386,8 +285,7 @@ def get_cvd_data(
 
     has_volume = bool("Volume" in df.columns and df["Volume"].sum() > len(df))
 
-    # Build CVD candles
-    # Clean intrabar_df and re-check length (clean_dataframe can return empty)
+    # 2. Build CVD candles
     intrabar_cleaned = None
     if intrabar_df is not None and len(intrabar_df) > 0:
         intrabar_cleaned = clean_dataframe(intrabar_df)
@@ -411,9 +309,9 @@ def get_cvd_data(
             "method": method,
         }
 
-    # Build legacy cvd format (list of value/delta dicts)
+    # 3. Build legacy cvd format for frontend compatibility
     cvd_points = []
-    for i, candle in enumerate(cvd_candles):
+    for candle in cvd_candles:
         delta = candle["close"] - candle["open"]
         cvd_points.append({
             "time": candle["time"],
@@ -423,7 +321,7 @@ def get_cvd_data(
             "cvd_low": candle["low"],
         })
 
-    # Calculate stats
+    # 4. Calculate stats
     closes = [c["close"] for c in cvd_candles]
     stats = {
         "min": round(min(closes), 4),
@@ -432,7 +330,7 @@ def get_cvd_data(
         "net": round(closes[-1] - closes[0], 4),
     }
 
-    # Detect divergences
+    # 5. Detect divergences using the external synchronized fractal detector
     divergences = []
     if detect_divs and len(cvd_candles) >= (left_pivot + 2):
         price_highs = df["High"].values.astype(float)
@@ -443,14 +341,23 @@ def get_cvd_data(
         cvd_lows = np.array([c["low"] for c in cvd_candles])
         times = [c["time"] for c in cvd_candles]
 
-        divergences = detect_divergences(
+        # Note: detect_divergences now returns (divergences, h_anchors, l_anchors)
+        divergences, h_count, l_count = detect_divergences(
             price_highs=price_highs,
             price_lows=price_lows,
-            cvd_highs=cvd_highs,
-            cvd_lows=cvd_lows,
+            ind_highs=cvd_highs,
+            ind_lows=cvd_lows,
             times=times,
-            left_pivot=left_pivot
+            max_width=15 # Matching the scanning range for choppy setups
         )
+
+        # DEBUGGING OUTPUT
+        print("\n--- DIVERGENCE DETECTOR DEBUG ---")
+        print(f"Total Bars Processed: {len(times)}")
+        print(f"Synchronized High Anchors (Price+CVD): {h_count}")
+        print(f"Synchronized Low Anchors (Price+CVD):  {l_count}")
+        print(f"Total Divergences Found: {len(divergences)}")
+        print("---------------------------------\n")
 
     return {
         "cvd": cvd_points,
