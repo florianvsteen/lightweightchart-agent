@@ -989,6 +989,7 @@
   // CVD line + histogram series
   let cvdCandleSeries = null;
   let _cvdCandles = [];  // Shifted CVD candle data for crosshair sync
+  let _cvdDivergences = [];  // Store divergences for line rendering
 
   function initCvdSeries() {
     if (cvdCandleSeries) {
@@ -1205,6 +1206,7 @@
       close: c.close,
     }));
     _cvdCandles = candles;  // Store for crosshair sync
+    _cvdDivergences = divs;  // Store for line rendering
 
     if (candles.length) {
       _syncEnabled = false;
@@ -1257,6 +1259,11 @@
 
     // No-volume note
     document.getElementById('cvd-no-vol').style.display = hasVolume ? 'none' : 'inline';
+
+    // Re-render drawings overlay to show divergence lines
+    if (typeof renderAllDrawings === 'function') {
+      setTimeout(() => renderAllDrawings(), 50);
+    }
   }
 
   // ── Bias display ─────────────────────────────────────────────────────
@@ -1875,12 +1882,94 @@
     else                      ctx.setLineDash([]);
   }
 
+  // Render divergence lines on both price and CVD charts
+  function renderDivergenceLines(ctx, panelId) {
+    if (!_cvdDivergences || !_cvdDivergences.length) return;
+    if (!_rawCandles.length || !_cvdCandles.length) return;
+
+    _cvdDivergences.forEach(div => {
+      const isBullish = div.type === 'bullish';
+      const color = isBullish ? '#5af0c4' : '#f05a7e';
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.globalAlpha = 0.8;
+
+      if (panelId === 'price') {
+        // Draw line on price chart connecting price pivots
+        const p1 = div.price_pivot_1;
+        const p2 = div.price_pivot_2;
+        if (!p1 || !p2) return;
+
+        // Get time from raw candles (unshifted) and shift for coordinate lookup
+        const candle1 = _rawCandles[p1.bar];
+        const candle2 = _rawCandles[p2.bar];
+        if (!candle1 || !candle2) return;
+
+        const pt1 = pointToPixel({ time: candle1.time, value: p1.value }, panelId);
+        const pt2 = pointToPixel({ time: candle2.time, value: p2.value }, panelId);
+        if (!pt1 || !pt2) return;
+
+        ctx.beginPath();
+        ctx.moveTo(pt1.x, pt1.y);
+        ctx.lineTo(pt2.x, pt2.y);
+        ctx.stroke();
+
+        // Draw small circles at pivot points
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pt1.x, pt1.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pt2.x, pt2.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (panelId === 'cvd') {
+        // Draw line on CVD chart connecting CVD pivots
+        const c1 = div.cvd_pivot_1;
+        const c2 = div.cvd_pivot_2;
+        if (!c1 || !c2) return;
+
+        // CVD candles are already shifted
+        const cvdCandle1 = _cvdCandles[c1.bar];
+        const cvdCandle2 = _cvdCandles[c2.bar];
+        if (!cvdCandle1 || !cvdCandle2) return;
+
+        // For CVD, time is already shifted, subtract TZ_OFFSET for pointToPixel
+        const pt1 = pointToPixel({ time: cvdCandle1.time - TZ_OFFSET, value: c1.value }, panelId);
+        const pt2 = pointToPixel({ time: cvdCandle2.time - TZ_OFFSET, value: c2.value }, panelId);
+        if (!pt1 || !pt2) return;
+
+        ctx.beginPath();
+        ctx.moveTo(pt1.x, pt1.y);
+        ctx.lineTo(pt2.x, pt2.y);
+        ctx.stroke();
+
+        // Draw small circles at pivot points
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pt1.x, pt1.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pt2.x, pt2.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+    });
+  }
+
   function renderAllDrawings() {
     ['price', 'cvd'].forEach(panelId => {
       syncCanvasSize(panelId);
       const cvs = getCanvas(panelId);
       const ctx = cvs.getContext('2d');
       ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+      // Draw divergence lines first (underneath user drawings)
+      renderDivergenceLines(ctx, panelId);
 
       const panelDrawings = _drawings.filter(d => d && d.chart === panelId);
       panelDrawings.forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
