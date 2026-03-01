@@ -831,6 +831,7 @@ async function runDetector() {
     // so that df[-1] IS the aggressor candidate.
     const res = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF);
     const data = await res.json();
+    console.log('fetch url:', BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF);
     console.log('runDetector: replayIdx', replayIdx, 'sending idx', replayIdx);
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
