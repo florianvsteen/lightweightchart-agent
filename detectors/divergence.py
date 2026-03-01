@@ -47,14 +47,6 @@ def detect_divergences(
     divergences = []
     s_highs, s_lows = detect_synchronized_pivots(price_highs, price_lows, cvd_highs, cvd_lows)
 
-    # --- DEBUGGING OUTPUT ---
-    print("\n--- FRACTAL DETECTOR DEBUG ---")
-    print(f"Total Bars Processed: {len(times)}")
-    print(f"Fractal High Anchors: {len(s_highs)}")
-    print(f"Fractal Low Anchors:  {len(s_lows)}")
-    print("------------------------------\n")
-
-
     # Bearish: Higher Price High, Lower CVD High
     for i in range(1, len(s_highs)):
         h2 = s_highs[i]
