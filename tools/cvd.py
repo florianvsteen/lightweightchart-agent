@@ -255,6 +255,15 @@ def detect_divergences(
     # --- DEBUGGING OUTPUT ---
     print("\n--- DIVERGENCE DETECTOR DEBUG ---")
     print(f"Total Bars Processed: {len(times)}")
+    print(f"Price High Pivots found: {len(ph_pivots)}")
+    print(f"Price Low Pivots found:  {len(pl_pivots)}")
+    print(f"CVD High Pivots found:   {len(ch_pivots)}")
+    print(f"CVD Low Pivots found:    {len(cl_pivots)}")
+    print("---------------------------------\n")
+
+    # --- DEBUGGING OUTPUT ---
+    print("\n--- DIVERGENCE DETECTOR DEBUG ---")
+    print(f"Total Bars Processed: {len(times)}")
     print(f"Price High Pivots found: {len(price_high_pivots)}")
     print(f"Price Low Pivots found:  {len(price_low_pivots)}")
     print(f"CVD High Pivots found:   {len(cvd_high_pivots)}")
