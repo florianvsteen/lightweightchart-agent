@@ -214,6 +214,41 @@ def detect_divergences(
         return []
 
 
+# ── CVD OHLC candles ──────────────────────────────────────────────────────────
+
+def compute_cvd_candles(cvd_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Build OHLC candles from the CVD running total so the CVD panel
+    can be rendered as a candlestick chart (same look as price, but
+    driven by volume delta instead of price).
+
+    For each bar i:
+      open  = cvd[i-1].value  (where the CVD was at the close of the previous bar)
+      close = cvd[i].value    (where it ended this bar)
+      high  = max(open, close) + abs(delta) * 0.3   (wick proportional to conviction)
+      low   = min(open, close) - abs(delta) * 0.3
+    """
+    if not cvd_points:
+        return []
+
+    candles = []
+    for i, pt in enumerate(cvd_points):
+        open_  = cvd_points[i - 1]["value"] if i > 0 else pt["value"]
+        close  = pt["value"]
+        delta  = pt.get("delta", close - open_)
+        wick   = abs(delta) * 0.3
+        high   = max(open_, close) + wick
+        low    = min(open_, close) - wick
+        candles.append({
+            "time":  pt["time"],
+            "open":  round(open_, 4),
+            "high":  round(high,  4),
+            "low":   round(low,   4),
+            "close": round(close, 4),
+        })
+    return candles
+
+
 # ── Full data endpoint helper ──────────────────────────────────────────────────
 
 def get_cvd_data(
@@ -274,8 +309,11 @@ def get_cvd_data(
         except Exception as e:
             print(f"[cvd] divergence prep error: {e}")
 
+    cvd_candles = compute_cvd_candles(cvd_points)
+
     return {
         "cvd":         cvd_points,
+        "cvd_candles": cvd_candles,
         "divergences": divergences,
         "method":      method,
         "has_volume":  has_volume,
