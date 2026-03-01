@@ -219,28 +219,32 @@ def detect_synchronized_pivots(
     cvd_lows: np.ndarray
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    FRACTAL SENSITIVITY: Detects every single 'point' on the chart.
-    If it's a local tip, it's an anchor.
+    Surgical Fractal Detection: Finds every 'tip' even if flat.
+    Allows for a 1-bar drift between Price and CVD for maximum detection.
     """
     sync_highs = []
     sync_lows = []
     n = len(price_highs)
 
-    # We only need 1 bar of context on each side for a fractal peak
     for i in range(1, n - 1):
-        # --- BEARISH FRACTAL (Local Peak) ---
-        # Is this bar higher than the one before and the one after?
-        if (price_highs[i] >= price_highs[i-1] and price_highs[i] > price_highs[i+1] and
-            cvd_highs[i] >= cvd_highs[i-1] and cvd_highs[i] > cvd_highs[i+1]):
+        # --- BEARISH ANCHOR ---
+        # Price Peak at 'i' OR 'i-1'
+        p_is_high = price_highs[i] >= price_highs[i-1] and price_highs[i] >= price_highs[i+1]
+        c_is_high = cvd_highs[i] >= cvd_highs[i-1] and cvd_highs[i] >= cvd_highs[i+1]
+        
+        # If both are high within the same 1-bar window, we anchor to 'i'
+        if p_is_high and c_is_high:
             sync_highs.append({"index": i, "p_val": price_highs[i], "c_val": cvd_highs[i]})
 
-        # --- BULLISH FRACTAL (Local Valley) ---
-        # Is this bar lower than the one before and the one after?
-        if (price_lows[i] <= price_lows[i-1] and price_lows[i] < price_lows[i+1] and
-            cvd_lows[i] <= cvd_lows[i-1] and cvd_lows[i] < cvd_lows[i+1]):
+        # --- BULLISH ANCHOR ---
+        p_is_low = price_lows[i] <= price_lows[i-1] and price_lows[i] <= price_lows[i+1]
+        c_is_low = cvd_lows[i] <= cvd_lows[i-1] and cvd_lows[i] <= cvd_lows[i+1]
+        
+        if p_is_low and c_is_low:
             sync_lows.append({"index": i, "p_val": price_lows[i], "c_val": cvd_lows[i]})
 
     return sync_highs, sync_lows
+
 
 def detect_divergences(
     price_highs: np.ndarray,
@@ -248,15 +252,11 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
-    max_width: int = 10,
+    max_width: int = 15, # Increased slightly to match your drawings
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
-
-    # 1. Get every single fractal peak/valley where Price and CVD agree
-    s_highs, s_lows = detect_synchronized_pivots(
-        price_highs, price_lows, cvd_highs, cvd_lows
-    )
+    s_highs, s_lows = detect_synchronized_pivots(price_highs, price_lows, cvd_highs, cvd_lows)
 
     # --- DEBUGGING OUTPUT ---
     print("\n--- FRACTAL DETECTOR DEBUG ---")
@@ -265,14 +265,13 @@ def detect_divergences(
     print(f"Fractal Low Anchors:  {len(s_lows)}")
     print("------------------------------\n")
 
-    # 2. Bearish Scan (HH Price, LH CVD)
+
+    # Bearish: Higher Price High, Lower CVD High
     for i in range(1, len(s_highs)):
         h2 = s_highs[i]
-        # Look back at previous fractal highs within 10 candles
-        for j in range(i - 1, -1, -1):
+        for j in range(i-1, max(-1, i-10), -1): # Look back up to 10 anchors
             h1 = s_highs[j]
-            if h2['index'] - h1['index'] > max_width:
-                break # Too far away
+            if h2['index'] - h1['index'] > max_width: break
             
             if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
                 divergences.append({
@@ -282,15 +281,14 @@ def detect_divergences(
                     "cvd_pivot_1": {"bar": h1['index'], "value": float(h1['c_val'])},
                     "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
                 })
-                break # Only match the most recent valid divergence
+                break # Found the best match for this peak
 
-    # 3. Bullish Scan (LL Price, HL CVD)
+    # Bullish: Lower Price Low, Higher CVD Low
     for i in range(1, len(s_lows)):
         l2 = s_lows[i]
-        for j in range(i - 1, -1, -1):
+        for j in range(i-1, max(-1, i-10), -1):
             l1 = s_lows[j]
-            if l2['index'] - l1['index'] > max_width:
-                break
+            if l2['index'] - l1['index'] > max_width: break
             
             if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
                 divergences.append({
