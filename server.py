@@ -551,9 +551,12 @@ class PairServer:
         """
         Return CVD (Cumulative Volume Delta) data for the requested interval.
         Accepts ?interval=1m  (default: pair's default_interval)
+
+        For intervals > 1m, fetches 1m data for intrabar analysis to match
+        TradingView's CVD methodology.
         """
         try:
-            from tools.cvd import get_cvd_data
+            from tools.cvd import get_cvd_data, INTRABAR_MAP
             interval = request.args.get("interval", self.default_interval)
             df = self._fetch_df(interval)
             if df is None or len(df) < 5:
@@ -563,7 +566,20 @@ class PairServer:
                     "stats":       {},
                     "has_volume":  False,
                 })
-            result = get_cvd_data(df)
+
+            # Fetch intrabar data for more accurate CVD calculation
+            intrabar_df = None
+            intrabar_interval = INTRABAR_MAP.get(interval)
+            if intrabar_interval:
+                try:
+                    intrabar_df = self._fetch_df(intrabar_interval)
+                    if intrabar_df is not None and len(intrabar_df) < 10:
+                        intrabar_df = None
+                except Exception as ie:
+                    print(f"[{self.pair_id}] Intrabar fetch error: {ie}")
+                    intrabar_df = None
+
+            result = get_cvd_data(df, intrabar_df=intrabar_df)
             return jsonify(result)
         except Exception as e:
             import traceback
