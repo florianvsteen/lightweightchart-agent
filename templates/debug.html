@@ -852,7 +852,7 @@ function applyReplayOverlays(d) {
     const intervalSecs = liveData.candles.length > 1
       ? liveData.candles[1].time - liveData.candles[0].time : 60;
     const zoneEnd = (bz.end_ts || bz.end) - intervalSecs;
-    drawBox(bz.start_ts || bz.start, zoneEnd, bz.top, bz.bottom, col, 0.08);
+    drawBox(bz.start_ts || bz.start, bz.end_ts || bz.end, bz.top, bz.bottom, col, 0.08);
   }
   drawSecondaryZone(d.secondary_zone);
   if (d.breakout_candle) drawAggressorMarker(d.breakout_candle, d.status === 'confirmed');
