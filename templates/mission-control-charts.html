@@ -1140,22 +1140,54 @@
   }
 
   // Crosshair tooltip
+  // ── Crosshair sync: price <-> CVD ──────────────────────────────────
+  let _xhairSyncing = false;
+
   chart.subscribeCrosshairMove((param) => {
+    // 1. Tooltip
     const tooltip = document.getElementById('candle-tooltip');
-    if (!param.time || !param.seriesData) { tooltip.style.display='none'; return; }
-    const data = param.seriesData.get(candleSeries);
-    if (!data) { tooltip.style.display='none'; return; }
-    const rawTime = data.time - TZ_OFFSET;
-    const isBull = data.close >= data.open;
-    const change = data.open>0 ? ((data.close-data.open)/data.open*100) : 0;
-    tooltip.style.display = '';
-    tooltip.innerHTML = `
-      <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
-      <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open)}</span></div>
-      <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high)}</span></div>
-      <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
-      <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull?'up':'down'}">${fmtPrice(data.close)}</span></div>
-      <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>`;
+    if (!param.time || !param.seriesData) {
+      tooltip.style.display = 'none';
+    } else {
+      const data = param.seriesData.get(candleSeries);
+      if (!data) {
+        tooltip.style.display = 'none';
+      } else {
+        const rawTime = data.time - TZ_OFFSET;
+        const isBull  = data.close >= data.open;
+        const change  = data.open > 0 ? ((data.close - data.open) / data.open * 100) : 0;
+        tooltip.style.display = '';
+        tooltip.innerHTML = `
+          <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
+          <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open)}</span></div>
+          <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high)}</span></div>
+          <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
+          <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull ? 'up' : 'down'}">${fmtPrice(data.close)}</span></div>
+          <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull ? 'up' : 'down'}">${isBull ? '+' : ''}${change.toFixed(3)}%</span></div>`;
+      }
+    }
+
+    // 2. Sync crosshair to CVD chart at same timestamp
+    if (_xhairSyncing || !param.time || !cvdCandleSeries) return;
+    _xhairSyncing = true;
+    try { cvdChart.setCrosshairPosition(0, param.time, cvdCandleSeries); } catch(e) {}
+    _xhairSyncing = false;
+  });
+
+  // When hovering CVD, push crosshair back to price chart
+  cvdChart.subscribeCrosshairMove((param) => {
+    if (_xhairSyncing || !param.time || !candleSeries) return;
+    _xhairSyncing = true;
+    try { chart.setCrosshairPosition(0, param.time, candleSeries); } catch(e) {}
+    _xhairSyncing = false;
+  });
+
+  // Clear both crosshairs when mouse leaves either panel
+  priceContainer.addEventListener('mouseleave', () => {
+    try { cvdChart.clearCrosshairPosition(); } catch(e) {}
+  });
+  cvdContainer.addEventListener('mouseleave', () => {
+    try { chart.clearCrosshairPosition(); } catch(e) {}
   });
 
   // Click to show candle detail
