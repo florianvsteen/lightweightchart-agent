@@ -702,9 +702,9 @@
   const chart = LightweightCharts.createChart(priceContainer, {
     layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
     grid: { vertLines:{visible:false}, horzLines:{visible:false} },
-    timeScale: { timeVisible:true, borderColor:'#1e1e28' },
+    timeScale: { timeVisible:true, borderColor:'#1e1e28', barSpacing: 6 },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#1e1e28' },
+    rightPriceScale: { borderColor: '#1e1e28', minimumWidth: 70 },
   });
 
   const candleSeries = chart.addCandlestickSeries({
@@ -776,7 +776,7 @@
     grid: { vertLines:{visible:false}, horzLines:{color:'#1e1e28'} },
     timeScale: { timeVisible:true, borderColor:'#1e1e28', visible: true },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#1e1e28' },
+    rightPriceScale: { borderColor: '#1e1e28', minimumWidth: 70 },
     leftPriceScale:  { visible: false },
     handleScroll: true,
     handleScale:  true,
@@ -826,12 +826,33 @@
     _syncingFromCvd = false;
   });
 
-  // ── Resize handler ───────────────────────────────────────────────────
+  // ── Resize + price-scale alignment ──────────────────────────────────
+  // Both charts must have identical right-scale widths so candles line up pixel-perfect.
+  // LW exposes the rendered scale width via timeScale().width() vs container width.
+  function syncPriceScaleWidth() {
+    try {
+      // Read how wide the price chart's right scale actually rendered
+      const totalW     = priceContainer.clientWidth;
+      const plotW      = chart.timeScale().width();          // plot area only
+      const scaleW     = totalW - plotW;                     // actual right-scale width
+      if (scaleW > 0) {
+        cvdChart.applyOptions({ rightPriceScale: { minimumWidth: scaleW } });
+      }
+    } catch(e) {}
+  }
+
   function handleResize() {
     chart.applyOptions({ width: priceContainer.clientWidth });
     cvdChart.applyOptions({ width: cvdContainer.clientWidth });
+    syncPriceScaleWidth();
   }
   window.addEventListener('resize', handleResize);
+
+  // Sync after data loads (scale width is only known after series data is set)
+  function scheduleScaleSync() {
+    setTimeout(syncPriceScaleWidth, 50);
+    setTimeout(syncPriceScaleWidth, 300);
+  }
 
   // ── Timeframe buttons ────────────────────────────────────────────────
   document.querySelectorAll('.tf-btn').forEach(btn => {
@@ -1230,7 +1251,10 @@
 
       candleSeries.setData([]);
       const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
-      if (shifted.length) candleSeries.setData(shifted);
+      if (shifted.length) {
+        candleSeries.setData(shifted);
+        scheduleScaleSync();   // sync price-scale width once data is rendered
+      }
 
       clearSeries();
       const det = data.detectors || {};
