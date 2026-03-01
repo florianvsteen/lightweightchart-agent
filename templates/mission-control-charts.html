@@ -2433,22 +2433,22 @@
   //chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
   //cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
 
-  // High-performance sync function
   const syncDrawings = () => {
+      // requestAnimationFrame ensures the canvas redraws in sync with the chart paint
       requestAnimationFrame(renderAllDrawings);
   };
   
-  // Subscribe both charts to the same high-frequency sync
+  // Subscribe both charts to movement/zoom events
   chart.timeScale().subscribeVisibleLogicalRangeChange(syncDrawings);
   cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncDrawings);
   
-  // Also sync when the price scale (Y-axis) changes height
-  chart.priceScale('right').subscribeSizeChange(syncDrawings);
-
-  // Re-render on resize
+  // Redraw when the window or container size changes
   const _origHandleResize = handleResize;
   window.removeEventListener('resize', _origHandleResize);
-  window.addEventListener('resize', () => { _origHandleResize(); renderAllDrawings(); });
+  window.addEventListener('resize', () => { 
+      _origHandleResize(); 
+      syncDrawings(); 
+  });
 
 </script>
 </body>
