@@ -1,33 +1,120 @@
 """
 tools/cvd.py
 
-Cumulative Volume Delta (CVD) calculator with block-style (no wick) Candlesticks.
+Cumulative Volume Delta (CVD) calculator with TradingView-style methodology.
+
+Key features:
+- Intrabar analysis for timeframes > 1m (uses 1-minute data for accurate delta calculation)
+- Close Location Value approximation for 1m timeframe
+- Proper CVD candle construction with high/low tracking
 """
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
 
 
-# ── Core calculation ───────────────────────────────────────────────────────────
+# ── Intrabar analysis intervals ───────────────────────────────────────────────
 
-def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str, Any]]:
+INTRABAR_MAP = {
+    "5m":  "1m",
+    "15m": "1m",
+    "30m": "1m",
+    "1h":  "1m",
+    "4h":  "1m",
+    "1d":  "5m",
+    "1wk": "1h",
+}
+
+INTERVAL_MINUTES = {
+    "1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "4h": 240, "1d": 1440, "1wk": 10080,
+}
+
+
+# ── Core calculation (single timeframe) ───────────────────────────────────────
+
+def _compute_bar_delta(
+    opens: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    volumes: np.ndarray,
+    prev_closes: Optional[np.ndarray] = None,
+    method: str = "polarity"
+) -> np.ndarray:
     """
-    Compute Cumulative Volume Delta from an OHLCV DataFrame.
+    Compute volume delta for each bar.
 
     Methods:
-        - "tradingview": Close Location Value method (default) - estimates buy/sell volume
-          based on where close is relative to the high-low range. This matches TradingView's
-          approach when intrabar data is not available.
-          Formula: delta = volume * (2*close - high - low) / (high - low)
-        - "body_weighted": Legacy method using body/range ratio with direction sign.
-        - "simple": Basic method where direction = sign(close - open), delta = volume * direction.
+        - "polarity": Assign full volume based on close vs open direction (TradingView intrabar style)
+        - "close_location": Split volume based on close position within range (approximation)
+    """
+    n = len(closes)
+
+    if method == "polarity":
+        # TradingView's intrabar method: classify entire bar's volume as buy or sell
+        # based on candle direction
+        direction = np.zeros(n)
+
+        # When close != open, use their relative position
+        diff = closes - opens
+        direction = np.where(diff > 0, 1.0, np.where(diff < 0, -1.0, 0.0))
+
+        # When close == open (doji), compare to previous close
+        if prev_closes is not None:
+            doji_mask = (diff == 0)
+            prev_diff = closes - prev_closes
+            direction = np.where(
+                doji_mask,
+                np.where(prev_diff > 0, 1.0, np.where(prev_diff < 0, -1.0, direction)),
+                direction
+            )
+
+        delta = volumes * direction
+
+    else:  # close_location
+        # Close Location Value method - estimates buy/sell split
+        # Formula: delta = volume * (2*close - high - low) / (high - low)
+        candle_range = highs - lows
+        with np.errstate(divide="ignore", invalid="ignore"):
+            close_location = np.where(
+                candle_range > 0,
+                (2 * closes - highs - lows) / candle_range,
+                0.0
+            )
+        delta = volumes * close_location
+
+    return delta
+
+
+def compute_cvd_with_intrabar(
+    df: pd.DataFrame,
+    intrabar_df: Optional[pd.DataFrame] = None,
+    method: str = "polarity"
+) -> List[Dict[str, Any]]:
+    """
+    Compute CVD using intrabar analysis when available.
+
+    This matches TradingView's approach:
+    - For each chart bar, analyze lower timeframe bars within it
+    - Classify each intrabar as buy (+volume) or sell (-volume) based on polarity
+    - Sum to get the bar's volume delta
+    - Track cumulative high/low for proper CVD candle wicks
+
+    Args:
+        df: Main timeframe OHLCV DataFrame
+        intrabar_df: Lower timeframe DataFrame for intrabar analysis (optional)
+        method: "polarity" (TradingView style) or "close_location" (approximation)
+
+    Returns:
+        List of CVD data points with time, value, delta, cvd_high, cvd_low
     """
     if df is None or len(df) < 2:
         return []
 
     try:
-        # Normalise MultiIndex columns (yfinance quirk)
+        # Clean main dataframe
         if isinstance(df.columns, pd.MultiIndex):
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
@@ -35,42 +122,183 @@ def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str,
 
         for col in ["Open", "High", "Low", "Close"]:
             df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
-
         if "Volume" in df.columns:
             df["Volume"] = pd.to_numeric(df["Volume"].squeeze(), errors="coerce").fillna(0)
         else:
             df["Volume"] = 1.0
-
         df = df.dropna(subset=["Open", "High", "Low", "Close"])
 
-        opens  = df["Open"].values.astype(float)
-        highs  = df["High"].values.astype(float)
-        lows   = df["Low"].values.astype(float)
-        closes = df["Close"].values.astype(float)
-        vols   = df["Volume"].values.astype(float)
+        results = []
+        cumulative = 0.0
+        prev_close = None
 
-        candle_range = highs - lows
+        if intrabar_df is not None and len(intrabar_df) > 0:
+            # Clean intrabar dataframe
+            if isinstance(intrabar_df.columns, pd.MultiIndex):
+                intrabar_df = intrabar_df.copy()
+                intrabar_df.columns = intrabar_df.columns.get_level_values(0)
+            intrabar_df = intrabar_df.loc[:, ~intrabar_df.columns.duplicated()].copy()
+
+            for col in ["Open", "High", "Low", "Close"]:
+                intrabar_df[col] = pd.to_numeric(intrabar_df[col].squeeze(), errors="coerce")
+            if "Volume" in intrabar_df.columns:
+                intrabar_df["Volume"] = pd.to_numeric(intrabar_df["Volume"].squeeze(), errors="coerce").fillna(0)
+            else:
+                intrabar_df["Volume"] = 1.0
+            intrabar_df = intrabar_df.dropna(subset=["Open", "High", "Low", "Close"])
+
+            # Process each main bar using intrabar data
+            for i, (idx, row) in enumerate(df.iterrows()):
+                bar_start = idx
+                if i < len(df) - 1:
+                    bar_end = df.index[i + 1]
+                else:
+                    # For the last bar, include all remaining intrabar data
+                    bar_end = intrabar_df.index[-1] + pd.Timedelta(seconds=1)
+
+                # Get intrabars within this main bar
+                mask = (intrabar_df.index >= bar_start) & (intrabar_df.index < bar_end)
+                intrabars = intrabar_df[mask]
+
+                if len(intrabars) > 0:
+                    # Compute delta for each intrabar
+                    opens = intrabars["Open"].values.astype(float)
+                    highs = intrabars["High"].values.astype(float)
+                    lows = intrabars["Low"].values.astype(float)
+                    closes = intrabars["Close"].values.astype(float)
+                    volumes = intrabars["Volume"].values.astype(float)
+
+                    # Create prev_closes array (shift by 1)
+                    prev_closes = np.roll(closes, 1)
+                    if prev_close is not None:
+                        prev_closes[0] = prev_close
+                    else:
+                        prev_closes[0] = opens[0]
+
+                    intrabar_deltas = _compute_bar_delta(
+                        opens, highs, lows, closes, volumes, prev_closes, method="polarity"
+                    )
+
+                    # Sum deltas for this bar
+                    bar_delta = float(np.sum(intrabar_deltas))
+
+                    # Track cumulative high/low during the bar
+                    running = cumulative
+                    cvd_high = cumulative
+                    cvd_low = cumulative
+                    for d in intrabar_deltas:
+                        running += d
+                        cvd_high = max(cvd_high, running)
+                        cvd_low = min(cvd_low, running)
+
+                    cumulative += bar_delta
+                    prev_close = closes[-1]
+                else:
+                    # No intrabar data - fall back to close location method
+                    candle_range = row["High"] - row["Low"]
+                    if candle_range > 0:
+                        close_loc = (2 * row["Close"] - row["High"] - row["Low"]) / candle_range
+                    else:
+                        close_loc = 0.0
+                    bar_delta = float(row["Volume"] * close_loc)
+                    cvd_high = cumulative + max(0, bar_delta)
+                    cvd_low = cumulative + min(0, bar_delta)
+                    cumulative += bar_delta
+
+                results.append({
+                    "time": int(idx.timestamp()),
+                    "value": round(cumulative, 4),
+                    "delta": round(bar_delta, 4),
+                    "cvd_high": round(cvd_high, 4),
+                    "cvd_low": round(cvd_low, 4),
+                })
+        else:
+            # No intrabar data - use close location value method
+            opens = df["Open"].values.astype(float)
+            highs = df["High"].values.astype(float)
+            lows = df["Low"].values.astype(float)
+            closes = df["Close"].values.astype(float)
+            volumes = df["Volume"].values.astype(float)
+
+            # Create prev_closes for polarity fallback
+            prev_closes = np.roll(closes, 1)
+            prev_closes[0] = opens[0]
+
+            deltas = _compute_bar_delta(
+                opens, highs, lows, closes, volumes, prev_closes, method=method
+            )
+
+            for i, (idx, row) in enumerate(df.iterrows()):
+                bar_delta = deltas[i]
+                cvd_high = cumulative + max(0, bar_delta)
+                cvd_low = cumulative + min(0, bar_delta)
+                cumulative += bar_delta
+
+                results.append({
+                    "time": int(idx.timestamp()),
+                    "value": round(cumulative, 4),
+                    "delta": round(bar_delta, 4),
+                    "cvd_high": round(cvd_high, 4),
+                    "cvd_low": round(cvd_low, 4),
+                })
+
+        return results
+
+    except Exception as e:
+        print(f"[cvd] compute_cvd_with_intrabar error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str, Any]]:
+    """
+    Compute Cumulative Volume Delta from an OHLCV DataFrame (legacy interface).
+
+    Methods:
+        - "tradingview": Close Location Value method (default)
+        - "polarity": Simple direction-based (close > open = buy)
+        - "body_weighted": Legacy method using body/range ratio
+    """
+    if df is None or len(df) < 2:
+        return []
+
+    try:
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
+            df.columns = df.columns.get_level_values(0)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
+
+        for col in ["Open", "High", "Low", "Close"]:
+            df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
+        if "Volume" in df.columns:
+            df["Volume"] = pd.to_numeric(df["Volume"].squeeze(), errors="coerce").fillna(0)
+        else:
+            df["Volume"] = 1.0
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+        opens = df["Open"].values.astype(float)
+        highs = df["High"].values.astype(float)
+        lows = df["Low"].values.astype(float)
+        closes = df["Close"].values.astype(float)
+        vols = df["Volume"].values.astype(float)
+
+        # Create prev_closes
+        prev_closes = np.roll(closes, 1)
+        prev_closes[0] = opens[0]
 
         if method == "tradingview":
-            # Close Location Value method - matches TradingView's CVD approximation
-            # Formula: delta = volume * (2*close - high - low) / (high - low)
-            # This estimates buy/sell volume based on where close is within the bar's range
-            with np.errstate(divide="ignore", invalid="ignore"):
-                close_location = np.where(
-                    candle_range > 0,
-                    (2 * closes - highs - lows) / candle_range,
-                    0.0
-                )
-            delta = vols * close_location
+            delta = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "close_location")
+        elif method == "polarity":
+            delta = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "polarity")
         elif method == "body_weighted":
-            # Legacy method using body/range ratio with direction sign
             direction = np.sign(closes - opens)
             body = np.abs(closes - opens)
+            candle_range = highs - lows
             with np.errstate(divide="ignore", invalid="ignore"):
                 body_ratio = np.where(candle_range > 0, body / candle_range, 0.0)
             delta = vols * body_ratio * direction
         else:
-            # Simple method - just use direction
             direction = np.sign(closes - opens)
             delta = vols * direction
 
@@ -79,7 +307,7 @@ def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str,
         result = []
         for i, idx in enumerate(df.index):
             result.append({
-                "time":  int(idx.timestamp()),
+                "time": int(idx.timestamp()),
                 "value": float(round(cumulative[i], 4)),
                 "delta": float(round(delta[i], 4)),
             })
@@ -104,18 +332,18 @@ def detect_divergences(
 
     try:
         n = min(len(candles), len(cvd_points))
-        candles   = candles[-lookback:] if n > lookback else candles[-n:]
-        cvd_pts   = cvd_points[-lookback:] if n > lookback else cvd_points[-n:]
-        m         = len(candles)
+        candles = candles[-lookback:] if n > lookback else candles[-n:]
+        cvd_pts = cvd_points[-lookback:] if n > lookback else cvd_points[-n:]
+        m = len(candles)
 
         if m < 6:
             return []
 
-        closes    = np.array([c["close"] for c in candles])
-        lows      = np.array([c["low"]   for c in candles])
-        highs     = np.array([c["high"]  for c in candles])
-        cvd_vals  = np.array([p["value"] for p in cvd_pts])
-        times     = [c["time"] for c in candles]
+        closes = np.array([c["close"] for c in candles])
+        lows = np.array([c["low"] for c in candles])
+        highs = np.array([c["high"] for c in candles])
+        cvd_vals = np.array([p["value"] for p in cvd_pts])
+        times = [c["time"] for c in candles]
         avg_price = float(np.mean(closes))
 
         divergences = []
@@ -130,15 +358,15 @@ def detect_divergences(
                             break
                 if prev_low_idx is not None:
                     price_lower_low = lows[i] < lows[prev_low_idx]
-                    cvd_higher_low  = cvd_vals[i] > cvd_vals[prev_low_idx]
-                    swing_size      = abs(lows[prev_low_idx] - lows[i]) / avg_price
+                    cvd_higher_low = cvd_vals[i] > cvd_vals[prev_low_idx]
+                    swing_size = abs(lows[prev_low_idx] - lows[i]) / avg_price
                     if price_lower_low and cvd_higher_low and swing_size >= min_swing_pct:
                         divergences.append({
-                            "type":        "bullish",
-                            "price_time":  times[i],
+                            "type": "bullish",
+                            "price_time": times[i],
                             "price_value": float(lows[i]),
-                            "cvd_value":   float(cvd_vals[i]),
-                            "label":       "Bull Div",
+                            "cvd_value": float(cvd_vals[i]),
+                            "label": "Bull Div",
                         })
 
             if highs[i] > highs[i - 1] and highs[i] > highs[i + 1] if i + 1 < m else True:
@@ -150,15 +378,15 @@ def detect_divergences(
                             break
                 if prev_high_idx is not None:
                     price_higher_high = highs[i] > highs[prev_high_idx]
-                    cvd_lower_high    = cvd_vals[i] < cvd_vals[prev_high_idx]
-                    swing_size        = abs(highs[i] - highs[prev_high_idx]) / avg_price
+                    cvd_lower_high = cvd_vals[i] < cvd_vals[prev_high_idx]
+                    swing_size = abs(highs[i] - highs[prev_high_idx]) / avg_price
                     if price_higher_high and cvd_lower_high and swing_size >= min_swing_pct:
                         divergences.append({
-                            "type":        "bearish",
-                            "price_time":  times[i],
+                            "type": "bearish",
+                            "price_time": times[i],
                             "price_value": float(highs[i]),
-                            "cvd_value":   float(cvd_vals[i]),
-                            "label":       "Bear Div",
+                            "cvd_value": float(cvd_vals[i]),
+                            "label": "Bear Div",
                         })
 
         seen = set()
@@ -175,31 +403,44 @@ def detect_divergences(
         return []
 
 
-# ── CVD OHLC candles (NO WICKS) ────────────────────────────────────────────────
+# ── CVD OHLC candles ────────────────────────────────────────────────────────────
 
-def compute_cvd_candles(cvd_points: List[Dict[str, Any]], df: pd.DataFrame) -> List[Dict[str, Any]]:
+def compute_cvd_candles(
+    cvd_points: List[Dict[str, Any]],
+    df: pd.DataFrame,
+    include_wicks: bool = True
+) -> List[Dict[str, Any]]:
     """
-    Build OHLC candles from the CVD running total.
-    Forces High and Low to equal the Open or Close, effectively removing wicks.
+    Build OHLC candles from CVD data.
+
+    Args:
+        cvd_points: List of CVD points with value, delta, cvd_high, cvd_low
+        df: Original OHLCV DataFrame
+        include_wicks: If True, use cvd_high/cvd_low for wicks (TradingView style)
+                      If False, set high=low=body extremes (no wicks)
     """
     if not cvd_points or df is None or len(df) != len(cvd_points):
         return []
 
     candles = []
     for i, pt in enumerate(cvd_points):
-        # Open is where the CVD ended on the previous bar
-        open_val  = cvd_points[i - 1]["value"] if i > 0 else pt["value"]
+        open_val = cvd_points[i - 1]["value"] if i > 0 else 0.0
         close_val = pt["value"]
-        
-        # To REMOVE WICKS: High/Low must never exceed the Open/Close body
-        high = max(open_val, close_val)
-        low  = min(open_val, close_val)
+
+        if include_wicks and "cvd_high" in pt and "cvd_low" in pt:
+            # Use tracked intrabar high/low for proper wicks
+            high = pt["cvd_high"]
+            low = pt["cvd_low"]
+        else:
+            # No wicks - high/low = body extremes
+            high = max(open_val, close_val)
+            low = min(open_val, close_val)
 
         candles.append({
-            "time":  pt["time"],
-            "open":  round(open_val, 4),
-            "high":  round(high, 4),
-            "low":   round(low, 4),
+            "time": pt["time"],
+            "open": round(open_val, 4),
+            "high": round(high, 4),
+            "low": round(low, 4),
             "close": round(close_val, 4),
         })
     return candles
@@ -212,34 +453,53 @@ def get_cvd_data(
     method: str = "tradingview",
     detect_divs: bool = True,
     lookback: int = 20,
+    intrabar_df: Optional[pd.DataFrame] = None,
+    include_wicks: bool = True,
 ) -> Dict[str, Any]:
-    
-    # Pre-clean the dataframe so indices match cvd_points
+    """
+    Get complete CVD data including candles, divergences, and stats.
+
+    Args:
+        df: Main timeframe OHLCV DataFrame
+        method: Calculation method ("tradingview", "polarity", "body_weighted")
+        detect_divs: Whether to detect divergences
+        lookback: Lookback period for divergence detection
+        intrabar_df: Optional lower timeframe DataFrame for intrabar analysis
+        include_wicks: Whether to include wicks on CVD candles
+    """
+    # Pre-clean the dataframe
     if isinstance(df.columns, pd.MultiIndex):
         df = df.copy()
         df.columns = df.columns.get_level_values(0)
     df = df.loc[:, ~df.columns.duplicated()].dropna(subset=["Open", "High", "Low", "Close"]).copy()
 
     has_volume = bool("Volume" in df.columns and df["Volume"].sum() > len(df))
-    cvd_points = compute_cvd(df, method=method)
+
+    # Use intrabar analysis if available, otherwise fall back to single-timeframe
+    if intrabar_df is not None and len(intrabar_df) > 0:
+        cvd_points = compute_cvd_with_intrabar(df, intrabar_df, method="polarity")
+        used_method = "intrabar"
+    else:
+        cvd_points = compute_cvd(df, method=method)
+        used_method = method
 
     stats = {}
     if cvd_points:
         vals = [p["value"] for p in cvd_points]
-        stats["min"]  = round(min(vals), 4)
-        stats["max"]  = round(max(vals), 4)
+        stats["min"] = round(min(vals), 4)
+        stats["max"] = round(max(vals), 4)
         stats["last"] = round(vals[-1], 4)
-        stats["net"]  = round(vals[-1] - vals[0], 4)
+        stats["net"] = round(vals[-1] - vals[0], 4)
 
     divergences = []
     if detect_divs and cvd_points:
         try:
             candles_for_div = [
                 {
-                    "time":  int(idx.timestamp()),
-                    "open":  float(row["Open"]),
-                    "high":  float(row["High"]),
-                    "low":   float(row["Low"]),
+                    "time": int(idx.timestamp()),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
                     "close": float(row["Close"]),
                 }
                 for idx, row in df.iterrows()
@@ -248,14 +508,13 @@ def get_cvd_data(
         except Exception as e:
             print(f"[cvd] divergence prep error: {e}")
 
-    # Generate candles with NO WICKS
-    cvd_candles = compute_cvd_candles(cvd_points, df)
+    cvd_candles = compute_cvd_candles(cvd_points, df, include_wicks=include_wicks)
 
     return {
-        "cvd":         cvd_points,
+        "cvd": cvd_points,
         "cvd_candles": cvd_candles,
         "divergences": divergences,
-        "method":      method,
-        "has_volume":  has_volume,
-        "stats":       stats,
+        "method": used_method,
+        "has_volume": has_volume,
+        "stats": stats,
     }
