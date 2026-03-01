@@ -101,6 +101,10 @@ def build_cvd_ohlc_from_intrabar(
     if main_df is None or len(main_df) < 1:
         return []
 
+    # Defensive check for empty intrabar data
+    if intrabar_df is None or len(intrabar_df) < 1:
+        return []
+
     results = []
     last_close = 0.0  # CVD close of previous bar (starts at 0)
 
@@ -469,9 +473,15 @@ def get_cvd_data(
     has_volume = "Volume" in df.columns and df["Volume"].sum() > len(df)
 
     # Build CVD candles
+    # Clean intrabar_df and re-check length (clean_dataframe can return empty)
+    intrabar_cleaned = None
     if intrabar_df is not None and len(intrabar_df) > 0:
-        intrabar_df = clean_dataframe(intrabar_df)
-        cvd_candles = build_cvd_ohlc_from_intrabar(df, intrabar_df)
+        intrabar_cleaned = clean_dataframe(intrabar_df)
+        if len(intrabar_cleaned) == 0:
+            intrabar_cleaned = None
+
+    if intrabar_cleaned is not None:
+        cvd_candles = build_cvd_ohlc_from_intrabar(df, intrabar_cleaned)
         method = "intrabar"
     else:
         cvd_candles = build_cvd_ohlc_single_tf(df)
