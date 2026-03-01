@@ -7,11 +7,13 @@ Key features:
 - Intrabar analysis for timeframes > 1m (uses 1-minute data for accurate delta calculation)
 - Close Location Value approximation for 1m timeframe
 - Proper CVD candle construction with high/low tracking
+- Anchor period support (daily reset) matching TradingView's behavior
 """
 
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Optional, Callable
+from datetime import datetime, timezone
 
 
 # ── Intrabar analysis intervals ───────────────────────────────────────────────
@@ -30,6 +32,37 @@ INTERVAL_MINUTES = {
     "1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30,
     "1h": 60, "4h": 240, "1d": 1440, "1wk": 10080,
 }
+
+# ── Anchor period options ─────────────────────────────────────────────────────
+# TradingView resets CVD at the start of each anchor period
+ANCHOR_PERIODS = {"session", "day", "week", "month", "year", "none"}
+DEFAULT_ANCHOR = "day"  # Match TradingView default
+
+
+# ── Anchor period helpers ─────────────────────────────────────────────────────
+
+def _get_anchor_key(timestamp: pd.Timestamp, anchor: str) -> tuple:
+    """
+    Return a hashable key representing the anchor period for a given timestamp.
+    When the anchor key changes, the CVD should reset to 0.
+    """
+    if anchor == "none":
+        return (0,)  # Never changes - continuous accumulation
+    elif anchor == "day":
+        return (timestamp.year, timestamp.month, timestamp.day)
+    elif anchor == "week":
+        # ISO week number
+        return (timestamp.year, timestamp.isocalendar()[1])
+    elif anchor == "month":
+        return (timestamp.year, timestamp.month)
+    elif anchor == "year":
+        return (timestamp.year,)
+    elif anchor == "session":
+        # Session anchor resets at market open - use day as approximation
+        # Could be enhanced with actual session times
+        return (timestamp.year, timestamp.month, timestamp.day)
+    else:
+        return (timestamp.year, timestamp.month, timestamp.day)  # Default to day
 
 
 # ── Core calculation (single timeframe) ───────────────────────────────────────
@@ -91,7 +124,8 @@ def _compute_bar_delta(
 def compute_cvd_with_intrabar(
     df: pd.DataFrame,
     intrabar_df: Optional[pd.DataFrame] = None,
-    method: str = "polarity"
+    method: str = "polarity",
+    anchor: str = DEFAULT_ANCHOR
 ) -> List[Dict[str, Any]]:
     """
     Compute CVD using intrabar analysis when available.
@@ -101,11 +135,14 @@ def compute_cvd_with_intrabar(
     - Classify each intrabar as buy (+volume) or sell (-volume) based on polarity
     - Sum to get the bar's volume delta
     - Track cumulative high/low for proper CVD candle wicks
+    - Reset cumulative value at the start of each anchor period (default: daily)
 
     Args:
         df: Main timeframe OHLCV DataFrame
         intrabar_df: Lower timeframe DataFrame for intrabar analysis (optional)
         method: "polarity" (TradingView style) or "close_location" (approximation)
+        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
+                Default is "day" to match TradingView's default behavior.
 
     Returns:
         List of CVD data points with time, value, delta, cvd_high, cvd_low
@@ -131,6 +168,7 @@ def compute_cvd_with_intrabar(
         results = []
         cumulative = 0.0
         prev_close = None
+        current_anchor_key = None
 
         if intrabar_df is not None and len(intrabar_df) > 0:
             # Clean intrabar dataframe
@@ -149,6 +187,13 @@ def compute_cvd_with_intrabar(
 
             # Process each main bar using intrabar data
             for i, (idx, row) in enumerate(df.iterrows()):
+                # Check for anchor period reset (e.g., new day)
+                bar_anchor_key = _get_anchor_key(idx, anchor)
+                if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
+                    # New anchor period - reset cumulative to 0
+                    cumulative = 0.0
+                current_anchor_key = bar_anchor_key
+
                 bar_start = idx
                 if i < len(df) - 1:
                     bar_end = df.index[i + 1]
@@ -229,6 +274,13 @@ def compute_cvd_with_intrabar(
             )
 
             for i, (idx, row) in enumerate(df.iterrows()):
+                # Check for anchor period reset (e.g., new day)
+                bar_anchor_key = _get_anchor_key(idx, anchor)
+                if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
+                    # New anchor period - reset cumulative to 0
+                    cumulative = 0.0
+                current_anchor_key = bar_anchor_key
+
                 bar_delta = deltas[i]
                 cvd_high = cumulative + max(0, bar_delta)
                 cvd_low = cumulative + min(0, bar_delta)
@@ -251,7 +303,11 @@ def compute_cvd_with_intrabar(
         return []
 
 
-def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str, Any]]:
+def compute_cvd(
+    df: pd.DataFrame,
+    method: str = "tradingview",
+    anchor: str = DEFAULT_ANCHOR
+) -> List[Dict[str, Any]]:
     """
     Compute Cumulative Volume Delta from an OHLCV DataFrame (legacy interface).
 
@@ -259,6 +315,12 @@ def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str,
         - "tradingview": Close Location Value method (default)
         - "polarity": Simple direction-based (close > open = buy)
         - "body_weighted": Legacy method using body/range ratio
+
+    Args:
+        df: OHLCV DataFrame with DatetimeIndex
+        method: Calculation method
+        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
+                Default is "day" to match TradingView's default behavior.
     """
     if df is None or len(df) < 2:
         return []
@@ -288,28 +350,38 @@ def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str,
         prev_closes[0] = opens[0]
 
         if method == "tradingview":
-            delta = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "close_location")
+            deltas = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "close_location")
         elif method == "polarity":
-            delta = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "polarity")
+            deltas = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "polarity")
         elif method == "body_weighted":
             direction = np.sign(closes - opens)
             body = np.abs(closes - opens)
             candle_range = highs - lows
             with np.errstate(divide="ignore", invalid="ignore"):
                 body_ratio = np.where(candle_range > 0, body / candle_range, 0.0)
-            delta = vols * body_ratio * direction
+            deltas = vols * body_ratio * direction
         else:
             direction = np.sign(closes - opens)
-            delta = vols * direction
+            deltas = vols * direction
 
-        cumulative = np.cumsum(delta)
-
+        # Compute cumulative with anchor period resets
         result = []
+        cumulative = 0.0
+        current_anchor_key = None
+
         for i, idx in enumerate(df.index):
+            # Check for anchor period reset (e.g., new day)
+            bar_anchor_key = _get_anchor_key(idx, anchor)
+            if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
+                # New anchor period - reset cumulative to 0
+                cumulative = 0.0
+            current_anchor_key = bar_anchor_key
+
+            cumulative += deltas[i]
             result.append({
                 "time": int(idx.timestamp()),
-                "value": float(round(cumulative[i], 4)),
-                "delta": float(round(delta[i], 4)),
+                "value": float(round(cumulative, 4)),
+                "delta": float(round(deltas[i], 4)),
             })
 
         return result
@@ -455,6 +527,7 @@ def get_cvd_data(
     lookback: int = 20,
     intrabar_df: Optional[pd.DataFrame] = None,
     include_wicks: bool = True,
+    anchor: str = DEFAULT_ANCHOR,
 ) -> Dict[str, Any]:
     """
     Get complete CVD data including candles, divergences, and stats.
@@ -466,6 +539,8 @@ def get_cvd_data(
         lookback: Lookback period for divergence detection
         intrabar_df: Optional lower timeframe DataFrame for intrabar analysis
         include_wicks: Whether to include wicks on CVD candles
+        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
+                Default is "day" to match TradingView's default behavior.
     """
     # Pre-clean the dataframe
     if isinstance(df.columns, pd.MultiIndex):
@@ -477,10 +552,10 @@ def get_cvd_data(
 
     # Use intrabar analysis if available, otherwise fall back to single-timeframe
     if intrabar_df is not None and len(intrabar_df) > 0:
-        cvd_points = compute_cvd_with_intrabar(df, intrabar_df, method="polarity")
+        cvd_points = compute_cvd_with_intrabar(df, intrabar_df, method="polarity", anchor=anchor)
         used_method = "intrabar"
     else:
-        cvd_points = compute_cvd(df, method=method)
+        cvd_points = compute_cvd(df, method=method, anchor=anchor)
         used_method = method
 
     stats = {}
@@ -515,6 +590,7 @@ def get_cvd_data(
         "cvd_candles": cvd_candles,
         "divergences": divergences,
         "method": used_method,
+        "anchor": anchor,
         "has_volume": has_volume,
         "stats": stats,
     }
