@@ -13,7 +13,7 @@ NEWS_TTL_SECONDS = 300
 MAX_ARTICLES     = 10
 
 # ── Weighted Sentiment Dictionary ──────────────────────────────────────────────
-# Higher numbers = Higher conviction
+# Higher numbers = Higher conviction/intensity of the move
 _SENTIMENT_WEIGHTS = {
     # Bullish
     "surge": 3, "rally": 3, "rocket": 4, "breakout": 3, "climb": 1, 
@@ -106,8 +106,8 @@ def _fetch_and_summarize(ticker_symbol: str) -> dict:
         "articles": articles
     }
 
-def get_news_data(pair_id: str) -> dict:
-    """Entry point with caching."""
+def get_news(pair_id: str) -> dict:
+    """Entry point with caching (reverted name to fix ImportError)."""
     key = pair_id.upper()
     with _cache_lock:
         if key in _cache and (time.time() - _cache[key]["ts"]) < NEWS_TTL_SECONDS:
