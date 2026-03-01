@@ -285,14 +285,14 @@ def detect_pivot_lows(
 
         # Check left bars
         for j in range(i - left_bars, i):
-            if values[j] > current:
+            if values[j] < current:  # Changed to strictly < for lows (allows flat bottoms on the left)
                 is_pivot = False
                 break
 
         # Check right bars
         if is_pivot:
             for j in range(i + 1, i + right_bars + 1):
-                if values[j] >= current: # Keep right side strict to prevent double-counting a flat top
+                if values[j] <= current:  # Keep <= on the right to prevent double-counting
                     is_pivot = False
                     break
 
