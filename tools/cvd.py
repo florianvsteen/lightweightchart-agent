@@ -250,17 +250,14 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
+    max_width: int = 10, # <--- NEW: Strict 10-candle limit
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
 
-    # CALL FIX: Ensure all 4 arrays are passed to the sync detector
+    # 1. Get Synchronized Anchors (The 1-to-1 points)
     s_highs, s_lows = detect_synchronized_pivots(
-        price_highs, 
-        price_lows, 
-        cvd_highs, 
-        cvd_lows, 
-        left_pivot
+        price_highs, price_lows, cvd_highs, cvd_lows, left_pivot
     )
 
     # --- DEBUGGING OUTPUT ---
@@ -270,9 +267,14 @@ def detect_divergences(
     print(f"Synchronized Low Anchors (Price+CVD):  {len(s_lows)}")
     print("---------------------------------\n")
 
-    # 1. Bearish Divergence (HH in Price + LH in CVD)
+    # 2. Bearish Divergence (HH in Price + LH in CVD)
     for i in range(1, len(s_highs)):
         h1, h2 = s_highs[i-1], s_highs[i]
+        
+        # Check Max Width Constraint
+        if abs(h2['index'] - h1['index']) > max_width:
+            continue
+
         if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
             divergences.append({
                 "type": "bearish",
@@ -286,9 +288,14 @@ def detect_divergences(
                 "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
             })
 
-    # 2. Bullish Divergence (LL in Price + HL in CVD)
+    # 3. Bullish Divergence (LL in Price + HL in CVD)
     for i in range(1, len(s_lows)):
         l1, l2 = s_lows[i-1], s_lows[i]
+        
+        # Check Max Width Constraint
+        if abs(l2['index'] - l1['index']) > max_width:
+            continue
+
         if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
             divergences.append({
                 "type": "bullish",
