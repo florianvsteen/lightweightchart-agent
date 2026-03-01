@@ -162,6 +162,37 @@ def proxy_api_candle_explain(pair_id):
     return _json_proxy(pair_id, "/api/candle-explain")
 
 
+def _method_proxy(pair_id, path):
+    """Forward GET / POST / DELETE with body to the pair server."""
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": f"Unknown pair: {pair_id}"}), 404
+    try:
+        qs  = request.query_string.decode()
+        url = f"http://127.0.0.1:{cfg['port']}{path}"
+        if qs:
+            url += "?" + qs
+        method = request.method
+        kwargs = {"timeout": 15}
+        if method in ("POST", "PUT", "PATCH"):
+            kwargs["json"]    = request.get_json(force=True, silent=True)
+            kwargs["headers"] = {"Content-Type": "application/json"}
+        r = requests.request(method, url, **kwargs)
+        return (r.content, r.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/proxy/<pair_id>/api/drawings", methods=["GET", "POST"])
+def proxy_api_drawings(pair_id):
+    return _method_proxy(pair_id, "/api/drawings")
+
+
+@app.route("/proxy/<pair_id>/api/drawings/<drawing_id>", methods=["DELETE"])
+def proxy_api_drawings_delete(pair_id, drawing_id):
+    return _method_proxy(pair_id, f"/api/drawings/{drawing_id}")
+
+
 @app.route("/proxy/<pair_id>/debug")
 def proxy_debug(pair_id):
     return _html_proxy(pair_id, "/debug")
