@@ -67,6 +67,63 @@ def _get_anchor_key(timestamp: pd.Timestamp, anchor: str) -> tuple:
 
 # ── Core calculation (single timeframe) ───────────────────────────────────────
 
+def _compute_bar_delta_with_polarity(
+    opens: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    volumes: np.ndarray,
+    prev_closes: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute volume delta with TradingView's exact polarity rules.
+
+    TradingView's polarity classification:
+    1. If close > open: positive (+1)
+    2. If close < open: negative (-1)
+    3. If close == open (doji):
+       a. If close > prev_close: positive (+1)
+       b. If close < prev_close: negative (-1)
+       c. If close == prev_close: inherit previous bar's polarity
+
+    Returns:
+        tuple of (delta array, polarity array) - polarity is needed for inheritance
+    """
+    n = len(closes)
+    direction = np.zeros(n)
+
+    # Step 1: Determine direction from close vs open
+    diff = closes - opens
+    direction = np.where(diff > 0, 1.0, np.where(diff < 0, -1.0, 0.0))
+
+    # Step 2: Handle doji bars (close == open)
+    doji_mask = (diff == 0)
+
+    if prev_closes is not None and np.any(doji_mask):
+        prev_diff = closes - prev_closes
+
+        # For dojis: use prev_close comparison first
+        direction = np.where(
+            doji_mask & (prev_diff > 0), 1.0,
+            np.where(doji_mask & (prev_diff < 0), -1.0, direction)
+        )
+
+        # Step 3: Handle the case where close == open AND close == prev_close
+        # In this case, inherit the previous bar's polarity
+        needs_inheritance = doji_mask & (prev_diff == 0)
+
+        if np.any(needs_inheritance):
+            # Forward-fill the polarity from the last bar that had a clear direction
+            for i in range(n):
+                if needs_inheritance[i]:
+                    if i > 0:
+                        direction[i] = direction[i - 1]
+                    # If first bar needs inheritance and has no clear direction, use 0
+
+    delta = volumes * direction
+    return delta, direction
+
+
 def _compute_bar_delta(
     opens: np.ndarray,
     highs: np.ndarray,
@@ -83,28 +140,11 @@ def _compute_bar_delta(
         - "polarity": Assign full volume based on close vs open direction (TradingView intrabar style)
         - "close_location": Split volume based on close position within range (approximation)
     """
-    n = len(closes)
-
     if method == "polarity":
-        # TradingView's intrabar method: classify entire bar's volume as buy or sell
-        # based on candle direction
-        direction = np.zeros(n)
-
-        # When close != open, use their relative position
-        diff = closes - opens
-        direction = np.where(diff > 0, 1.0, np.where(diff < 0, -1.0, 0.0))
-
-        # When close == open (doji), compare to previous close
-        if prev_closes is not None:
-            doji_mask = (diff == 0)
-            prev_diff = closes - prev_closes
-            direction = np.where(
-                doji_mask,
-                np.where(prev_diff > 0, 1.0, np.where(prev_diff < 0, -1.0, direction)),
-                direction
-            )
-
-        delta = volumes * direction
+        delta, _ = _compute_bar_delta_with_polarity(
+            opens, highs, lows, closes, volumes, prev_closes
+        )
+        return delta
 
     else:  # close_location
         # Close Location Value method - estimates buy/sell split
@@ -117,8 +157,7 @@ def _compute_bar_delta(
                 0.0
             )
         delta = volumes * close_location
-
-    return delta
+        return delta
 
 
 def compute_cvd_with_intrabar(
@@ -168,6 +207,7 @@ def compute_cvd_with_intrabar(
         results = []
         cumulative = 0.0
         prev_close = None
+        prev_polarity = 1.0  # Track last polarity for inheritance
         current_anchor_key = None
 
         if intrabar_df is not None and len(intrabar_df) > 0:
@@ -189,9 +229,14 @@ def compute_cvd_with_intrabar(
             for i, (idx, row) in enumerate(df.iterrows()):
                 # Check for anchor period reset (e.g., new day)
                 bar_anchor_key = _get_anchor_key(idx, anchor)
+                is_period_start = False
                 if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
                     # New anchor period - reset cumulative to 0
                     cumulative = 0.0
+                    is_period_start = True
+                elif current_anchor_key is None:
+                    # First bar is also a period start
+                    is_period_start = True
                 current_anchor_key = bar_anchor_key
 
                 bar_start = idx
@@ -206,7 +251,7 @@ def compute_cvd_with_intrabar(
                 intrabars = intrabar_df[mask]
 
                 if len(intrabars) > 0:
-                    # Compute delta for each intrabar
+                    # Compute delta for each intrabar with proper polarity inheritance
                     opens = intrabars["Open"].values.astype(float)
                     highs = intrabars["High"].values.astype(float)
                     lows = intrabars["Low"].values.astype(float)
@@ -220,9 +265,27 @@ def compute_cvd_with_intrabar(
                     else:
                         prev_closes[0] = opens[0]
 
-                    intrabar_deltas = _compute_bar_delta(
-                        opens, highs, lows, closes, volumes, prev_closes, method="polarity"
+                    # Use the polarity-aware function
+                    intrabar_deltas, polarities = _compute_bar_delta_with_polarity(
+                        opens, highs, lows, closes, volumes, prev_closes
                     )
+
+                    # Apply polarity inheritance from previous bar
+                    # This handles the case where first intrabar has close==open==prev_close
+                    if len(polarities) > 0:
+                        # Check if first intrabar needs inheritance
+                        diff0 = closes[0] - opens[0]
+                        prev_diff0 = closes[0] - prev_closes[0] if prev_closes is not None else 0
+                        if diff0 == 0 and prev_diff0 == 0:
+                            # First intrabar needs to inherit from previous bar's last polarity
+                            intrabar_deltas[0] = volumes[0] * prev_polarity
+                            polarities[0] = prev_polarity
+
+                        # Update prev_polarity to last non-zero polarity
+                        for p in reversed(polarities):
+                            if p != 0:
+                                prev_polarity = p
+                                break
 
                     # Sum deltas for this bar
                     bar_delta = float(np.sum(intrabar_deltas))
@@ -256,6 +319,7 @@ def compute_cvd_with_intrabar(
                     "delta": round(bar_delta, 4),
                     "cvd_high": round(cvd_high, 4),
                     "cvd_low": round(cvd_low, 4),
+                    "is_period_start": is_period_start,
                 })
         else:
             # No intrabar data - use close location value method
@@ -276,9 +340,14 @@ def compute_cvd_with_intrabar(
             for i, (idx, row) in enumerate(df.iterrows()):
                 # Check for anchor period reset (e.g., new day)
                 bar_anchor_key = _get_anchor_key(idx, anchor)
+                is_period_start = False
                 if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
                     # New anchor period - reset cumulative to 0
                     cumulative = 0.0
+                    is_period_start = True
+                elif current_anchor_key is None:
+                    # First bar is also a period start
+                    is_period_start = True
                 current_anchor_key = bar_anchor_key
 
                 bar_delta = deltas[i]
@@ -292,6 +361,7 @@ def compute_cvd_with_intrabar(
                     "delta": round(bar_delta, 4),
                     "cvd_high": round(cvd_high, 4),
                     "cvd_low": round(cvd_low, 4),
+                    "is_period_start": is_period_start,
                 })
 
         return results
@@ -372,9 +442,14 @@ def compute_cvd(
         for i, idx in enumerate(df.index):
             # Check for anchor period reset (e.g., new day)
             bar_anchor_key = _get_anchor_key(idx, anchor)
+            is_period_start = False
             if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
                 # New anchor period - reset cumulative to 0
                 cumulative = 0.0
+                is_period_start = True
+            elif current_anchor_key is None:
+                # First bar is also a period start
+                is_period_start = True
             current_anchor_key = bar_anchor_key
 
             cumulative += deltas[i]
@@ -382,6 +457,7 @@ def compute_cvd(
                 "time": int(idx.timestamp()),
                 "value": float(round(cumulative, 4)),
                 "delta": float(round(deltas[i], 4)),
+                "is_period_start": is_period_start,
             })
 
         return result
@@ -485,8 +561,14 @@ def compute_cvd_candles(
     """
     Build OHLC candles from CVD data.
 
+    TradingView CVD candle construction:
+    - Open: 0 if first bar of anchor period, otherwise previous CVD candle's close
+    - Close: cumulative volume delta at end of bar
+    - High: highest cumulative volume delta achieved during the bar
+    - Low: lowest cumulative volume delta achieved during the bar
+
     Args:
-        cvd_points: List of CVD points with value, delta, cvd_high, cvd_low
+        cvd_points: List of CVD points with value, delta, cvd_high, cvd_low, is_period_start
         df: Original OHLCV DataFrame
         include_wicks: If True, use cvd_high/cvd_low for wicks (TradingView style)
                       If False, set high=low=body extremes (no wicks)
@@ -496,13 +578,22 @@ def compute_cvd_candles(
 
     candles = []
     for i, pt in enumerate(cvd_points):
-        open_val = cvd_points[i - 1]["value"] if i > 0 else 0.0
+        # TradingView rule: open is 0 at period start, otherwise previous close
+        is_period_start = pt.get("is_period_start", False)
+        if is_period_start or i == 0:
+            open_val = 0.0
+        else:
+            open_val = cvd_points[i - 1]["value"]
+
         close_val = pt["value"]
 
         if include_wicks and "cvd_high" in pt and "cvd_low" in pt:
             # Use tracked intrabar high/low for proper wicks
             high = pt["cvd_high"]
             low = pt["cvd_low"]
+            # Ensure high/low encompass the open value too
+            high = max(high, open_val)
+            low = min(low, open_val)
         else:
             # No wicks - high/low = body extremes
             high = max(open_val, close_val)
