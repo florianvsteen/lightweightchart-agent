@@ -641,6 +641,7 @@ async function loadLiveData() {
   document.getElementById('btn-replay').disabled = true;
   try {
     const res  = await fetch(BASE_URL + '/debug/data?interval=' + currentTF);
+    if (replayMode) return;  // Guard against race condition: user entered replay mode while fetch was in flight
     liveData   = await res.json();
     if (!liveData.candles || liveData.candles.length === 0) {
       document.getElementById('aggressor-card').innerHTML =
