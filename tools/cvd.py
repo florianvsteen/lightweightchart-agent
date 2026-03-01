@@ -216,34 +216,59 @@ def detect_divergences(
 
 # ── CVD OHLC candles ──────────────────────────────────────────────────────────
 
-def compute_cvd_candles(cvd_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def compute_cvd_candles(cvd_points: List[Dict[str, Any]], df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    Build OHLC candles from the CVD running total so the CVD panel
-    can be rendered as a candlestick chart (same look as price, but
-    driven by volume delta instead of price).
-
-    For each bar i:
-      open  = cvd[i-1].value  (where the CVD was at the close of the previous bar)
-      close = cvd[i].value    (where it ended this bar)
-      high  = max(open, close) + abs(delta) * 0.3   (wick proportional to conviction)
-      low   = min(open, close) - abs(delta) * 0.3
+    Build OHLC candles from the CVD running total.
+    Altered to match TradingView logic: wicks are derived from the 
+    intrabar extremes (high/low price wicks) rather than a fixed multiplier.
     """
-    if not cvd_points:
+    if not cvd_points or df is None or len(df) != len(cvd_points):
         return []
+
+    # Prepare price data to calculate wick intensity
+    # We use the relative size of the price wicks to determine the CVD wicks
+    highs = df["High"].values
+    lows = df["Low"].values
+    opens = df["Open"].values
+    closes = df["Close"].values
 
     candles = []
     for i, pt in enumerate(cvd_points):
-        open_  = cvd_points[i - 1]["value"] if i > 0 else pt["value"]
-        close  = pt["value"]
-        delta  = pt.get("delta", close - open_)
-        wick   = abs(delta) * 0.3
-        high   = max(open_, close) + wick
-        low    = min(open_, close) - wick
+        # 1. Standard OHLC mapping
+        prev_close = cvd_points[i - 1]["value"] if i > 0 else pt["value"]
+        open_ = prev_close
+        close = pt["value"]
+        delta = pt.get("delta", close - open_)
+
+        # 2. TRADINGVIEW WICK SIMULATION
+        # Calculate how much "extra" volume movement happened based on price wicks
+        # This is more accurate than 0.3 * delta because it respects the chart shape.
+        price_range = highs[i] - lows[i]
+        
+        if price_range > 0:
+            # How far did price go above the body?
+            upper_price_wick = highs[i] - max(opens[i], closes[i])
+            # How far did price go below the body?
+            lower_price_wick = min(opens[i], closes[i]) - lows[i]
+            
+            # Scale the CVD wicks proportionally to the price wicks
+            # (Volume often follows the path of the wick before being absorbed)
+            ratio = abs(delta) / (abs(closes[i] - opens[i]) if abs(closes[i] - opens[i]) > 0 else price_range)
+            
+            upper_cvd_wick = upper_price_wick * ratio
+            lower_cvd_wick = lower_price_wick * ratio
+            
+            high = max(open_, close) + upper_cvd_wick
+            low  = min(open_, close) - lower_cvd_wick
+        else:
+            high = max(open_, close)
+            low  = min(open_, close)
+
         candles.append({
             "time":  pt["time"],
             "open":  round(open_, 4),
-            "high":  round(high,  4),
-            "low":   round(low,   4),
+            "high":  round(high, 4),
+            "low":   round(low, 4),
             "close": round(close, 4),
         })
     return candles
