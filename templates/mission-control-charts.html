@@ -702,7 +702,7 @@
   const chart = LightweightCharts.createChart(priceContainer, {
     layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
     grid: { vertLines:{visible:false}, horzLines:{visible:false} },
-    timeScale: { timeVisible:true, borderColor:'#1e1e28', barSpacing: 6 },
+    timeScale: { timeVisible:true, borderColor:'#1e1e28' },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1e1e28', minimumWidth: 70 },
   });
@@ -975,7 +975,14 @@
       close: c.close,
     }));
 
-    if (candles.length) cvdCandleSeries.setData(candles);
+    if (candles.length) {
+      cvdCandleSeries.setData(candles);
+      // Sync CVD to same visible range as price chart (not independent fitContent)
+      try {
+        const range = chart.timeScale().getVisibleLogicalRange();
+        if (range) cvdChart.timeScale().setVisibleLogicalRange(range);
+      } catch(e) {}
+    }
 
     // Add divergence markers
     if (divs.length) {
@@ -1253,7 +1260,8 @@
       const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
       if (shifted.length) {
         candleSeries.setData(shifted);
-        scheduleScaleSync();   // sync price-scale width once data is rendered
+        chart.timeScale().fitContent();      // scroll to show latest candles
+        scheduleScaleSync();
       }
 
       clearSeries();
