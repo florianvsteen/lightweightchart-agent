@@ -294,8 +294,9 @@ def detect_divergences(
     for i in range(1, len(price_high_pivots)):
         ph1, ph2 = price_high_pivots[i-1], price_high_pivots[i]
         
-        ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
-        ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
+        # EXACT MATCH: The CVD peak MUST be on the exact same candle as the Price peak
+        ch1 = next((p for p in cvd_high_pivots if p.bar_index == ph1.bar_index), None)
+        ch2 = next((p for p in cvd_high_pivots if p.bar_index == ph2.bar_index), None)
 
         if ch1 and ch2:
             if ph2.value > ph1.value and ch2.value < ch1.value:
@@ -315,8 +316,9 @@ def detect_divergences(
     for i in range(1, len(price_low_pivots)):
         pl1, pl2 = price_low_pivots[i-1], price_low_pivots[i]
         
-        cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
-        cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
+        # EXACT MATCH: The CVD peak MUST be on the exact same candle as the Price peak
+        cl1 = next((p for p in cvd_low_pivots if p.bar_index == pl1.bar_index), None)
+        cl2 = next((p for p in cvd_low_pivots if p.bar_index == pl2.bar_index), None)
 
         if cl1 and cl2:
             if pl2.value < pl1.value and cl2.value > cl1.value:
