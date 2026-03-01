@@ -762,7 +762,9 @@ class PairServer:
             params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             min_candles = params.get("min_candles", 20)
-            full_df = full_df.iloc[:-1].copy()
+            # In replay mode, all candles are historical (no "still forming" candle)
+            # so we don't remove the last candle like we do in live mode.
+            # The timestamp filtering above already ensures correct candle alignment.
             total = len(full_df)
             idx   = raw_idx if raw_idx >= 1 else total
             idx   = max(min_candles + 3, min(idx, total))
