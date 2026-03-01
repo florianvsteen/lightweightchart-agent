@@ -251,26 +251,29 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
-    **kwargs # Captures unused right_pivot/max_gap args from config
+    **kwargs # This handles extra args from config like right_pivot
 ) -> List[Dict]:
     divergences = []
 
-    # 1. Get Synchronized Anchors
+    # CALL FIX: Ensure all 4 arrays are passed to the sync detector
     s_highs, s_lows = detect_synchronized_pivots(
-        price_highs, price_lows, cvd_highs, cvd_lows, left_pivot
+        price_highs, 
+        price_lows, 
+        cvd_highs, 
+        cvd_lows, 
+        left_pivot
     )
 
     # --- DEBUGGING OUTPUT ---
     print("\n--- DIVERGENCE DETECTOR DEBUG ---")
     print(f"Total Bars Processed: {len(times)}")
-    print(f"Synchronized High Anchors: {len(s_highs)}")
-    print(f"Synchronized Low Anchors:  {len(s_lows)}")
+    print(f"Synchronized High Anchors (Price+CVD): {len(s_highs)}")
+    print(f"Synchronized Low Anchors (Price+CVD):  {len(s_lows)}")
     print("---------------------------------\n")
 
-    # 2. Bearish Divergence (Price HH + CVD LH)
+    # 1. Bearish Divergence (HH in Price + LH in CVD)
     for i in range(1, len(s_highs)):
         h1, h2 = s_highs[i-1], s_highs[i]
-        
         if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
             divergences.append({
                 "type": "bearish",
@@ -284,10 +287,9 @@ def detect_divergences(
                 "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
             })
 
-    # 3. Bullish Divergence (Price LL + CVD HL)
+    # 2. Bullish Divergence (LL in Price + HL in CVD)
     for i in range(1, len(s_lows)):
         l1, l2 = s_lows[i-1], s_lows[i]
-        
         if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
             divergences.append({
                 "type": "bullish",
@@ -439,11 +441,11 @@ def get_cvd_data(
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
         
+        # Extract CVD Highs/Lows for the sync detector
         cvd_highs = np.array([c["high"] for c in cvd_candles])
         cvd_lows = np.array([c["low"] for c in cvd_candles])
         times = [c["time"] for c in cvd_candles]
 
-        # Ensure all 4 arrays are passed to the synchronized detector
         divergences = detect_divergences(
             price_highs=price_highs,
             price_lows=price_lows,
