@@ -352,45 +352,43 @@ def detect_divergences(
     for i in range(1, len(price_high_pivots)):
         ph1, ph2 = price_high_pivots[i-1], price_high_pivots[i]
         
-        # STRICT ALIGNMENT: CVD pivot must be on the EXACT same bar as the Price pivot
-        ch1 = next((p for p in cvd_high_pivots if p.bar_index == ph1.bar_index), None)
-        ch2 = next((p for p in cvd_high_pivots if p.bar_index == ph2.bar_index), None)
+        # Grab the exact CVD value at the same bar index as the Price pivot
+        ch1_val = cvd_highs[ph1.bar_index]
+        ch2_val = cvd_highs[ph2.bar_index]
 
-        if ch1 and ch2:
-            if ph2.value > ph1.value and ch2.value < ch1.value:
-                divergences.append({
-                    "type": "bearish",
-                    "label": "Bear Div",
-                    "price_time": times[ph2.bar_index],
-                    "price_value": float(ph2.value),
-                    "cvd_value": float(ch2.value),
-                    "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
-                    "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
-                    "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
-                    "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
-                })
+        if ph2.value > ph1.value and ch2_val < ch1_val:
+            divergences.append({
+                "type": "bearish",
+                "label": "Bear Div",
+                "price_time": times[ph2.bar_index],
+                "price_value": float(ph2.value),
+                "cvd_value": float(ch2_val),
+                "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
+                "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
+                "cvd_pivot_1": {"bar": ph1.bar_index, "value": float(ch1_val)},
+                "cvd_pivot_2": {"bar": ph2.bar_index, "value": float(ch2_val)},
+            })
 
     # 2. Bullish divergences (Price Lower Low, CVD Higher Low)
     for i in range(1, len(price_low_pivots)):
         pl1, pl2 = price_low_pivots[i-1], price_low_pivots[i]
         
-        # STRICT ALIGNMENT: CVD pivot must be on the EXACT same bar as the Price pivot
-        cl1 = next((p for p in cvd_low_pivots if p.bar_index == pl1.bar_index), None)
-        cl2 = next((p for p in cvd_low_pivots if p.bar_index == pl2.bar_index), None)
+        # Grab the exact CVD value at the same bar index as the Price pivot
+        cl1_val = cvd_lows[pl1.bar_index]
+        cl2_val = cvd_lows[pl2.bar_index]
 
-        if cl1 and cl2:
-            if pl2.value < pl1.value and cl2.value > cl1.value:
-                divergences.append({
-                    "type": "bullish",
-                    "label": "Bull Div",
-                    "price_time": times[pl2.bar_index],
-                    "price_value": float(pl2.value),
-                    "cvd_value": float(cl2.value),
-                    "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
-                    "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
-                    "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
-                    "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
-                })
+        if pl2.value < pl1.value and cl2_val > cl1_val:
+            divergences.append({
+                "type": "bullish",
+                "label": "Bull Div",
+                "price_time": times[pl2.bar_index],
+                "price_value": float(pl2.value),
+                "cvd_value": float(cl2_val),
+                "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
+                "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
+                "cvd_pivot_1": {"bar": pl1.bar_index, "value": float(cl1_val)},
+                "cvd_pivot_2": {"bar": pl2.bar_index, "value": float(cl2_val)},
+            })
 
     return divergences
 
