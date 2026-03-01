@@ -377,7 +377,7 @@ def detect(
                 debug_windows.append({
                     "window":          window_size,
                     "start_ts":        int(df.index[i].timestamp()),
-                    "end_ts": int(df.index[end_i - (1 if replay else 0)].timestamp()),    
+                    "end_ts": int(df.index[end_i].timestamp()),                   
                     "top":             round(h_max, 5),
                     "bottom":          round(l_min, 5),
                     "slope":           round(slope, 8),
@@ -401,7 +401,7 @@ def detect(
                 "detector":    "accumulation",
                 "session":     session,
                 "start":       int(df.index[i].timestamp()),
-                "end": int(df.index[end_i - (1 if replay else 0)].timestamp()),                
+                "end": int(df.index[end_i].timestamp()),
                 "top":         h_max,
                 "bottom":      l_min,
                 "is_active":   is_active,
