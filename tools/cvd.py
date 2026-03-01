@@ -213,31 +213,34 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def detect_synchronized_pivots(
-    prices: np.ndarray, 
-    cvds: np.ndarray, 
+    price_highs: np.ndarray, 
+    price_lows: np.ndarray,
+    cvd_highs: np.ndarray, 
+    cvd_lows: np.ndarray,
     left_bars: int = 5
-) -> List[Dict]:
+) -> Tuple[List[Dict], List[Dict]]:
     """
-    Only detects a pivot if Price AND CVD reach a local extreme on the 
-    EXACT same bar index, confirmed by 1 bar of reversal.
+    Detects pivots ONLY when Price and CVD hit an extreme on the SAME bar.
+    Confirmed by 1-candle reversal.
     """
     sync_highs = []
     sync_lows = []
-    n = len(prices)
+    n = len(price_highs)
 
-    # We stop at n-1 to allow for the 1-candle confirmation (right_pivot = 1)
     for i in range(left_bars, n - 1):
-        # --- 1. Synchronized High Detection ---
-        # Price must be highest in window; CVD must be highest in window
-        if (all(prices[i-left_bars:i] < prices[i]) and prices[i+1] < prices[i] and
-            all(cvds[i-left_bars:i] < cvds[i]) and cvds[i+1] < cvds[i]):
-            sync_highs.append({"index": i, "p_val": prices[i], "c_val": cvds[i]})
+        # --- BEARISH ANCHOR (Highs) ---
+        # Price must be highest in window AND CVD must be highest in window
+        # Plus 1-candle confirmation (index i+1 is lower)
+        if (all(price_highs[i-left_bars:i] <= price_highs[i]) and price_highs[i+1] < price_highs[i] and
+            all(cvd_highs[i-left_bars:i] <= cvd_highs[i]) and cvd_highs[i+1] < cvd_highs[i]):
+            sync_highs.append({"index": i, "p_val": price_highs[i], "c_val": cvd_highs[i]})
 
-        # --- 2. Synchronized Low Detection ---
-        # Price must be lowest in window; CVD must be lowest in window
-        if (all(prices[i-left_bars:i] > prices[i]) and prices[i+1] > prices[i] and
-            all(cvds[i-left_bars:i] > cvds[i]) and cvds[i+1] > cvds[i]):
-            sync_lows.append({"index": i, "p_val": prices[i], "c_val": cvds[i]})
+        # --- BULLISH ANCHOR (Lows) ---
+        # Price must be lowest in window AND CVD must be lowest in window
+        # Plus 1-candle confirmation (index i+1 is higher)
+        if (all(price_lows[i-left_bars:i] >= price_lows[i]) and price_lows[i+1] > price_lows[i] and
+            all(cvd_lows[i-left_bars:i] >= cvd_lows[i]) and cvd_lows[i+1] > cvd_lows[i]):
+            sync_lows.append({"index": i, "p_val": price_lows[i], "c_val": cvd_lows[i]})
 
     return sync_highs, sync_lows
 
