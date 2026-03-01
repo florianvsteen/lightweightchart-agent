@@ -751,7 +751,7 @@ function exitReplayMode() {
 // Does NOT run detector — user must click ▶ Run Detector
 function seekTo(count, isStep) {
   const total = liveData.candles.length;
-  count = Math.max(18, Math.min(count, total));
+  count = Math.max(18, Math.min(count, replayTotal || total));
   replayIdx = count;
 
   const slice = liveData.candles.slice(0, count);
