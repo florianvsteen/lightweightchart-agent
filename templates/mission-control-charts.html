@@ -1193,7 +1193,7 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      loadData();
+      ();
       loadCvd(true);   // interval changed — force fresh fetch
     });
   });
@@ -1745,6 +1745,8 @@
         candleSeries.setData(shifted);
         chart.timeScale().scrollToRealTime();  // jump to latest candle
         scheduleScaleSync();
+        // Force a render immediately after data is set
+        requestAnimationFrame(renderAllDrawings);
 
         // Update last price for countdown and start countdown timer
         const lastCandle = _rawCandles[_rawCandles.length - 1];
@@ -2428,8 +2430,20 @@
   });
 
   // Re-render drawings when charts scroll/zoom (coordinates change)
-  chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
-  cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
+  //chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
+  //cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
+
+  // High-performance sync function
+  const syncDrawings = () => {
+      requestAnimationFrame(renderAllDrawings);
+  };
+  
+  // Subscribe both charts to the same high-frequency sync
+  chart.timeScale().subscribeVisibleLogicalRangeChange(syncDrawings);
+  cvdChart.timeScale().subscribeVisibleLogicalRangeChange(syncDrawings);
+  
+  // Also sync when the price scale (Y-axis) changes height
+  chart.priceScale('right').subscribeSizeChange(syncDrawings);
 
   // Re-render on resize
   const _origHandleResize = handleResize;
