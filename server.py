@@ -680,6 +680,9 @@ class PairServer:
             interval = request.args.get("interval", "1m")
             df = self._get_df(interval, {})
 
+            with self._cache_lock:
+                self._df_cache[interval] = df.copy()
+
             if df is None or len(df) < 5:
                 return jsonify({"error": "No data available"}), 200
 
