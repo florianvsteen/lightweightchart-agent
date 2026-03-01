@@ -56,7 +56,7 @@ def detect_divergences(
             
             if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
                 divergences.append({
-                    "type": "bearish", "label": "Bear Div", "price_time": times[h2['index']],
+                    #"type": "bearish", "label": "Bear Div", "price_time": times[h2['index']],
                     "price_pivot_1": {"bar": h1['index'], "value": float(h1['p_val'])},
                     "price_pivot_2": {"bar": h2['index'], "value": float(h2['p_val'])},
                     "cvd_pivot_1": {"bar": h1['index'], "value": float(h1['c_val'])},
@@ -73,7 +73,7 @@ def detect_divergences(
             
             if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
                 divergences.append({
-                    "type": "bullish", "label": "Bull Div", "price_time": times[l2['index']],
+                    #"type": "bullish", "label": "Bull Div", "price_time": times[l2['index']],
                     "price_pivot_1": {"bar": l1['index'], "value": float(l1['p_val'])},
                     "price_pivot_2": {"bar": l2['index'], "value": float(l2['p_val'])},
                     "cvd_pivot_1": {"bar": l1['index'], "value": float(l1['c_val'])},
