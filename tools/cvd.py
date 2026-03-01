@@ -406,10 +406,17 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     # Remove duplicate columns
     df = df.loc[:, ~df.columns.duplicated()]
 
+    # Required OHLC columns
+    required_cols = ["Open", "High", "Low", "Close"]
+
+    # Check if all required columns exist
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        return pd.DataFrame()
+
     # Convert OHLC columns to numeric
-    for col in ["Open", "High", "Low", "Close"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
+    for col in required_cols:
+        df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
 
     # Handle volume
     if "Volume" in df.columns:
@@ -418,7 +425,7 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["Volume"] = 1.0
 
     # Drop rows with missing OHLC data
-    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    df = df.dropna(subset=required_cols)
 
     return df
 

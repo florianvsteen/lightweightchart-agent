@@ -175,7 +175,7 @@ PAIRS = {
         },
     },
     "BTCUSD": {
-        "yf_ticker": "BTCUSD",
+        "yf_ticker": "BTC-USD",
         "mt5_ticker": "BTCUSD",
         "port": 5007,
         "label": "BTC/USD",
