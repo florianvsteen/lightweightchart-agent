@@ -11,9 +11,17 @@ from typing import List, Dict, Any
 
 # ── Core calculation ───────────────────────────────────────────────────────────
 
-def compute_cvd(df: pd.DataFrame, method: str = "body_weighted") -> List[Dict[str, Any]]:
+def compute_cvd(df: pd.DataFrame, method: str = "tradingview") -> List[Dict[str, Any]]:
     """
     Compute Cumulative Volume Delta from an OHLCV DataFrame.
+
+    Methods:
+        - "tradingview": Close Location Value method (default) - estimates buy/sell volume
+          based on where close is relative to the high-low range. This matches TradingView's
+          approach when intrabar data is not available.
+          Formula: delta = volume * (2*close - high - low) / (high - low)
+        - "body_weighted": Legacy method using body/range ratio with direction sign.
+        - "simple": Basic method where direction = sign(close - open), delta = volume * direction.
     """
     if df is None or len(df) < 2:
         return []
@@ -41,15 +49,29 @@ def compute_cvd(df: pd.DataFrame, method: str = "body_weighted") -> List[Dict[st
         closes = df["Close"].values.astype(float)
         vols   = df["Volume"].values.astype(float)
 
-        direction = np.sign(closes - opens)
+        candle_range = highs - lows
 
-        if method == "body_weighted":
-            candle_range = highs - lows
-            body         = np.abs(closes - opens)
+        if method == "tradingview":
+            # Close Location Value method - matches TradingView's CVD approximation
+            # Formula: delta = volume * (2*close - high - low) / (high - low)
+            # This estimates buy/sell volume based on where close is within the bar's range
+            with np.errstate(divide="ignore", invalid="ignore"):
+                close_location = np.where(
+                    candle_range > 0,
+                    (2 * closes - highs - lows) / candle_range,
+                    0.0
+                )
+            delta = vols * close_location
+        elif method == "body_weighted":
+            # Legacy method using body/range ratio with direction sign
+            direction = np.sign(closes - opens)
+            body = np.abs(closes - opens)
             with np.errstate(divide="ignore", invalid="ignore"):
                 body_ratio = np.where(candle_range > 0, body / candle_range, 0.0)
             delta = vols * body_ratio * direction
         else:
+            # Simple method - just use direction
+            direction = np.sign(closes - opens)
             delta = vols * direction
 
         cumulative = np.cumsum(delta)
@@ -187,7 +209,7 @@ def compute_cvd_candles(cvd_points: List[Dict[str, Any]], df: pd.DataFrame) -> L
 
 def get_cvd_data(
     df: pd.DataFrame,
-    method: str = "body_weighted",
+    method: str = "tradingview",
     detect_divs: bool = True,
     lookback: int = 20,
 ) -> Dict[str, Any]:
