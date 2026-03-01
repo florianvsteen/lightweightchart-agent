@@ -208,6 +208,21 @@ class PairServer:
             return self._api_candle_explain()
         _api_candle_explain.__name__ = f"api_candle_explain_{pair_id}"
         app.route("/api/candle-explain")(_api_candle_explain)
+    
+        def _api_drawings_get():
+            return self._api_drawings_get()
+        _api_drawings_get.__name__ = f"api_drawings_get_{pair_id}"
+        app.route("/api/drawings", methods=["GET"])(_api_drawings_get)
+
+        def _api_drawings_post():
+            return self._api_drawings_post()
+        _api_drawings_post.__name__ = f"api_drawings_post_{pair_id}"
+        app.route("/api/drawings", methods=["POST"])(_api_drawings_post)
+
+        def _api_drawings_delete(drawing_id):
+            return self._api_drawings_delete(drawing_id)
+        _api_drawings_delete.__name__ = f"api_drawings_delete_{pair_id}"
+        app.route("/api/drawings/<drawing_id>", methods=["DELETE"])(_api_drawings_delete)
 
     # ------------------------------------------------------------------ #
     # Data fetching
@@ -609,6 +624,36 @@ class PairServer:
             print(traceback.format_exc())
             return jsonify({"lines": [f"Error: {e}"]}), 500
 
+
+    # ── Drawing API ───────────────────────────────────────────────────── #
+
+    def _api_drawings_get(self):
+        """GET /api/drawings  — return all saved drawings for this pair."""
+        try:
+            from tools.draw import load_drawings
+            return jsonify({"drawings": load_drawings(self.pair_id)})
+        except Exception as e:
+            return jsonify({"error": str(e), "drawings": []}), 500
+
+    def _api_drawings_post(self):
+        """POST /api/drawings  — save a new drawing. Body: drawing dict."""
+        try:
+            from tools.draw import add_drawing
+            body = request.get_json(force=True) or {}
+            saved = add_drawing(self.pair_id, body)
+            return jsonify({"drawing": saved}), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    def _api_drawings_delete(self, drawing_id):
+        """DELETE /api/drawings/<id>  — remove one drawing."""
+        try:
+            from tools.draw import delete_drawing
+            ok = delete_drawing(self.pair_id, drawing_id)
+            return jsonify({"deleted": ok})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
     def _debug(self):
         from config import PAIRS
         tz = os.environ.get("TZ", "Europe/Brussels")
