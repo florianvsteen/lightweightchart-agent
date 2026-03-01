@@ -216,24 +216,28 @@ def detect_synchronized_pivots(
     price_highs: np.ndarray, 
     price_lows: np.ndarray,
     cvd_highs: np.ndarray, 
-    cvd_lows: np.ndarray,
-    left_bars: int = 3 # Reduced from 5 for higher sensitivity
+    cvd_lows: np.ndarray
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    FRACTAL SENSITIVITY: Detects every single 'point' on the chart.
+    If it's a local tip, it's an anchor.
+    """
     sync_highs = []
     sync_lows = []
     n = len(price_highs)
 
-    for i in range(left_bars, n - 1):
-        # --- Synchronized High (Bearish) ---
-        # Using <= on left allows it to find peaks even in choppy/flat areas
-        if (all(price_highs[i-left_bars:i] <= price_highs[i]) and price_highs[i+1] < price_highs[i] and
-            all(cvd_highs[i-left_bars:i] <= cvd_highs[i]) and cvd_highs[i+1] < cvd_highs[i]):
+    # We only need 1 bar of context on each side for a fractal peak
+    for i in range(1, n - 1):
+        # --- BEARISH FRACTAL (Local Peak) ---
+        # Is this bar higher than the one before and the one after?
+        if (price_highs[i] >= price_highs[i-1] and price_highs[i] > price_highs[i+1] and
+            cvd_highs[i] >= cvd_highs[i-1] and cvd_highs[i] > cvd_highs[i+1]):
             sync_highs.append({"index": i, "p_val": price_highs[i], "c_val": cvd_highs[i]})
 
-        # --- Synchronized Low (Bullish) ---
-        # Using >= on left allows it to find valleys in choppy/flat areas
-        if (all(price_lows[i-left_bars:i] >= price_lows[i]) and price_lows[i+1] > price_lows[i] and
-            all(cvd_lows[i-left_bars:i] >= cvd_lows[i]) and cvd_lows[i+1] > cvd_lows[i]):
+        # --- BULLISH FRACTAL (Local Valley) ---
+        # Is this bar lower than the one before and the one after?
+        if (price_lows[i] <= price_lows[i-1] and price_lows[i] < price_lows[i+1] and
+            cvd_lows[i] <= cvd_lows[i-1] and cvd_lows[i] < cvd_lows[i+1]):
             sync_lows.append({"index": i, "p_val": price_lows[i], "c_val": cvd_lows[i]})
 
     return sync_highs, sync_lows
