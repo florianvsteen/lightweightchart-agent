@@ -693,7 +693,7 @@ class PairServer:
             else:
                 full_df = _provider_get_df(self.ticker, interval, self.period)
             full_df = full_df.dropna()
-
+            print(f"[REPLAY] raw_idx={raw_idx} raw_total={request.args.get('total')} full_df_len={len(full_df)}")
             raw_total = request.args.get("total")
             if raw_total:
                 full_df = full_df.iloc[:int(raw_total) + 1]
