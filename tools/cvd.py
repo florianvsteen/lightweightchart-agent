@@ -265,9 +265,9 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
-    right_pivot: int = 1,
-    max_pivot_bar_gap: int = 2,
-    max_divergence_width: int = 10, # <--- NEW PARAMETER: Max candles between the two pivots
+    right_pivot: int = 2,  # 2 confirmation bars filters out noisy micro-pivots
+    max_pivot_bar_gap: int = 1, # strictly 1 bar gap allowed to keep it tight but mathematically sound
+    max_divergence_width: int = 10, # Max 10 candles apart constraint
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
@@ -280,15 +280,17 @@ def detect_divergences(
     # 1. Bearish divergences
     for i in range(1, len(price_high_pivots)):
         ph2 = price_high_pivots[i]
+        
+        # Find matching CVD peak within 1 bar
         ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
         if not ch2: continue
             
-        for j in range(i - 1, max(-1, i - 6), -1):
+        for j in range(i - 1, -1, -1):
             ph1 = price_high_pivots[j]
             
-            # STRICT WIDTH LIMIT: If the previous pivot is more than 10 candles away, stop looking backward.
+            # STRICT 10-BAR LIMIT: If older pivot is > 10 bars away, stop searching
             if abs(ph2.bar_index - ph1.bar_index) > max_divergence_width:
-                break
+                break 
                 
             ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
             if not ch1: continue
@@ -300,24 +302,25 @@ def detect_divergences(
                     "price_time": times[ph2.bar_index],
                     "price_value": float(ph2.value),
                     "cvd_value": float(ch2.value),
-                    "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
-                    "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
-                    # MAGIC TRICK: Use Price's X-axis (bar) so lines are perfectly vertical, but use CVD's true Y-axis value
-                    "cvd_pivot_1": {"bar": ph1.bar_index, "value": float(ch1.value)},
-                    "cvd_pivot_2": {"bar": ph2.bar_index, "value": float(ch2.value)},
+                    # Passing exact timestamps prevents frontend floating dot issues
+                    "price_pivot_1": {"bar": ph1.bar_index, "time": times[ph1.bar_index], "value": float(ph1.value)},
+                    "price_pivot_2": {"bar": ph2.bar_index, "time": times[ph2.bar_index], "value": float(ph2.value)},
+                    "cvd_pivot_1": {"bar": ch1.bar_index, "time": times[ch1.bar_index], "value": float(ch1.value)},
+                    "cvd_pivot_2": {"bar": ch2.bar_index, "time": times[ch2.bar_index], "value": float(ch2.value)},
                 })
                 break
 
     # 2. Bullish divergences
     for i in range(1, len(price_low_pivots)):
         pl2 = price_low_pivots[i]
+        
         cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
         if not cl2: continue
             
-        for j in range(i - 1, max(-1, i - 6), -1):
+        for j in range(i - 1, -1, -1):
             pl1 = price_low_pivots[j]
             
-            # STRICT WIDTH LIMIT: If the previous pivot is more than 10 candles away, stop looking backward.
+            # STRICT 10-BAR LIMIT: If older pivot is > 10 bars away, stop searching
             if abs(pl2.bar_index - pl1.bar_index) > max_divergence_width:
                 break
                 
@@ -331,11 +334,11 @@ def detect_divergences(
                     "price_time": times[pl2.bar_index],
                     "price_value": float(pl2.value),
                     "cvd_value": float(cl2.value),
-                    "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
-                    "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
-                    # MAGIC TRICK: Use Price's X-axis (bar) so lines are perfectly vertical, but use CVD's true Y-axis value
-                    "cvd_pivot_1": {"bar": pl1.bar_index, "value": float(cl1.value)},
-                    "cvd_pivot_2": {"bar": pl2.bar_index, "value": float(cl2.value)},
+                    # Passing exact timestamps prevents frontend floating dot issues
+                    "price_pivot_1": {"bar": pl1.bar_index, "time": times[pl1.bar_index], "value": float(pl1.value)},
+                    "price_pivot_2": {"bar": pl2.bar_index, "time": times[pl2.bar_index], "value": float(pl2.value)},
+                    "cvd_pivot_1": {"bar": cl1.bar_index, "time": times[cl1.bar_index], "value": float(cl1.value)},
+                    "cvd_pivot_2": {"bar": cl2.bar_index, "time": times[cl2.bar_index], "value": float(cl2.value)},
                 })
                 break
 
