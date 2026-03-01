@@ -735,12 +735,28 @@ class PairServer:
 
             interval = request.args.get("interval", "1m")
             full_df = _provider_get_df(self.ticker, interval, self.period)
-                
+
             full_df = full_df.dropna()
             print(f"[REPLAY] raw_idx={raw_idx} raw_total={request.args.get('total')} full_df_len={len(full_df)}")
-            raw_total = request.args.get("total")
-            if raw_total:
-                full_df = full_df.iloc[:int(raw_total) + 1]
+
+            # Filter by timestamp bounds if provided (ensures data matches client's snapshot)
+            start_ts = request.args.get("start_ts")
+            end_ts = request.args.get("end_ts")
+            if start_ts and end_ts:
+                from datetime import datetime, timezone
+                start_dt = datetime.fromtimestamp(int(start_ts), tz=timezone.utc)
+                end_dt = datetime.fromtimestamp(int(end_ts), tz=timezone.utc)
+                # Handle both timezone-aware and timezone-naive indices
+                if full_df.index.tz is None:
+                    start_dt = start_dt.replace(tzinfo=None)
+                    end_dt = end_dt.replace(tzinfo=None)
+                full_df = full_df[(full_df.index >= start_dt) & (full_df.index <= end_dt)]
+                print(f"[REPLAY] filtered by timestamps: start={start_ts} end={end_ts} df_len={len(full_df)}")
+            else:
+                # Fallback to index-based slicing for backward compatibility
+                raw_total = request.args.get("total")
+                if raw_total:
+                    full_df = full_df.iloc[:int(raw_total) + 1]
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
             params = dict(self.detector_params.get("accumulation", {}))

@@ -436,6 +436,7 @@ let replayResult   = null;   // last result from /debug/replay
 let replayMode     = false;
 let replayIdx      = 0;      // number of candles currently visible on chart
 let replayTimer    = null;
+let replaySnapshot = null;  // { startTs, endTs } — timestamps captured when entering replay
 let selectedWindow = null;
 let overlaySeriesList = [];
 let scrubberUpdating = false;
@@ -694,7 +695,11 @@ function enterReplayMode() {
   replayResult   = null;
   replayIdx      = liveData.candles.length;  // start at end (all candles visible)
   replayTotal    = liveData.candles.length;  // snapshot
-
+  // Capture timestamp bounds so server can filter to exact same candles
+  replaySnapshot = {
+    startTs: liveData.candles[0].time,
+    endTs:   liveData.candles[liveData.candles.length - 1].time
+  };
 
   document.getElementById('btn-live').classList.remove('active');
   document.getElementById('btn-replay').classList.add('active');
@@ -722,6 +727,7 @@ function exitReplayMode() {
   stopPlay();
   replayMode     = false;
   replayResult   = null;
+  replaySnapshot = null;
   selectedWindow = null;
 
   document.getElementById('btn-live').classList.add('active');
@@ -830,9 +836,14 @@ async function runDetector() {
     // Pass idx = replayIdx - 1 (0-based last visible candle index)
     // Backend should slice df to [0 : replayIdx] and call detect(..., replay=True)
     // so that df[-1] IS the aggressor candidate.
-    const res = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF);
+    // Include snapshot timestamps so server filters to exact same candle set
+    let url = BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF;
+    if (replaySnapshot) {
+      url += '&start_ts=' + replaySnapshot.startTs + '&end_ts=' + replaySnapshot.endTs;
+    }
+    const res = await fetch(url);
     const data = await res.json();
-    console.log('fetch url:', BASE_URL + '/debug/replay?idx=' + replayIdx + '&total=' + replayTotal + '&interval=' + currentTF);
+    console.log('fetch url:', url);
     console.log('runDetector: replayIdx', replayIdx, 'sending idx', replayIdx);
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
