@@ -212,7 +212,7 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return results
 
 
-def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
+def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int = 5) -> List[PivotPoint]:
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
@@ -222,7 +222,7 @@ def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int =
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
 
-def detect_pivot_lows(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
+def detect_pivot_lows(values: np.ndarray, left_bars: int = 5, right_bars: int = 5) -> List[PivotPoint]:
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
@@ -239,7 +239,7 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
-    right_pivot: int = 1,
+    right_pivot: int = 5,
     max_pivot_bar_gap: int = 8
 ) -> List[Dict[str, Any]]:
     divergences = []
