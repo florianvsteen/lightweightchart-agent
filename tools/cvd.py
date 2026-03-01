@@ -278,56 +278,22 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
-    price_opens: np.ndarray,
-    price_closes: np.ndarray,
-    cvd_opens: np.ndarray,
-    cvd_closes: np.ndarray,
     left_pivot: int = 5,
+    right_pivot: int = 1,  # <--- SET TO 1 FOR INSTANT REVERSAL CONFIRMATION
     max_pivot_bar_gap: int = 8,
-    **kwargs # Catch any leftover arguments gracefully
+    **kwargs
 ) -> List[Dict[str, Any]]:
-    
-    """
-    Detect divergences between price and CVD.
-
-    Bearish divergence: Price makes higher high, CVD makes lower high
-    Bullish divergence: Price makes lower low, CVD makes higher low
-
-    Args:
-        price_highs: Array of price highs
-        price_lows: Array of price lows
-        cvd_highs: Array of CVD highs
-        cvd_lows: Array of CVD lows
-        times: List of timestamps
-        left_pivot: Left bars for pivot detection
-        right_pivot: Right bars for pivot detection
-        max_pivot_bar_gap: Maximum bar gap between price and CVD pivots
-
-    Returns:
-        List of divergence dicts
-    """
     divergences = []
 
-    # Pass the Opens and Closes into our new pivot functions (no longer using right_pivot)
-    price_high_pivots = detect_pivot_highs(price_highs, price_opens, price_closes, left_pivot)
-    price_low_pivots = detect_pivot_lows(price_lows, price_opens, price_closes, left_pivot)
-    cvd_high_pivots = detect_pivot_highs(cvd_highs, cvd_opens, cvd_closes, left_pivot)
-    cvd_low_pivots = detect_pivot_lows(cvd_lows, cvd_opens, cvd_closes, left_pivot)
+    price_high_pivots = detect_pivot_highs(price_highs, left_pivot, right_pivot)
+    price_low_pivots = detect_pivot_lows(price_lows, left_pivot, right_pivot)
+    cvd_high_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
+    cvd_low_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
-    # --- DEBUGGING OUTPUT ---
-    print("\n--- DIVERGENCE DETECTOR DEBUG ---")
-    print(f"Total Bars Processed: {len(times)}")
-    print(f"Price High Pivots found: {len(price_high_pivots)}")
-    print(f"Price Low Pivots found:  {len(price_low_pivots)}")
-    print(f"CVD High Pivots found:   {len(cvd_high_pivots)}")
-    print(f"CVD Low Pivots found:    {len(cvd_low_pivots)}")
-    print("---------------------------------\n")
-
-    # 1. Bearish divergences (Price Higher High, CVD Lower High)
+    # 1. Bearish divergences
     for i in range(1, len(price_high_pivots)):
         ph1, ph2 = price_high_pivots[i-1], price_high_pivots[i]
         
-        # Find matching TRUE CVD high pivots that occur near our price pivots
         ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
         ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
 
@@ -345,11 +311,10 @@ def detect_divergences(
                     "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
                 })
 
-    # 2. Bullish divergences (Price Lower Low, CVD Higher Low)
+    # 2. Bullish divergences
     for i in range(1, len(price_low_pivots)):
         pl1, pl2 = price_low_pivots[i-1], price_low_pivots[i]
         
-        # Find matching TRUE CVD low pivots that occur near our price pivots
         cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
         cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
 
