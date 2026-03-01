@@ -27,7 +27,7 @@ import pandas as pd
 import threading
 from datetime import datetime, timezone
 from detectors.bias import get_bias as _get_bias_from_module
-from sessions import candle_session_or_pre, in_session, FOREX
+from tools.sessions import candle_session_or_pre, in_session, FOREX
 
 # Backward-compat aliases used by debug.html server routes
 SESSION_WINDOWS = {
