@@ -438,6 +438,7 @@ let replayIdx      = 0;      // number of candles currently visible on chart
 let replayTimer    = null;
 let selectedWindow = null;
 let overlaySeriesList = [];
+let scrubberUpdating = false;
 let sdData  = null;
 let fvgData = null;
 let biasData = null;
@@ -769,7 +770,9 @@ function seekTo(count, isStep) {
     chart.timeScale().fitContent();
   }
 
+  scrubberUpdating = true;
   document.getElementById('scrubber').value = count - 1;
+  scrubberUpdating = false;
   _updateScrubLabel();
 
   // Reset overlay and panel to "awaiting analysis"
@@ -1204,7 +1207,7 @@ document.getElementById('btn-next').addEventListener('click', () => {
 document.getElementById('btn-analyze').addEventListener('click', runDetector);
 
 document.getElementById('scrubber').addEventListener('input', function() {
-  if (!replayMode) return;
+  if (!replayMode || scrubberUpdating) return;  
   stopPlay();
   const count = parseInt(this.value) + 1;
   const slice = liveData.candles.slice(0, count);
