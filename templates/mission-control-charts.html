@@ -703,29 +703,20 @@
   });
 
   // CVD line + histogram series
-  let cvdBaselineSeries = null;
+  let cvdHistSeries = null;
 
   function initCvdSeries() {
-    if (cvdBaselineSeries) {
-      try { cvdChart.removeSeries(cvdBaselineSeries); } catch(e) {}
-      cvdBaselineSeries = null;
+    if (cvdHistSeries) {
+      try { cvdChart.removeSeries(cvdHistSeries); } catch(e) {}
+      cvdHistSeries = null;
     }
 
-    // Baseline area: green fill above zero, red fill below — matches TradingView CVD style
-    cvdBaselineSeries = cvdChart.addBaselineSeries({
-      baseValue: { type: 'price', price: 0 },
-      topLineColor:      '#5af0c4',
-      topFillColor1:     'rgba(90,240,196,0.4)',
-      topFillColor2:     'rgba(90,240,196,0.05)',
-      bottomLineColor:   '#f05a7e',
-      bottomFillColor1:  'rgba(240,90,126,0.05)',
-      bottomFillColor2:  'rgba(240,90,126,0.4)',
-      lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 3,
+    // Histogram bars: each bar = cumulative CVD value, green=buying red=selling
+    cvdHistSeries = cvdChart.addHistogramSeries({
+      color: '#5af0c4',
       priceLineVisible: false,
       lastValueVisible: true,
-      lastPriceAnimation: 1,
+      base: 0,
     });
   }
 
@@ -870,10 +861,14 @@
     const stats     = cvdData.stats || {};
     const hasVolume = cvdData.has_volume;
 
-    // Build baseline data (cumulative CVD value, time-shifted)
-    const lineData = points.map(p => ({ time: shiftTime(p.time), value: p.value }));
+    // Histogram bars: height = cumulative CVD, colour = green if delta>0 else red
+    const barData = points.map(p => ({
+      time:  shiftTime(p.time),
+      value: p.value,
+      color: p.delta >= 0 ? 'rgba(90,240,196,0.85)' : 'rgba(240,90,126,0.85)',
+    }));
 
-    cvdBaselineSeries.setData(lineData);
+    cvdHistSeries.setData(barData);
 
     // Add divergence markers
     if (divs.length) {
@@ -885,9 +880,9 @@
         text:     d.label,
         size:     1,
       })).sort((a, b) => a.time - b.time);
-      cvdBaselineSeries.setMarkers(markers);
+      cvdHistSeries.setMarkers(markers);
     } else {
-      cvdBaselineSeries.setMarkers([]);
+      cvdHistSeries.setMarkers([]);
     }
 
     // Update header badges
