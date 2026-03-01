@@ -694,6 +694,11 @@ class PairServer:
                 full_df = _provider_get_df(self.ticker, interval, self.period)
             full_df = full_df.dropna()
 
+            raw_total = request.args.get("total")
+            if raw_total:
+                full_df = full_df.iloc[:int(raw_total) + 1]
+            if full_df is None or len(full_df) < 5:
+
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
 
