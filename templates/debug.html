@@ -1197,12 +1197,15 @@ document.getElementById('btn-play').addEventListener('click', () => {
   replayTimer ? stopPlay() : startPlay();
 });
 document.getElementById('btn-prev').addEventListener('click', () => {
-  stopPlay(); if (replayIdx > 18) seekTo(replayIdx - 1, true);  // step back
+  stopPlay(); if (replayIdx > 18) seekTo(replayIdx - 1, true);
+  console.log('prev: replayIdx before', replayIdx, 'total', liveData.candles.length);
+  document.getElementById('btn-prev').blur();
 });
 document.getElementById('btn-next').addEventListener('click', () => {
   stopPlay();
   console.log('next: replayIdx before', replayIdx, 'total', liveData.candles.length);
-  if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1, true);  // step forward
+  if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1, true);
+  document.getElementById('btn-next').blur();
 });
 document.getElementById('btn-analyze').addEventListener('click', runDetector);
 
