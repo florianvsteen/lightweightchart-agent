@@ -523,15 +523,15 @@ def get_cvd_data(
     if detect_divs and len(cvd_candles) >= (left_pivot + right_pivot + 2):
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
-        cvd_highs = np.array([c["high"] for c in cvd_candles])
-        cvd_lows = np.array([c["low"] for c in cvd_candles])
+        # Use CVD close (cumulative value) for pivot detection, not intra-bar high/low
+        cvd_closes = np.array([c["close"] for c in cvd_candles])
         times = [c["time"] for c in cvd_candles]
 
         divergences = detect_divergences(
             price_highs=price_highs,
             price_lows=price_lows,
-            cvd_highs=cvd_highs,
-            cvd_lows=cvd_lows,
+            cvd_highs=cvd_closes,
+            cvd_lows=cvd_closes,
             times=times,
             left_pivot=left_pivot,
             right_pivot=right_pivot,
