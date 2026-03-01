@@ -523,11 +523,16 @@ def get_cvd_data(
 
     # Detect divergences
     divergences = []
-    if detect_divs and len(cvd_candles) >= (left_pivot + right_pivot + 2):
+    if detect_divs and len(cvd_candles) >= (left_pivot + 2):
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
+        price_opens = df["Open"].values.astype(float)    # NEW
+        price_closes = df["Close"].values.astype(float)  # NEW
+        
         cvd_highs = np.array([c["high"] for c in cvd_candles])
         cvd_lows = np.array([c["low"] for c in cvd_candles])
+        cvd_opens = np.array([c["open"] for c in cvd_candles])    # NEW
+        cvd_closes = np.array([c["close"] for c in cvd_candles])  # NEW
         times = [c["time"] for c in cvd_candles]
 
         divergences = detect_divergences(
@@ -536,8 +541,11 @@ def get_cvd_data(
             cvd_highs=cvd_highs,
             cvd_lows=cvd_lows,
             times=times,
+            price_opens=price_opens,    # NEW
+            price_closes=price_closes,  # NEW
+            cvd_opens=cvd_opens,        # NEW
+            cvd_closes=cvd_closes,      # NEW
             left_pivot=left_pivot,
-            right_pivot=right_pivot,
             max_pivot_bar_gap=max_pivot_bar_gap
         )
 
