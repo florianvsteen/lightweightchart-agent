@@ -265,8 +265,9 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
-    right_pivot: int = 1,  # Fast 1-candle confirmation
-    max_pivot_bar_gap: int = 2, # Small gap to catch true peaks (like the green box)
+    right_pivot: int = 1,
+    max_pivot_bar_gap: int = 2,
+    max_divergence_width: int = 10, # <--- NEW PARAMETER: Max candles between the two pivots
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
@@ -284,6 +285,11 @@ def detect_divergences(
             
         for j in range(i - 1, max(-1, i - 6), -1):
             ph1 = price_high_pivots[j]
+            
+            # STRICT WIDTH LIMIT: If the previous pivot is more than 10 candles away, stop looking backward.
+            if abs(ph2.bar_index - ph1.bar_index) > max_divergence_width:
+                break
+                
             ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
             if not ch1: continue
                 
@@ -310,6 +316,11 @@ def detect_divergences(
             
         for j in range(i - 1, max(-1, i - 6), -1):
             pl1 = price_low_pivots[j]
+            
+            # STRICT WIDTH LIMIT: If the previous pivot is more than 10 candles away, stop looking backward.
+            if abs(pl2.bar_index - pl1.bar_index) > max_divergence_width:
+                break
+                
             cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
             if not cl1: continue
                 
