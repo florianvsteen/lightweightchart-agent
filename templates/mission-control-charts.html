@@ -1486,7 +1486,7 @@
     try {
       const res = await fetch(`/proxy/${PAIR_ID}/api/drawings`);
       const data = await res.json();
-      _drawings = data.drawings || [];
+      _drawings = (data.drawings || []).filter(d => d && d.id && d.chart && d.type);
       renderAllDrawings();
     } catch(e) { console.error('loadDrawings:', e); }
   }
@@ -1500,7 +1500,7 @@
       });
       const data = await res.json();
       const saved = data.drawing;
-      _drawings.push(saved);
+      if (saved && saved.id) _drawings.push(saved);
       renderAllDrawings();
       return saved;
     } catch(e) { console.error('saveDrawing:', e); }
@@ -1587,7 +1587,7 @@
       const ctx = cvs.getContext('2d');
       ctx.clearRect(0, 0, cvs.width, cvs.height);
 
-      const panelDrawings = _drawings.filter(d => d.chart === panelId);
+      const panelDrawings = _drawings.filter(d => d && d.chart === panelId);
       panelDrawings.forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
 
       // Draw in-progress preview
@@ -1656,7 +1656,7 @@
 
     for (let i = _drawings.length - 1; i >= 0; i--) {
       const d = _drawings[i];
-      if (d.chart !== panelId) continue;
+      if (!d || d.chart !== panelId) continue;
       const pts = (d.points || []).map(p => pointToPixel(p, panelId)).filter(Boolean);
       if (!pts.length) continue;
 
@@ -1740,7 +1740,7 @@
         const cvs = getCanvas(panelId);
         const ctx = cvs.getContext('2d');
         ctx.clearRect(0, 0, cvs.width, cvs.height);
-        _drawings.filter(d => d.chart === panelId)
+        _drawings.filter(d => d && d.chart === panelId)
           .forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
         renderDrawing(ctx, preview, panelId, false, true);
         return;
