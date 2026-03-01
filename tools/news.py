@@ -1,5 +1,5 @@
 """
-news.py
+tools/news.py
 
 Fetches recent news headlines for a trading pair using yfinance.
 
