@@ -1458,44 +1458,61 @@
 
     // 2. Sync crosshair to CVD chart at same timestamp (use point for areas past data)
     if (_xhairSyncing || !cvdCandleSeries) return;
-    const syncTime = param.time || (param.point ? chart.timeScale().coordinateToTime(param.point.x) : null);
-    if (!syncTime) return;
+    if (!param.point) return;  // Need point coordinates for reliable sync
 
     _xhairSyncing = true;
-    // Try to sync by time, if that fails try to sync by matching visible range position
     try {
-      cvdChart.setCrosshairPosition(0, syncTime, cvdCandleSeries);
-    } catch(e) {
-      // If setCrosshairPosition fails (no data at this time), sync via visible range
-      try {
-        const priceRange = chart.timeScale().getVisibleLogicalRange();
-        if (priceRange) cvdChart.timeScale().setVisibleLogicalRange(priceRange);
-      } catch(e2) {}
-    }
+      // Get the logical index from price chart coordinate
+      const logicalIndex = chart.timeScale().coordinateToLogical(param.point.x);
+      if (logicalIndex != null) {
+        // Convert logical index to coordinate on CVD chart
+        const cvdX = cvdChart.timeScale().logicalToCoordinate(logicalIndex);
+        if (cvdX != null) {
+          // Get the CVD chart container to find center Y
+          const cvdRect = cvdContainer.getBoundingClientRect();
+          const cvdCenterY = cvdRect.height / 2;
+          // Simulate crosshair at this position by using setCrosshairPosition with a price
+          // that's at the center of the visible range
+          const cvdTime = cvdChart.timeScale().coordinateToTime(cvdX);
+          if (cvdTime != null) {
+            // Get visible price range to find center price
+            const cvdPriceRange = cvdChart.priceScale('right').getVisiblePriceRange();
+            if (cvdPriceRange) {
+              const centerPrice = (cvdPriceRange.from + cvdPriceRange.to) / 2;
+              cvdChart.setCrosshairPosition(centerPrice, cvdTime, cvdCandleSeries);
+            }
+          }
+        }
+      }
+    } catch(e) {}
     _xhairSyncing = false;
   });
 
   // When hovering CVD, push crosshair back to price chart
   cvdChart.subscribeCrosshairMove((param) => {
     if (_xhairSyncing || !candleSeries) return;
-
-    // Get time from param or calculate from point position
-    let syncTime = param.time;
-    if (!syncTime && param.point) {
-      syncTime = cvdChart.timeScale().coordinateToTime(param.point.x);
-    }
-    if (!syncTime) return;
+    if (!param.point) return;  // Need point coordinates for reliable sync
 
     _xhairSyncing = true;
     try {
-      chart.setCrosshairPosition(0, syncTime, candleSeries);
-    } catch(e) {
-      // If setCrosshairPosition fails, sync via visible range
-      try {
-        const cvdRange = cvdChart.timeScale().getVisibleLogicalRange();
-        if (cvdRange) chart.timeScale().setVisibleLogicalRange(cvdRange);
-      } catch(e2) {}
-    }
+      // Get the logical index from CVD chart coordinate
+      const logicalIndex = cvdChart.timeScale().coordinateToLogical(param.point.x);
+      if (logicalIndex != null) {
+        // Convert logical index to coordinate on price chart
+        const priceX = chart.timeScale().logicalToCoordinate(logicalIndex);
+        if (priceX != null) {
+          const priceTime = chart.timeScale().coordinateToTime(priceX);
+          if (priceTime != null) {
+            // Get visible price range to find center price
+            const pricePriceRange = chart.priceScale('right').getVisiblePriceRange();
+            if (pricePriceRange) {
+              const centerPrice = (pricePriceRange.from + pricePriceRange.to) / 2;
+              chart.setCrosshairPosition(centerPrice, priceTime, candleSeries);
+            }
+          }
+        }
+      }
+    } catch(e) {}
     _xhairSyncing = false;
   });
 
@@ -1508,15 +1525,25 @@
     try { chart.clearCrosshairPosition(); } catch(e) {}
   });
 
-  // Click to show candle detail - only trigger when clicking on actual candle
+  // Click to show candle detail - only trigger when clicking on actual candle body/wicks
   priceContainer.addEventListener('click', (e) => {
     if (!_rawCandles.length) return;
     const rect = priceContainer.getBoundingClientRect();
-    const clickedTime = chart.timeScale().coordinateToTime(e.clientX - rect.left);
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const clickedTime = chart.timeScale().coordinateToTime(clickX);
     if (clickedTime == null) return;
     const rawClickedTime = clickedTime - TZ_OFFSET;
 
-    // Find closest candle
+    // Get clicked price from Y coordinate
+    let clickedPrice = null;
+    try {
+      clickedPrice = candleSeries.coordinateToPrice(clickY);
+    } catch(e) {}
+    if (clickedPrice == null) return;
+
+    // Find closest candle by time
     const closest = _rawCandles.reduce((best, c) =>
       Math.abs(c.time - rawClickedTime) < Math.abs(best.time - rawClickedTime) ? c : best,
       _rawCandles[0]
@@ -1528,12 +1555,18 @@
       intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
     }
 
-    // Only show detail if click is within half the interval duration of the candle
-    // This ensures clicking on empty areas (future/past timestamps) doesn't trigger
+    // Check time tolerance: click must be within half the interval of the candle
     const tolerance = intervalSecs / 2;
     const clickDiff = Math.abs(closest.time - rawClickedTime);
+    if (clickDiff > tolerance) return;
 
-    if (closest && clickDiff <= tolerance) {
+    // Check price tolerance: click must be within the candle's high-low range (body + wicks)
+    // Add a small padding (5% of candle range) to make clicking easier
+    const candleRange = closest.high - closest.low;
+    const padding = Math.max(candleRange * 0.05, candleRange * 0.1);  // At least 10% padding for thin candles
+    const priceInRange = clickedPrice >= (closest.low - padding) && clickedPrice <= (closest.high + padding);
+
+    if (closest && priceInRange) {
       showCandleDetail(closest);
     }
   });
