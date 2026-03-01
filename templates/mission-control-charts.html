@@ -988,6 +988,7 @@
 
   // CVD line + histogram series
   let cvdCandleSeries = null;
+  let _cvdCandles = [];  // Shifted CVD candle data for crosshair sync
 
   function initCvdSeries() {
     if (cvdCandleSeries) {
@@ -1203,6 +1204,7 @@
       low:   c.low,
       close: c.close,
     }));
+    _cvdCandles = candles;  // Store for crosshair sync
 
     if (candles.length) {
       _syncEnabled = false;
@@ -1456,8 +1458,8 @@
       }
     }
 
-    // 2. Sync crosshair to CVD chart at same timestamp
-    if (_xhairSyncing || !cvdCandleSeries) return;
+    // 2. Sync crosshair to CVD chart using logical index lookup
+    if (_xhairSyncing || !cvdCandleSeries || !_cvdCandles.length) return;
 
     _xhairSyncing = true;
     try {
@@ -1466,32 +1468,37 @@
       if (!cvdPriceRange) { _xhairSyncing = false; return; }
       const centerPrice = (cvdPriceRange.from + cvdPriceRange.to) / 2;
 
-      // Use param.time directly when available (within data range)
-      if (param.time) {
-        cvdChart.setCrosshairPosition(centerPrice, param.time, cvdCandleSeries);
-      } else if (param.point && _rawCandles.length > 0) {
-        // Past last candle - calculate projected time from logical index
-        const logicalIndex = chart.timeScale().coordinateToLogical(param.point.x);
-        if (logicalIndex != null) {
-          // Calculate interval from candle data
+      // Get logical index from cursor position
+      let logicalIndex = null;
+      if (param.point) {
+        logicalIndex = chart.timeScale().coordinateToLogical(param.point.x);
+      }
+
+      if (logicalIndex != null) {
+        const idx = Math.round(logicalIndex);
+        // Within data range - use actual CVD candle time
+        if (idx >= 0 && idx < _cvdCandles.length) {
+          const cvdTime = _cvdCandles[idx].time;
+          cvdChart.setCrosshairPosition(centerPrice, cvdTime, cvdCandleSeries);
+        } else if (idx >= _cvdCandles.length && _cvdCandles.length > 0) {
+          // Past last candle - calculate projected time
           let intervalSecs = 60;
-          if (_rawCandles.length >= 2) {
-            intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
+          if (_cvdCandles.length >= 2) {
+            intervalSecs = _cvdCandles[1].time - _cvdCandles[0].time;
           }
-          const lastCandleTime = _rawCandles[_rawCandles.length - 1].time + TZ_OFFSET;
-          const lastLogicalIndex = _rawCandles.length - 1;
-          const offset = logicalIndex - lastLogicalIndex;
-          const projectedTime = lastCandleTime + (offset * intervalSecs);
+          const lastCvdTime = _cvdCandles[_cvdCandles.length - 1].time;
+          const offset = idx - (_cvdCandles.length - 1);
+          const projectedTime = lastCvdTime + (offset * intervalSecs);
           cvdChart.setCrosshairPosition(centerPrice, projectedTime, cvdCandleSeries);
         }
       }
-    } catch(e) {}
+    } catch(e) { console.error('Crosshair sync error (price->CVD):', e); }
     _xhairSyncing = false;
   });
 
-  // When hovering CVD, push crosshair back to price chart
+  // When hovering CVD, push crosshair back to price chart using logical index lookup
   cvdChart.subscribeCrosshairMove((param) => {
-    if (_xhairSyncing || !candleSeries) return;
+    if (_xhairSyncing || !candleSeries || !_rawCandles.length) return;
 
     _xhairSyncing = true;
     try {
@@ -1500,26 +1507,31 @@
       if (!pricePriceRange) { _xhairSyncing = false; return; }
       const centerPrice = (pricePriceRange.from + pricePriceRange.to) / 2;
 
-      // Use param.time directly when available (within data range)
-      if (param.time) {
-        chart.setCrosshairPosition(centerPrice, param.time, candleSeries);
-      } else if (param.point && _rawCandles.length > 0) {
-        // Past last candle - calculate projected time from logical index
-        const logicalIndex = cvdChart.timeScale().coordinateToLogical(param.point.x);
-        if (logicalIndex != null) {
-          // Calculate interval from candle data
+      // Get logical index from cursor position
+      let logicalIndex = null;
+      if (param.point) {
+        logicalIndex = cvdChart.timeScale().coordinateToLogical(param.point.x);
+      }
+
+      if (logicalIndex != null) {
+        const idx = Math.round(logicalIndex);
+        // Within data range - use actual price candle time (shifted)
+        if (idx >= 0 && idx < _rawCandles.length) {
+          const priceTime = _rawCandles[idx].time + TZ_OFFSET;
+          chart.setCrosshairPosition(centerPrice, priceTime, candleSeries);
+        } else if (idx >= _rawCandles.length && _rawCandles.length > 0) {
+          // Past last candle - calculate projected time
           let intervalSecs = 60;
           if (_rawCandles.length >= 2) {
             intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
           }
-          const lastCandleTime = _rawCandles[_rawCandles.length - 1].time + TZ_OFFSET;
-          const lastLogicalIndex = _rawCandles.length - 1;
-          const offset = logicalIndex - lastLogicalIndex;
-          const projectedTime = lastCandleTime + (offset * intervalSecs);
+          const lastPriceTime = _rawCandles[_rawCandles.length - 1].time + TZ_OFFSET;
+          const offset = idx - (_rawCandles.length - 1);
+          const projectedTime = lastPriceTime + (offset * intervalSecs);
           chart.setCrosshairPosition(centerPrice, projectedTime, candleSeries);
         }
       }
-    } catch(e) {}
+    } catch(e) { console.error('Crosshair sync error (CVD->price):', e); }
     _xhairSyncing = false;
   });
 
