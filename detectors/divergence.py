@@ -41,7 +41,7 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
-    max_width: int = 15, # Increased slightly to match your drawings
+    max_width: int = 8, # Increased slightly to match your drawings
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
