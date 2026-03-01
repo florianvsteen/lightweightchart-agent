@@ -435,19 +435,19 @@ def get_cvd_data(
     if detect_divs and len(cvd_candles) >= (left_pivot + 2):
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
+        
         cvd_highs = np.array([c["high"] for c in cvd_candles])
         cvd_lows = np.array([c["low"] for c in cvd_candles])
         times = [c["time"] for c in cvd_candles]
 
+        # Ensure all 4 arrays are passed to the synchronized detector
         divergences = detect_divergences(
             price_highs=price_highs,
             price_lows=price_lows,
             cvd_highs=cvd_highs,
             cvd_lows=cvd_lows,
             times=times,
-            left_pivot=left_pivot,
-            right_pivot=1,  # Strict 1-bar confirmation
-            max_pivot_bar_gap=max_pivot_bar_gap
+            left_pivot=left_pivot
         )
 
     return {
