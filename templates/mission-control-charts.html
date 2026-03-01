@@ -703,20 +703,24 @@
   });
 
   // CVD line + histogram series
-  let cvdHistSeries = null;
+  let cvdCandleSeries = null;
 
   function initCvdSeries() {
-    if (cvdHistSeries) {
-      try { cvdChart.removeSeries(cvdHistSeries); } catch(e) {}
-      cvdHistSeries = null;
+    if (cvdCandleSeries) {
+      try { cvdChart.removeSeries(cvdCandleSeries); } catch(e) {}
+      cvdCandleSeries = null;
     }
 
-    // Histogram bars: each bar = cumulative CVD value, green=buying red=selling
-    cvdHistSeries = cvdChart.addHistogramSeries({
-      color: '#5af0c4',
+    // Candlestick series: CVD rendered as candles so trend is visible
+    cvdCandleSeries = cvdChart.addCandlestickSeries({
+      upColor:          '#5af0c4',
+      downColor:        '#f05a7e',
+      borderUpColor:    '#5af0c4',
+      borderDownColor:  '#f05a7e',
+      wickUpColor:      'rgba(90,240,196,0.5)',
+      wickDownColor:    'rgba(240,90,126,0.5)',
       priceLineVisible: false,
       lastValueVisible: true,
-      base: 0,
     });
   }
 
@@ -861,14 +865,16 @@
     const stats     = cvdData.stats || {};
     const hasVolume = cvdData.has_volume;
 
-    // Histogram bars: height = cumulative CVD, colour = green if delta>0 else red
-    const barData = points.map(p => ({
-      time:  shiftTime(p.time),
-      value: p.value,
-      color: p.delta >= 0 ? 'rgba(90,240,196,0.85)' : 'rgba(240,90,126,0.85)',
+    // CVD candles: open/high/low/close built from running CVD total
+    const candles = (cvdData.cvd_candles || []).map(c => ({
+      time:  shiftTime(c.time),
+      open:  c.open,
+      high:  c.high,
+      low:   c.low,
+      close: c.close,
     }));
 
-    cvdHistSeries.setData(barData);
+    if (candles.length) cvdCandleSeries.setData(candles);
 
     // Add divergence markers
     if (divs.length) {
@@ -880,9 +886,9 @@
         text:     d.label,
         size:     1,
       })).sort((a, b) => a.time - b.time);
-      cvdHistSeries.setMarkers(markers);
+      cvdCandleSeries.setMarkers(markers);
     } else {
-      cvdHistSeries.setMarkers([]);
+      cvdCandleSeries.setMarkers([]);
     }
 
     // Update header badges
