@@ -1463,11 +1463,6 @@
 
     _xhairSyncing = true;
     try {
-      // Get visible price range to find center price for CVD chart
-      const cvdPriceRange = cvdChart.priceScale('right').getVisiblePriceRange();
-      if (!cvdPriceRange) { _xhairSyncing = false; return; }
-      const centerPrice = (cvdPriceRange.from + cvdPriceRange.to) / 2;
-
       // Get logical index from cursor position
       let logicalIndex = null;
       if (param.point) {
@@ -1476,20 +1471,21 @@
 
       if (logicalIndex != null) {
         const idx = Math.round(logicalIndex);
-        // Within data range - use actual CVD candle time
+        // Within data range - use actual CVD candle data
         if (idx >= 0 && idx < _cvdCandles.length) {
-          const cvdTime = _cvdCandles[idx].time;
-          cvdChart.setCrosshairPosition(centerPrice, cvdTime, cvdCandleSeries);
+          const cvdCandle = _cvdCandles[idx];
+          const cvdPrice = cvdCandle.close;
+          cvdChart.setCrosshairPosition(cvdPrice, cvdCandle.time, cvdCandleSeries);
         } else if (idx >= _cvdCandles.length && _cvdCandles.length > 0) {
-          // Past last candle - calculate projected time
+          // Past last candle - use last candle's price with projected time
+          const lastCvdCandle = _cvdCandles[_cvdCandles.length - 1];
           let intervalSecs = 60;
           if (_cvdCandles.length >= 2) {
             intervalSecs = _cvdCandles[1].time - _cvdCandles[0].time;
           }
-          const lastCvdTime = _cvdCandles[_cvdCandles.length - 1].time;
           const offset = idx - (_cvdCandles.length - 1);
-          const projectedTime = lastCvdTime + (offset * intervalSecs);
-          cvdChart.setCrosshairPosition(centerPrice, projectedTime, cvdCandleSeries);
+          const projectedTime = lastCvdCandle.time + (offset * intervalSecs);
+          cvdChart.setCrosshairPosition(lastCvdCandle.close, projectedTime, cvdCandleSeries);
         }
       }
     } catch(e) { console.error('Crosshair sync error (price->CVD):', e); }
@@ -1502,11 +1498,6 @@
 
     _xhairSyncing = true;
     try {
-      // Get visible price range to find center price for price chart
-      const pricePriceRange = chart.priceScale('right').getVisiblePriceRange();
-      if (!pricePriceRange) { _xhairSyncing = false; return; }
-      const centerPrice = (pricePriceRange.from + pricePriceRange.to) / 2;
-
       // Get logical index from cursor position
       let logicalIndex = null;
       if (param.point) {
@@ -1515,20 +1506,21 @@
 
       if (logicalIndex != null) {
         const idx = Math.round(logicalIndex);
-        // Within data range - use actual price candle time (shifted)
+        // Within data range - use actual price candle data (shifted)
         if (idx >= 0 && idx < _rawCandles.length) {
-          const priceTime = _rawCandles[idx].time + TZ_OFFSET;
-          chart.setCrosshairPosition(centerPrice, priceTime, candleSeries);
+          const priceCandle = _rawCandles[idx];
+          const priceTime = priceCandle.time + TZ_OFFSET;
+          chart.setCrosshairPosition(priceCandle.close, priceTime, candleSeries);
         } else if (idx >= _rawCandles.length && _rawCandles.length > 0) {
-          // Past last candle - calculate projected time
+          // Past last candle - use last candle's price with projected time
+          const lastPriceCandle = _rawCandles[_rawCandles.length - 1];
           let intervalSecs = 60;
           if (_rawCandles.length >= 2) {
             intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
           }
-          const lastPriceTime = _rawCandles[_rawCandles.length - 1].time + TZ_OFFSET;
           const offset = idx - (_rawCandles.length - 1);
-          const projectedTime = lastPriceTime + (offset * intervalSecs);
-          chart.setCrosshairPosition(centerPrice, projectedTime, candleSeries);
+          const projectedTime = (lastPriceCandle.time + TZ_OFFSET) + (offset * intervalSecs);
+          chart.setCrosshairPosition(lastPriceCandle.close, projectedTime, candleSeries);
         }
       }
     } catch(e) { console.error('Crosshair sync error (CVD->price):', e); }
