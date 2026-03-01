@@ -809,9 +809,10 @@
   // Sync time scales: when price chart scrolls, CVD follows
   let _syncingFromPrice = false;
   let _syncingFromCvd   = false;
+  let _syncEnabled      = false;  // disabled during initial data load
 
   chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-    if (_syncingFromCvd) return;
+    if (!_syncEnabled || _syncingFromCvd) return;
     if (!range) return;
     _syncingFromPrice = true;
     try { cvdChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
@@ -819,7 +820,7 @@
   });
 
   cvdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-    if (_syncingFromPrice) return;
+    if (!_syncEnabled || _syncingFromPrice) return;
     if (!range) return;
     _syncingFromCvd = true;
     try { chart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
@@ -976,12 +977,15 @@
     }));
 
     if (candles.length) {
+      _syncEnabled = false;
       cvdCandleSeries.setData(candles);
-      // Sync CVD to same visible range as price chart (not independent fitContent)
+      // Match CVD view exactly to price chart's current visible range
       try {
         const range = chart.timeScale().getVisibleLogicalRange();
         if (range) cvdChart.timeScale().setVisibleLogicalRange(range);
+        else cvdChart.timeScale().scrollToRealTime();
       } catch(e) {}
+      setTimeout(() => { _syncEnabled = true; }, 100);
     }
 
     // Add divergence markers
@@ -1256,13 +1260,16 @@
       _rawCandles = data.candles || [];
       window._rawCandles = _rawCandles;
 
+      _syncEnabled = false;                        // freeze sync during load
       candleSeries.setData([]);
       const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
       if (shifted.length) {
         candleSeries.setData(shifted);
-        chart.timeScale().fitContent();      // scroll to show latest candles
+        chart.timeScale().scrollToRealTime();  // jump to latest candle
         scheduleScaleSync();
       }
+      // Re-enable sync after a short delay so both charts settle first
+      setTimeout(() => { _syncEnabled = true; }, 100);
 
       clearSeries();
       const det = data.detectors || {};
