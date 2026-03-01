@@ -339,6 +339,15 @@ def detect_divergences(
     cvd_high_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
     cvd_low_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
+    # --- DEBUGGING OUTPUT ---
+    print("\n--- DIVERGENCE DETECTOR DEBUG ---")
+    print(f"Total Bars Processed: {len(times)}")
+    print(f"Price High Pivots found: {len(price_high_pivots)}")
+    print(f"Price Low Pivots found:  {len(price_low_pivots)}")
+    print(f"CVD High Pivots found:   {len(cvd_high_pivots)}")
+    print(f"CVD Low Pivots found:    {len(cvd_low_pivots)}")
+    print("---------------------------------\n")
+
     # 1. Bearish divergences (Price Higher High, CVD Lower High)
     for i in range(1, len(price_high_pivots)):
         ph1, ph2 = price_high_pivots[i-1], price_high_pivots[i]
