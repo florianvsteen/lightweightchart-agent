@@ -137,6 +137,56 @@
   }
   #chart { width: 100%; height: 100%; }
 
+  /* ── Drawing toolbar ─────────────────────────────────────────────── */
+  #draw-toolbar {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+  }
+  .draw-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 4px 8px;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .draw-btn:hover  { border-color: #888; color: #ccc; }
+  .draw-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.08); }
+  .draw-btn-danger { border-color: rgba(240,90,126,0.4) !important; color: #f05a7e !important; }
+  .draw-btn-danger:hover { background: rgba(240,90,126,0.1) !important; }
+
+  /* Drawing cursor on chart panels */
+  .drawing-active #chart,
+  .drawing-active #cvd-chart { cursor: crosshair !important; }
+
+  /* Drawing context menu */
+  #draw-context-menu {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    padding: 4px 0;
+    z-index: 1000;
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    display: none;
+  }
+  #draw-context-menu.visible { display: block; }
+  .draw-ctx-item {
+    padding: 7px 14px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+  }
+  .draw-ctx-item:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  .draw-ctx-item.danger { color: #f05a7e; }
+  .draw-ctx-item.danger:hover { background: rgba(240,90,126,0.1); }
+
   /* ── CVD resize handle ───────────────────────────────────────────── */
   #cvd-resize-handle {
     height: 5px;
@@ -517,6 +567,17 @@
     <button class="tf-btn" data-interval="1h">1h</button>
   </div>
   <div id="session-badge">--</div>
+
+  <!-- Drawing toolbar -->
+  <div id="draw-toolbar">
+    <button class="draw-btn" data-tool="cursor"  title="Cursor (Esc)">&#9654;</button>
+    <button class="draw-btn" data-tool="hline"   title="Horizontal Line (H)">&#8213;</button>
+    <button class="draw-btn" data-tool="line"    title="Trend Line (L)">&#8725;</button>
+    <button class="draw-btn" data-tool="ray"     title="Ray (R)">&#8594;</button>
+    <button class="draw-btn" data-tool="box"     title="Box (B)">&#9645;</button>
+    <button class="draw-btn draw-btn-danger" id="draw-clear-all" title="Clear all drawings">&#128465;</button>
+  </div>
+
   <select id="pair-select">
     {% for p in pairs %}
     <option value="{{ p.id }}" {% if p.id == pair_id %}selected{% endif %}>{{ p.id }} — {{ p.label }}</option>
@@ -531,6 +592,7 @@
     <div id="chart-container">
       <div id="chart"></div>
       <div id="candle-tooltip"></div>
+      <canvas id="draw-overlay-price" style="position:absolute;top:0;left:0;pointer-events:none;z-index:5;"></canvas>
     </div>
 
     <!-- CVD resize handle -->
@@ -546,7 +608,13 @@
         <span id="cvd-no-vol">· tick vol</span>
       </div>
       <div id="cvd-chart"></div>
+      <canvas id="draw-overlay-cvd" style="position:absolute;top:0;left:0;pointer-events:none;z-index:5;"></canvas>
     </div>
+  </div>
+
+  <!-- Drawing context menu -->
+  <div id="draw-context-menu">
+    <div class="draw-ctx-item danger" id="draw-ctx-delete">🗑 Delete drawing</div>
   </div>
 
   <!-- Right Panel -->
@@ -1363,9 +1431,394 @@
   loadBias();
   loadCvd();
   loadNews();
+  loadDrawings();
   setInterval(loadData, 60 * 1000);
   setInterval(() => loadCvd(true), 60 * 1000);
   setInterval(loadBias, 24 * 60 * 60 * 1000);
+
+  // ════════════════════════════════════════════════════════════════════
+  // DRAWING ENGINE
+  // ════════════════════════════════════════════════════════════════════
+
+  // ── State ────────────────────────────────────────────────────────────
+  let _drawTool      = 'cursor';   // current active tool
+  let _drawings      = [];          // all loaded drawings
+  let _drawInProgress = null;       // {type, chart, points:[{time,value}]}
+  let _hoveredDrawing = null;       // id of drawing under mouse
+  let _contextTarget  = null;       // drawing id for context menu
+
+  const TOOL_STYLES = {
+    line:  { color: '#e0c080', lineWidth: 1, lineStyle: 0 },
+    hline: { color: '#7090d0', lineWidth: 1, lineStyle: 2 },
+    ray:   { color: '#c080e0', lineWidth: 1, lineStyle: 0 },
+    box:   { color: '#50b896', lineWidth: 1, lineStyle: 0 },
+  };
+
+  // ── Toolbar ──────────────────────────────────────────────────────────
+  function setDrawTool(tool) {
+    _drawTool = tool;
+    _drawInProgress = null;
+    document.querySelectorAll('.draw-btn[data-tool]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tool === tool);
+    });
+    const isDrawing = tool !== 'cursor';
+    document.getElementById('chart-container').classList.toggle('drawing-active', isDrawing);
+    document.getElementById('cvd-panel').classList.toggle('drawing-active', isDrawing);
+    // Enable/disable LW chart interaction
+    [chart, cvdChart].forEach(c => c.applyOptions({
+      handleScroll: !isDrawing,
+      handleScale:  !isDrawing,
+    }));
+  }
+
+  document.querySelectorAll('.draw-btn[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => setDrawTool(btn.dataset.tool));
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const map = { Escape:'cursor', h:'hline', H:'hline', l:'line', L:'line',
+                  r:'ray', R:'ray', b:'box', B:'box' };
+    if (map[e.key]) setDrawTool(map[e.key]);
+  });
+
+  // ── API ──────────────────────────────────────────────────────────────
+  async function loadDrawings() {
+    try {
+      const res = await fetch(`/proxy/${PAIR_ID}/api/drawings`);
+      const data = await res.json();
+      _drawings = data.drawings || [];
+      renderAllDrawings();
+    } catch(e) { console.error('loadDrawings:', e); }
+  }
+
+  async function saveDrawing(drawing) {
+    try {
+      const res = await fetch(`/proxy/${PAIR_ID}/api/drawings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(drawing),
+      });
+      const data = await res.json();
+      const saved = data.drawing;
+      _drawings.push(saved);
+      renderAllDrawings();
+      return saved;
+    } catch(e) { console.error('saveDrawing:', e); }
+  }
+
+  async function deleteDrawing(id) {
+    _drawings = _drawings.filter(d => d.id !== id);
+    renderAllDrawings();
+    try {
+      await fetch(`/proxy/${PAIR_ID}/api/drawings/${id}`, { method: 'DELETE' });
+    } catch(e) { console.error('deleteDrawing:', e); }
+  }
+
+  document.getElementById('draw-clear-all').addEventListener('click', async () => {
+    if (!_drawings.length) return;
+    if (!confirm(`Delete all ${_drawings.length} drawing(s)?`)) return;
+    const ids = _drawings.map(d => d.id);
+    _drawings = [];
+    renderAllDrawings();
+    for (const id of ids) {
+      try { await fetch(`/proxy/${PAIR_ID}/api/drawings/${id}`, { method: 'DELETE' }); } catch(e) {}
+    }
+  });
+
+  // ── Coordinate helpers ───────────────────────────────────────────────
+  function chartForPanel(panelId) {
+    return panelId === 'price' ? chart : cvdChart;
+  }
+  function seriesForPanel(panelId) {
+    return panelId === 'price' ? candleSeries : cvdCandleSeries;
+  }
+  function containerForPanel(panelId) {
+    return panelId === 'price' ? priceContainer : cvdContainer;
+  }
+
+  // Convert mouse event → {time, value} on a given chart
+  function mouseToPoint(e, panelId) {
+    const c   = chartForPanel(panelId);
+    const ser = seriesForPanel(panelId);
+    const el  = containerForPanel(panelId);
+    if (!ser) return null;
+    const rect  = el.getBoundingClientRect();
+    const x     = e.clientX - rect.left;
+    const y     = e.clientY - rect.top;
+    const time  = c.timeScale().coordinateToTime(x);
+    const value = ser.coordinateToPrice(y);
+    if (time == null || value == null) return null;
+    return { time: time - TZ_OFFSET, value };  // store raw UTC time
+  }
+
+  // Convert {time,value} → canvas pixel on a given chart
+  function pointToPixel(pt, panelId) {
+    const c   = chartForPanel(panelId);
+    const ser = seriesForPanel(panelId);
+    if (!ser) return null;
+    const x = c.timeScale().timeToCoordinate(pt.time + TZ_OFFSET);
+    const y = ser.priceToCoordinate(pt.value);
+    if (x == null || y == null) return null;
+    return { x, y };
+  }
+
+  // ── Canvas rendering ─────────────────────────────────────────────────
+  function getCanvas(panelId) {
+    return document.getElementById(panelId === 'price' ? 'draw-overlay-price' : 'draw-overlay-cvd');
+  }
+
+  function syncCanvasSize(panelId) {
+    const el  = containerForPanel(panelId);
+    const cvs = getCanvas(panelId);
+    cvs.width  = el.clientWidth;
+    cvs.height = el.clientHeight;
+  }
+
+  function setLineDash(ctx, lineStyle) {
+    if      (lineStyle === 1) ctx.setLineDash([3, 3]);
+    else if (lineStyle === 2) ctx.setLineDash([8, 4]);
+    else                      ctx.setLineDash([]);
+  }
+
+  function renderAllDrawings() {
+    ['price', 'cvd'].forEach(panelId => {
+      syncCanvasSize(panelId);
+      const cvs = getCanvas(panelId);
+      const ctx = cvs.getContext('2d');
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+      const panelDrawings = _drawings.filter(d => d.chart === panelId);
+      panelDrawings.forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
+
+      // Draw in-progress preview
+      if (_drawInProgress && _drawInProgress.chart === panelId) {
+        renderDrawing(ctx, _drawInProgress, panelId, false, true);
+      }
+    });
+  }
+
+  function renderDrawing(ctx, d, panelId, hovered, preview) {
+    const style = d.style || TOOL_STYLES[d.type] || TOOL_STYLES.line;
+    ctx.strokeStyle = hovered ? '#ffffff' : style.color;
+    ctx.lineWidth   = hovered ? style.lineWidth + 1 : style.lineWidth;
+    ctx.globalAlpha = preview ? 0.55 : 1;
+    setLineDash(ctx, style.lineStyle);
+
+    const pts = (d.points || []).map(p => pointToPixel(p, panelId)).filter(Boolean);
+    if (!pts.length) return;
+
+    const W = getCanvas(panelId).width;
+    const H = getCanvas(panelId).height;
+
+    ctx.beginPath();
+
+    if (d.type === 'hline') {
+      const p = pointToPixel(d.points[0], panelId);
+      if (!p) return;
+      ctx.moveTo(0, p.y);
+      ctx.lineTo(W, p.y);
+
+    } else if (d.type === 'line') {
+      if (pts.length < 2) { if (pts[0]) { ctx.arc(pts[0].x, pts[0].y, 3, 0, Math.PI*2); ctx.fill(); } return; }
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+
+    } else if (d.type === 'ray') {
+      if (pts.length < 2) { if (pts[0]) { ctx.arc(pts[0].x, pts[0].y, 3, 0, Math.PI*2); ctx.fill(); } return; }
+      // Extend from pt0 through pt1 to canvas edge
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      const len = Math.max(W, H) * 4;
+      const mag = Math.sqrt(dx*dx + dy*dy) || 1;
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[0].x + dx/mag*len, pts[0].y + dy/mag*len);
+
+    } else if (d.type === 'box') {
+      if (pts.length < 2) { if (pts[0]) { ctx.arc(pts[0].x, pts[0].y, 3, 0, Math.PI*2); ctx.fill(); } return; }
+      const x1 = Math.min(pts[0].x, pts[1].x), x2 = Math.max(pts[0].x, pts[1].x);
+      const y1 = Math.min(pts[0].y, pts[1].y), y2 = Math.max(pts[0].y, pts[1].y);
+      ctx.rect(x1, y1, x2-x1, y2-y1);
+      ctx.globalAlpha = hovered ? 0.15 : 0.07;
+      ctx.fillStyle = style.color;
+      ctx.fill();
+      ctx.globalAlpha = preview ? 0.55 : 1;
+    }
+
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }
+
+  // ── Hit testing ──────────────────────────────────────────────────────
+  function hitTest(mouseX, mouseY, panelId) {
+    const THRESH = 6;
+    const W = getCanvas(panelId).width;
+
+    for (let i = _drawings.length - 1; i >= 0; i--) {
+      const d = _drawings[i];
+      if (d.chart !== panelId) continue;
+      const pts = (d.points || []).map(p => pointToPixel(p, panelId)).filter(Boolean);
+      if (!pts.length) continue;
+
+      if (d.type === 'hline') {
+        const p = pointToPixel(d.points[0], panelId);
+        if (p && Math.abs(mouseY - p.y) < THRESH) return d.id;
+
+      } else if (d.type === 'line' && pts.length >= 2) {
+        if (distToSegment(mouseX, mouseY, pts[0], pts[1]) < THRESH) return d.id;
+
+      } else if (d.type === 'ray' && pts.length >= 2) {
+        const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+        const mag = Math.sqrt(dx*dx+dy*dy)||1;
+        const far = { x: pts[0].x + dx/mag*W*4, y: pts[0].y + dy/mag*W*4 };
+        if (distToSegment(mouseX, mouseY, pts[0], far) < THRESH) return d.id;
+
+      } else if (d.type === 'box' && pts.length >= 2) {
+        const x1 = Math.min(pts[0].x,pts[1].x), x2 = Math.max(pts[0].x,pts[1].x);
+        const y1 = Math.min(pts[0].y,pts[1].y), y2 = Math.max(pts[0].y,pts[1].y);
+        // Hit box border
+        if ((Math.abs(mouseX-x1)<THRESH || Math.abs(mouseX-x2)<THRESH) && mouseY>=y1 && mouseY<=y2) return d.id;
+        if ((Math.abs(mouseY-y1)<THRESH || Math.abs(mouseY-y2)<THRESH) && mouseX>=x1 && mouseX<=x2) return d.id;
+      }
+    }
+    return null;
+  }
+
+  function distToSegment(px, py, a, b) {
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const len2 = dx*dx+dy*dy;
+    if (len2 === 0) return Math.hypot(px-a.x, py-a.y);
+    let t = ((px-a.x)*dx + (py-a.y)*dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (a.x+t*dx), py - (a.y+t*dy));
+  }
+
+  // ── Mouse events ─────────────────────────────────────────────────────
+  function pointsNeeded(tool) { return tool === 'hline' ? 1 : 2; }
+
+  function handleChartClick(e, panelId) {
+    if (_drawTool === 'cursor') return;
+    e.stopPropagation();
+
+    const pt = mouseToPoint(e, panelId);
+    if (!pt) return;
+
+    if (!_drawInProgress) {
+      _drawInProgress = { type: _drawTool, chart: panelId, points: [pt],
+                          style: TOOL_STYLES[_drawTool] };
+      renderAllDrawings();
+      // hline only needs one click
+      if (pointsNeeded(_drawTool) === 1) {
+        saveDrawing({ ..._drawInProgress });
+        _drawInProgress = null;
+        renderAllDrawings();
+      }
+    } else {
+      _drawInProgress.points.push(pt);
+      if (_drawInProgress.points.length >= pointsNeeded(_drawTool)) {
+        saveDrawing({ ..._drawInProgress });
+        _drawInProgress = null;
+        renderAllDrawings();
+      }
+    }
+  }
+
+  function handleChartMouseMove(e, panelId) {
+    const el   = containerForPanel(panelId);
+    const rect = el.getBoundingClientRect();
+    const mx   = e.clientX - rect.left;
+    const my   = e.clientY - rect.top;
+
+    // Update in-progress preview endpoint
+    if (_drawInProgress && _drawInProgress.chart === panelId) {
+      const pt = mouseToPoint(e, panelId);
+      if (pt) {
+        _drawInProgress._preview = pt;
+        const preview = { ..._drawInProgress, points: [..._drawInProgress.points, pt] };
+        // Render preview without saving
+        syncCanvasSize(panelId);
+        const cvs = getCanvas(panelId);
+        const ctx = cvs.getContext('2d');
+        ctx.clearRect(0, 0, cvs.width, cvs.height);
+        _drawings.filter(d => d.chart === panelId)
+          .forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
+        renderDrawing(ctx, preview, panelId, false, true);
+        return;
+      }
+    }
+
+    // Hover highlight in cursor mode
+    if (_drawTool === 'cursor') {
+      const hit = hitTest(mx, my, panelId);
+      if (hit !== _hoveredDrawing) {
+        _hoveredDrawing = hit;
+        el.style.cursor = hit ? 'pointer' : '';
+        renderAllDrawings();
+      }
+    }
+  }
+
+  function handleChartRightClick(e, panelId) {
+    e.preventDefault();
+    const el   = containerForPanel(panelId);
+    const rect = el.getBoundingClientRect();
+    const hit  = hitTest(e.clientX - rect.left, e.clientY - rect.top, panelId);
+    if (!hit) return;
+    _contextTarget = hit;
+    const menu = document.getElementById('draw-context-menu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top  = e.clientY + 'px';
+    menu.classList.add('visible');
+  }
+
+  // Attach to both chart containers
+  ['price', 'cvd'].forEach(panelId => {
+    const el = containerForPanel(panelId);
+    el.addEventListener('click',       e => handleChartClick(e, panelId));
+    el.addEventListener('mousemove',   e => handleChartMouseMove(e, panelId));
+    el.addEventListener('contextmenu', e => handleChartRightClick(e, panelId));
+  });
+
+  // Cancel drawing with right click when tool active
+  document.addEventListener('contextmenu', (e) => {
+    if (_drawTool !== 'cursor' && _drawInProgress) {
+      e.preventDefault();
+      _drawInProgress = null;
+      renderAllDrawings();
+    }
+  });
+
+  // Context menu actions
+  document.getElementById('draw-ctx-delete').addEventListener('click', () => {
+    if (_contextTarget) {
+      deleteDrawing(_contextTarget);
+      _contextTarget = null;
+    }
+    document.getElementById('draw-context-menu').classList.remove('visible');
+  });
+
+  // Close context menu on any click
+  document.addEventListener('click', () => {
+    document.getElementById('draw-context-menu').classList.remove('visible');
+  });
+
+  // Escape cancels in-progress drawing
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _drawInProgress) {
+      _drawInProgress = null;
+      renderAllDrawings();
+    }
+  });
+
+  // Re-render drawings when charts scroll/zoom (coordinates change)
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
+  cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllDrawings());
+
+  // Re-render on resize
+  const _origHandleResize = handleResize;
+  window.removeEventListener('resize', _origHandleResize);
+  window.addEventListener('resize', () => { _origHandleResize(); renderAllDrawings(); });
+
 </script>
 </body>
 </html>
