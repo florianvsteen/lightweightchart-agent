@@ -222,25 +222,18 @@ def detect_pivot_highs(
     for i in range(left_bars, n - right_bars):
         is_pivot = True
         current = values[i]
-        
-        # Check left (allows flat tops)
         for j in range(i - left_bars, i):
             if values[j] > current:
                 is_pivot = False
                 break
-                
-        # Check right (strict lower)
         if is_pivot:
             for j in range(i + 1, i + right_bars + 1):
                 if values[j] >= current:
                     is_pivot = False
                     break
-                    
         if is_pivot:
             pivots.append(PivotPoint(bar_index=i, value=current))
-            
     return pivots
-
 
 def detect_pivot_lows(
     values: np.ndarray,
@@ -252,25 +245,18 @@ def detect_pivot_lows(
     for i in range(left_bars, n - right_bars):
         is_pivot = True
         current = values[i]
-        
-        # Check left (allows flat bottoms)
         for j in range(i - left_bars, i):
             if values[j] < current:
                 is_pivot = False
                 break
-                
-        # Check right (strict higher)
         if is_pivot:
             for j in range(i + 1, i + right_bars + 1):
                 if values[j] <= current:
                     is_pivot = False
                     break
-                    
         if is_pivot:
             pivots.append(PivotPoint(bar_index=i, value=current))
-            
     return pivots
-
 
 def detect_divergences(
     price_highs: np.ndarray,
@@ -280,7 +266,7 @@ def detect_divergences(
     times: List[int],
     left_pivot: int = 5,
     right_pivot: int = 1,  # Fast 1-candle confirmation
-    max_pivot_bar_gap: int = 2, # <--- Tight 2-bar gap allowance to catch slight misalignments
+    max_pivot_bar_gap: int = 2, # Small gap to catch true peaks (like the green box)
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
@@ -293,22 +279,14 @@ def detect_divergences(
     # 1. Bearish divergences
     for i in range(1, len(price_high_pivots)):
         ph2 = price_high_pivots[i]
-        
-        # ALLOW SMALL GAP: Find true CVD peak within 2 bars of Price peak
         ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
-        if not ch2:
-            continue 
+        if not ch2: continue
             
-        # Scan backward through the last 5 price pivots to find the anchor
         for j in range(i - 1, max(-1, i - 6), -1):
             ph1 = price_high_pivots[j]
-            
-            # ALLOW SMALL GAP: Find true CVD peak within 2 bars of previous Price peak
             ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
-            if not ch1:
-                continue 
+            if not ch1: continue
                 
-            # Both anchors found. Check divergence rules:
             if ph2.value > ph1.value and ch2.value < ch1.value:
                 divergences.append({
                     "type": "bearish",
@@ -318,30 +296,23 @@ def detect_divergences(
                     "cvd_value": float(ch2.value),
                     "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
                     "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
-                    "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
-                    "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
+                    # MAGIC TRICK: Use Price's X-axis (bar) so lines are perfectly vertical, but use CVD's true Y-axis value
+                    "cvd_pivot_1": {"bar": ph1.bar_index, "value": float(ch1.value)},
+                    "cvd_pivot_2": {"bar": ph2.bar_index, "value": float(ch2.value)},
                 })
-                break # Found the divergence, stop scanning backward
+                break
 
     # 2. Bullish divergences
     for i in range(1, len(price_low_pivots)):
         pl2 = price_low_pivots[i]
-        
-        # ALLOW SMALL GAP: Find true CVD valley within 2 bars of Price valley
         cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
-        if not cl2:
-            continue 
+        if not cl2: continue
             
-        # Scan backward through the last 5 price pivots to find the anchor
         for j in range(i - 1, max(-1, i - 6), -1):
             pl1 = price_low_pivots[j]
-            
-            # ALLOW SMALL GAP: Find true CVD valley within 2 bars of previous Price valley
             cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
-            if not cl1:
-                continue 
+            if not cl1: continue
                 
-            # Both anchors found. Check divergence rules:
             if pl2.value < pl1.value and cl2.value > cl1.value:
                 divergences.append({
                     "type": "bullish",
@@ -351,10 +322,11 @@ def detect_divergences(
                     "cvd_value": float(cl2.value),
                     "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
                     "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
-                    "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
-                    "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
+                    # MAGIC TRICK: Use Price's X-axis (bar) so lines are perfectly vertical, but use CVD's true Y-axis value
+                    "cvd_pivot_1": {"bar": pl1.bar_index, "value": float(cl1.value)},
+                    "cvd_pivot_2": {"bar": pl2.bar_index, "value": float(cl2.value)},
                 })
-                break # Found the divergence, stop scanning backward
+                break
 
     return divergences
 
@@ -491,7 +463,7 @@ def get_cvd_data(
 
     # Detect divergences
     divergences = []
-    if detect_divs and len(cvd_candles) >= (left_pivot + right_pivot + 2):
+    if detect_divs and len(cvd_candles) >= (left_pivot + 2):
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
         cvd_highs = np.array([c["high"] for c in cvd_candles])
@@ -505,7 +477,6 @@ def get_cvd_data(
             cvd_lows=cvd_lows,
             times=times,
             left_pivot=left_pivot,
-            right_pivot=1, # <--- Passing 1 here for instant confirmation
             max_pivot_bar_gap=max_pivot_bar_gap
         )
 
