@@ -1225,7 +1225,7 @@
       const markers = divs.map(d => ({
         time:     shiftTime(d.price_time),
         position: d.type === 'bullish' ? 'belowBar' : 'aboveBar',
-        shape:    d.type === 'bullish' ? 'arrowUp'  : 'arrowDown',
+        //shape:    d.type === 'bullish' ? 'arrowUp'  : 'arrowDown',
         color:    d.type === 'bullish' ? '#5af0c4'  : '#f05a7e',
         text:     d.label,
         size:     1,
