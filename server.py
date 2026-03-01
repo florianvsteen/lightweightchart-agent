@@ -579,7 +579,12 @@ class PairServer:
                     print(f"[{self.pair_id}] Intrabar fetch error: {ie}")
                     intrabar_df = None
 
-            result = get_cvd_data(df, intrabar_df=intrabar_df)
+            result = get_cvd_data(
+                df, 
+                intrabar_df=intrabar_df,
+                left_pivot=request.args.get('left_pivot', 3, type=int),
+                detect_divs=True
+            )
             return jsonify(result)
         except Exception as e:
             import traceback
