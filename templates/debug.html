@@ -1170,7 +1170,6 @@ function drawWindowOverlay(w, data, isReplay) {
   const src = data.candles;
   const intervalSecs = src?.length > 1 ? src[1].time - src[0].time : 60;
   const bCol = w.is_confirmed ? 'rgba(90,240,196,0.7)' : 'rgba(240,90,126,0.5)';
-  drawVLine(bo.time, bCol);
   drawBox(bo.time, bo.time + intervalSecs, bo.high, bo.low, bCol, 0.18);
 }
 
