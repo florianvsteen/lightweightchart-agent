@@ -12,7 +12,7 @@ Replicates the TradingView PineScript CVD indicator logic:
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Tuple, Any, Optional
 from dataclasses import dataclass
 
 
@@ -218,10 +218,9 @@ def detect_synchronized_pivots(
     cvd_highs: np.ndarray, 
     cvd_lows: np.ndarray,
     left_bars: int = 5
-) -> Tuple[List[Dict], List[Dict]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Detects pivots ONLY when Price and CVD hit an extreme on the SAME bar.
-    Confirmed by 1-candle reversal.
+    Finds points where Price and CVD reach an extreme on the EXACT same bar.
     """
     sync_highs = []
     sync_lows = []
@@ -251,8 +250,8 @@ def detect_divergences(
     cvd_lows: np.ndarray,
     times: List[int],
     left_pivot: int = 5,
-    **kwargs # This handles extra args from config like right_pivot
-) -> List[Dict]:
+    **kwargs
+) -> List[Dict[str, Any]]:
     divergences = []
 
     # CALL FIX: Ensure all 4 arrays are passed to the sync detector
