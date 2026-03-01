@@ -1,7 +1,7 @@
 """
 tools/cvd.py
 
-Cumulative Volume Delta (CVD) calculator with TradingView-style Candlesticks.
+Cumulative Volume Delta (CVD) calculator with block-style (no wick) Candlesticks.
 """
 
 import numpy as np
@@ -153,42 +153,25 @@ def detect_divergences(
         return []
 
 
-# ── CVD OHLC candles (THE TRADINGVIEW FIX) ────────────────────────────────────
+# ── CVD OHLC candles (NO WICKS) ────────────────────────────────────────────────
 
 def compute_cvd_candles(cvd_points: List[Dict[str, Any]], df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     Build OHLC candles from the CVD running total.
-    Uses the actual price candle geometry to distribute wicks, 
-    matching TradingView exactly.
+    Forces High and Low to equal the Open or Close, effectively removing wicks.
     """
     if not cvd_points or df is None or len(df) != len(cvd_points):
         return []
 
-    highs  = df["High"].values
-    lows   = df["Low"].values
-    opens  = df["Open"].values
-    closes = df["Close"].values
-
     candles = []
     for i, pt in enumerate(cvd_points):
+        # Open is where the CVD ended on the previous bar
         open_val  = cvd_points[i - 1]["value"] if i > 0 else pt["value"]
         close_val = pt["value"]
         
-        price_range = highs[i] - lows[i]
-        
-        if price_range > 0:
-            # Calculate proportion of price movement in wicks
-            upper_ratio = (highs[i] - max(opens[i], closes[i])) / price_range
-            lower_ratio = (min(opens[i], closes[i]) - lows[i]) / price_range
-            
-            # Apply that proportion to the volume delta magnitude
-            delta_mag = abs(pt.get("delta", close_val - open_val))
-            
-            high = max(open_val, close_val) + (delta_mag * upper_ratio)
-            low  = min(open_val, close_val) - (delta_mag * lower_ratio)
-        else:
-            high = max(open_val, close_val)
-            low  = min(open_val, close_val)
+        # To REMOVE WICKS: High/Low must never exceed the Open/Close body
+        high = max(open_val, close_val)
+        low  = min(open_val, close_val)
 
         candles.append({
             "time":  pt["time"],
@@ -243,7 +226,7 @@ def get_cvd_data(
         except Exception as e:
             print(f"[cvd] divergence prep error: {e}")
 
-    # FIX: Pass the 'df' to compute_cvd_candles to avoid 500 error
+    # Generate candles with NO WICKS
     cvd_candles = compute_cvd_candles(cvd_points, df)
 
     return {
