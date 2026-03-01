@@ -47,7 +47,7 @@ REPLAY MODE NOTE:
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
-from sessions import (
+from tools.sessions import (
     is_weekend_halt, get_current_session, FOREX
 )
 
