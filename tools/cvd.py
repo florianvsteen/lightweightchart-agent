@@ -217,26 +217,21 @@ def detect_synchronized_pivots(
     price_lows: np.ndarray,
     cvd_highs: np.ndarray, 
     cvd_lows: np.ndarray,
-    left_bars: int = 5
+    left_bars: int = 3 # Reduced from 5 for higher sensitivity
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Finds points where Price and CVD reach an extreme on the EXACT same bar.
-    """
     sync_highs = []
     sync_lows = []
     n = len(price_highs)
 
     for i in range(left_bars, n - 1):
-        # --- BEARISH ANCHOR (Highs) ---
-        # Price must be highest in window AND CVD must be highest in window
-        # Plus 1-candle confirmation (index i+1 is lower)
+        # --- Synchronized High (Bearish) ---
+        # Using <= on left allows it to find peaks even in choppy/flat areas
         if (all(price_highs[i-left_bars:i] <= price_highs[i]) and price_highs[i+1] < price_highs[i] and
             all(cvd_highs[i-left_bars:i] <= cvd_highs[i]) and cvd_highs[i+1] < cvd_highs[i]):
             sync_highs.append({"index": i, "p_val": price_highs[i], "c_val": cvd_highs[i]})
 
-        # --- BULLISH ANCHOR (Lows) ---
-        # Price must be lowest in window AND CVD must be lowest in window
-        # Plus 1-candle confirmation (index i+1 is higher)
+        # --- Synchronized Low (Bullish) ---
+        # Using >= on left allows it to find valleys in choppy/flat areas
         if (all(price_lows[i-left_bars:i] >= price_lows[i]) and price_lows[i+1] > price_lows[i] and
             all(cvd_lows[i-left_bars:i] >= cvd_lows[i]) and cvd_lows[i+1] > cvd_lows[i]):
             sync_lows.append({"index": i, "p_val": price_lows[i], "c_val": cvd_lows[i]})
