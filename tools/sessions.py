@@ -1,5 +1,5 @@
 """
-sessions.py — Central market session definitions.
+tools/sessions.py — Central market session definitions.
 
 All session logic for every detector and server component should import from here.
 Adding a new market type or adjusting session hours only needs to happen in this file.
