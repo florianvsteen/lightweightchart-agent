@@ -137,9 +137,36 @@
   }
   #chart { width: 100%; height: 100%; }
 
+  /* ── CVD resize handle ───────────────────────────────────────────── */
+  #cvd-resize-handle {
+    height: 5px;
+    flex-shrink: 0;
+    background: transparent;
+    border-top: 1px solid var(--border2);
+    cursor: ns-resize;
+    position: relative;
+    z-index: 20;
+    transition: background 0.15s;
+  }
+  #cvd-resize-handle:hover,
+  #cvd-resize-handle.dragging {
+    background: rgba(90,240,196,0.15);
+    border-top-color: var(--accent);
+  }
+  #cvd-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 32px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--border2);
+  }
+
   /* ── CVD chart panel ──────────────────────────────────────────────── */
   #cvd-panel {
-    height: 150px;
     flex-shrink: 0;
     border-right: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
@@ -506,6 +533,9 @@
       <div id="candle-tooltip"></div>
     </div>
 
+    <!-- CVD resize handle -->
+    <div id="cvd-resize-handle" title="Drag to resize CVD panel"></div>
+
     <!-- CVD chart panel -->
     <div id="cvd-panel">
       <div id="cvd-header">
@@ -689,6 +719,56 @@
   window._chartRef = chart;
   window._tzOffset = TZ_OFFSET;
 
+  // ── CVD height persistence ──────────────────────────────────────────
+  const CVD_HEIGHT_KEY = `cvd-height:${PAIR_ID}`;
+  const CVD_MIN = 80;
+  const CVD_MAX = 600;
+  const cvdPanel = document.getElementById('cvd-panel');
+
+  function saveCvdHeight(h) {
+    try { localStorage.setItem(CVD_HEIGHT_KEY, String(h)); } catch(e) {}
+  }
+  function loadCvdHeight() {
+    try { return parseInt(localStorage.getItem(CVD_HEIGHT_KEY)) || 150; } catch(e) { return 150; }
+  }
+  // Apply saved height immediately so chart is created at the right size
+  cvdPanel.style.height = loadCvdHeight() + 'px';
+
+  // ── CVD drag-to-resize ───────────────────────────────────────────────
+  const cvdHandle = document.getElementById('cvd-resize-handle');
+  let _dragStartY = 0, _dragStartH = 0;
+
+  cvdHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    _dragStartY = e.clientY;
+    _dragStartH = cvdPanel.offsetHeight;
+    cvdHandle.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!cvdHandle.classList.contains('dragging')) return;
+    // Dragging UP = larger panel (delta is negative when moving up)
+    const delta = _dragStartY - e.clientY;
+    const newH  = Math.min(CVD_MAX, Math.max(CVD_MIN, _dragStartH + delta));
+    cvdPanel.style.height = newH + 'px';
+    cvdChart.applyOptions({ width: cvdContainer.clientWidth, height: newH });
+    // Resize price chart too (handled by flex, but LW needs explicit trigger)
+    chart.applyOptions({ width: priceContainer.clientWidth });
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!cvdHandle.classList.contains('dragging')) return;
+    cvdHandle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    const h = cvdPanel.offsetHeight;
+    saveCvdHeight(h);
+    // Re-render cached CVD data at new size (no network request)
+    if (_cvdCache) renderCvd(_cvdCache);
+  });
+
   // ── CVD chart setup ──────────────────────────────────────────────────
   const cvdContainer = document.getElementById('cvd-chart');
   const cvdChart = LightweightCharts.createChart(cvdContainer, {
@@ -761,7 +841,7 @@
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
       loadData();
-      loadCvd();
+      loadCvd(true);   // interval changed — force fresh fetch
     });
   });
 
@@ -1131,13 +1211,26 @@
     } catch(e) { console.error('loadData error:', e); }
   }
 
-  async function loadCvd() {
+  let _cvdCache     = null;
+  let _cvdCacheKey  = null;   // "PAIR:interval" — invalidate on pair/TF change
+
+  async function loadCvd(forceRefresh = false) {
     if (isWeekend()) return;
+    const cacheKey = `${PAIR_ID}:${currentInterval}`;
+
+    // Serve from cache if key matches and no forced refresh
+    if (!forceRefresh && _cvdCache && _cvdCacheKey === cacheKey) {
+      renderCvd(_cvdCache);
+      return;
+    }
+
     try {
       const res = await fetch(`/proxy/${PAIR_ID}/api/cvd?interval=${currentInterval}`);
       if (!res.ok) return;
       const data = await res.json();
       if (data && data.cvd && data.cvd.length) {
+        _cvdCache    = data;
+        _cvdCacheKey = cacheKey;
         renderCvd(data);
       }
     } catch(e) { console.error('loadCvd error:', e); }
@@ -1200,7 +1293,7 @@
   loadCvd();
   loadNews();
   setInterval(loadData, 60 * 1000);
-  setInterval(loadCvd,  60 * 1000);
+  setInterval(() => loadCvd(true), 60 * 1000);
   setInterval(loadBias, 24 * 60 * 60 * 1000);
 </script>
 </body>
