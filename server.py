@@ -698,8 +698,6 @@ class PairServer:
             if raw_total:
                 full_df = full_df.iloc[:int(raw_total) + 1]
             if full_df is None or len(full_df) < 5:
-
-            if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
 
             params = dict(self.detector_params.get("accumulation", {}))
