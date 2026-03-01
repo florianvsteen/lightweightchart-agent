@@ -1,23 +1,22 @@
 """
 tools/cvd.py
 
-Cumulative Volume Delta (CVD) calculator with TradingView-style methodology.
+Cumulative Volume Delta (CVD) calculator with divergence detection.
 
-Key features:
-- Intrabar analysis for timeframes > 1m (uses 1-minute data for accurate delta calculation)
-- Close Location Value approximation for 1m timeframe
-- Proper CVD candle construction with high/low tracking
-- Anchor period support (daily reset) matching TradingView's behavior
+Replicates the TradingView PineScript CVD indicator logic:
+- Volume delta per bar: (close > open ? 1 : close < open ? -1 : 0) * volume
+- Lower timeframe aggregation for accurate CVD high/low tracking
+- Pivot detection with configurable left/right bars
+- Divergence detection: price vs CVD pivot comparison
 """
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Optional, Callable
-from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 
 
-# ── Intrabar analysis intervals ───────────────────────────────────────────────
-
+# Intrabar analysis intervals (chart interval -> lower timeframe for CVD calculation)
 INTRABAR_MAP = {
     "5m":  "1m",
     "15m": "1m",
@@ -28,660 +27,505 @@ INTRABAR_MAP = {
     "1wk": "1h",
 }
 
-INTERVAL_MINUTES = {
-    "1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30,
-    "1h": 60, "4h": 240, "1d": 1440, "1wk": 10080,
-}
 
-# ── Anchor period options ─────────────────────────────────────────────────────
-# TradingView resets CVD at the start of each anchor period
-ANCHOR_PERIODS = {"session", "day", "week", "month", "year", "none"}
-DEFAULT_ANCHOR = "day"  # Match TradingView default
+@dataclass
+class PivotPoint:
+    """Represents a detected pivot high or low."""
+    bar_index: int
+    value: float
 
 
-# ── Anchor period helpers ─────────────────────────────────────────────────────
-
-def _get_anchor_key(timestamp: pd.Timestamp, anchor: str) -> tuple:
+def get_bar_delta(open_price: float, close_price: float, volume: float) -> float:
     """
-    Return a hashable key representing the anchor period for a given timestamp.
-    When the anchor key changes, the CVD should reset to 0.
-    """
-    if anchor == "none":
-        return (0,)  # Never changes - continuous accumulation
-    elif anchor == "day":
-        return (timestamp.year, timestamp.month, timestamp.day)
-    elif anchor == "week":
-        # ISO week number
-        return (timestamp.year, timestamp.isocalendar()[1])
-    elif anchor == "month":
-        return (timestamp.year, timestamp.month)
-    elif anchor == "year":
-        return (timestamp.year,)
-    elif anchor == "session":
-        # Session anchor resets at market open - use day as approximation
-        # Could be enhanced with actual session times
-        return (timestamp.year, timestamp.month, timestamp.day)
-    else:
-        return (timestamp.year, timestamp.month, timestamp.day)  # Default to day
+    Calculate volume delta for a single bar using PineScript polarity rule.
 
-
-# ── Core calculation (single timeframe) ───────────────────────────────────────
-
-def _compute_bar_delta_with_polarity(
-    opens: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    closes: np.ndarray,
-    volumes: np.ndarray,
-    prev_closes: Optional[np.ndarray] = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Compute volume delta with TradingView's exact polarity rules.
-
-    TradingView's polarity classification:
-    1. If close > open: positive (+1)
-    2. If close < open: negative (-1)
-    3. If close == open (doji):
-       a. If close > prev_close: positive (+1)
-       b. If close < prev_close: negative (-1)
-       c. If close == prev_close: inherit previous bar's polarity
+    Args:
+        open_price: Bar open price
+        close_price: Bar close price
+        volume: Bar volume
 
     Returns:
-        tuple of (delta array, polarity array) - polarity is needed for inheritance
+        Positive delta if bullish, negative if bearish, zero if doji
     """
-    n = len(closes)
-    direction = np.zeros(n)
-
-    # Step 1: Determine direction from close vs open
-    diff = closes - opens
-    direction = np.where(diff > 0, 1.0, np.where(diff < 0, -1.0, 0.0))
-
-    # Step 2: Handle doji bars (close == open)
-    doji_mask = (diff == 0)
-
-    if prev_closes is not None and np.any(doji_mask):
-        prev_diff = closes - prev_closes
-
-        # For dojis: use prev_close comparison first
-        direction = np.where(
-            doji_mask & (prev_diff > 0), 1.0,
-            np.where(doji_mask & (prev_diff < 0), -1.0, direction)
-        )
-
-        # Step 3: Handle the case where close == open AND close == prev_close
-        # In this case, inherit the previous bar's polarity
-        needs_inheritance = doji_mask & (prev_diff == 0)
-
-        if np.any(needs_inheritance):
-            # Forward-fill the polarity from the last bar that had a clear direction
-            for i in range(n):
-                if needs_inheritance[i]:
-                    if i > 0:
-                        direction[i] = direction[i - 1]
-                    # If first bar needs inheritance and has no clear direction, use 0
-
-    delta = volumes * direction
-    return delta, direction
+    if close_price > open_price:
+        return volume
+    elif close_price < open_price:
+        return -volume
+    else:
+        return 0.0
 
 
-def _compute_bar_delta(
+def compute_bar_deltas(
     opens: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
     closes: np.ndarray,
-    volumes: np.ndarray,
-    prev_closes: Optional[np.ndarray] = None,
-    method: str = "polarity"
+    volumes: np.ndarray
 ) -> np.ndarray:
     """
-    Compute volume delta for each bar.
-
-    Methods:
-        - "polarity": Assign full volume based on close vs open direction (TradingView intrabar style)
-        - "close_location": Split volume based on close position within range (approximation)
-    """
-    if method == "polarity":
-        delta, _ = _compute_bar_delta_with_polarity(
-            opens, highs, lows, closes, volumes, prev_closes
-        )
-        return delta
-
-    else:  # close_location
-        # Close Location Value method - estimates buy/sell split
-        # Formula: delta = volume * (2*close - high - low) / (high - low)
-        candle_range = highs - lows
-        with np.errstate(divide="ignore", invalid="ignore"):
-            close_location = np.where(
-                candle_range > 0,
-                (2 * closes - highs - lows) / candle_range,
-                0.0
-            )
-        delta = volumes * close_location
-        return delta
-
-
-def compute_cvd_with_intrabar(
-    df: pd.DataFrame,
-    intrabar_df: Optional[pd.DataFrame] = None,
-    method: str = "polarity",
-    anchor: str = DEFAULT_ANCHOR
-) -> List[Dict[str, Any]]:
-    """
-    Compute CVD using intrabar analysis when available.
-
-    This matches TradingView's approach:
-    - For each chart bar, analyze lower timeframe bars within it
-    - Classify each intrabar as buy (+volume) or sell (-volume) based on polarity
-    - Sum to get the bar's volume delta
-    - Track cumulative high/low for proper CVD candle wicks
-    - Reset cumulative value at the start of each anchor period (default: daily)
+    Compute volume delta for each bar in arrays.
 
     Args:
-        df: Main timeframe OHLCV DataFrame
-        intrabar_df: Lower timeframe DataFrame for intrabar analysis (optional)
-        method: "polarity" (TradingView style) or "close_location" (approximation)
-        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
-                Default is "day" to match TradingView's default behavior.
+        opens: Array of open prices
+        closes: Array of close prices
+        volumes: Array of volumes
 
     Returns:
-        List of CVD data points with time, value, delta, cvd_high, cvd_low
+        Array of volume deltas
     """
-    if df is None or len(df) < 2:
-        return []
-
-    try:
-        # Clean main dataframe
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.copy()
-            df.columns = df.columns.get_level_values(0)
-        df = df.loc[:, ~df.columns.duplicated()].copy()
-
-        for col in ["Open", "High", "Low", "Close"]:
-            df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
-        if "Volume" in df.columns:
-            df["Volume"] = pd.to_numeric(df["Volume"].squeeze(), errors="coerce").fillna(0)
-        else:
-            df["Volume"] = 1.0
-        df = df.dropna(subset=["Open", "High", "Low", "Close"])
-
-        results = []
-        cumulative = 0.0
-        prev_close = None
-        prev_polarity = 1.0  # Track last polarity for inheritance
-        current_anchor_key = None
-
-        if intrabar_df is not None and len(intrabar_df) > 0:
-            # Clean intrabar dataframe
-            if isinstance(intrabar_df.columns, pd.MultiIndex):
-                intrabar_df = intrabar_df.copy()
-                intrabar_df.columns = intrabar_df.columns.get_level_values(0)
-            intrabar_df = intrabar_df.loc[:, ~intrabar_df.columns.duplicated()].copy()
-
-            for col in ["Open", "High", "Low", "Close"]:
-                intrabar_df[col] = pd.to_numeric(intrabar_df[col].squeeze(), errors="coerce")
-            if "Volume" in intrabar_df.columns:
-                intrabar_df["Volume"] = pd.to_numeric(intrabar_df["Volume"].squeeze(), errors="coerce").fillna(0)
-            else:
-                intrabar_df["Volume"] = 1.0
-            intrabar_df = intrabar_df.dropna(subset=["Open", "High", "Low", "Close"])
-
-            # Process each main bar using intrabar data
-            for i, (idx, row) in enumerate(df.iterrows()):
-                # Check for anchor period reset (e.g., new day)
-                bar_anchor_key = _get_anchor_key(idx, anchor)
-                is_period_start = False
-                if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
-                    # New anchor period - reset cumulative to 0
-                    cumulative = 0.0
-                    is_period_start = True
-                elif current_anchor_key is None:
-                    # First bar is also a period start
-                    is_period_start = True
-                current_anchor_key = bar_anchor_key
-
-                bar_start = idx
-                if i < len(df) - 1:
-                    bar_end = df.index[i + 1]
-                else:
-                    # For the last bar, include all remaining intrabar data
-                    bar_end = intrabar_df.index[-1] + pd.Timedelta(seconds=1)
-
-                # Get intrabars within this main bar
-                mask = (intrabar_df.index >= bar_start) & (intrabar_df.index < bar_end)
-                intrabars = intrabar_df[mask]
-
-                if len(intrabars) > 0:
-                    # Compute delta for each intrabar with proper polarity inheritance
-                    opens = intrabars["Open"].values.astype(float)
-                    highs = intrabars["High"].values.astype(float)
-                    lows = intrabars["Low"].values.astype(float)
-                    closes = intrabars["Close"].values.astype(float)
-                    volumes = intrabars["Volume"].values.astype(float)
-
-                    # Create prev_closes array (shift by 1)
-                    prev_closes = np.roll(closes, 1)
-                    if prev_close is not None:
-                        prev_closes[0] = prev_close
-                    else:
-                        prev_closes[0] = opens[0]
-
-                    # Use the polarity-aware function
-                    intrabar_deltas, polarities = _compute_bar_delta_with_polarity(
-                        opens, highs, lows, closes, volumes, prev_closes
-                    )
-
-                    # Apply polarity inheritance from previous bar
-                    # This handles the case where first intrabar has close==open==prev_close
-                    if len(polarities) > 0:
-                        # Check if first intrabar needs inheritance
-                        diff0 = closes[0] - opens[0]
-                        prev_diff0 = closes[0] - prev_closes[0] if prev_closes is not None else 0
-                        if diff0 == 0 and prev_diff0 == 0:
-                            # First intrabar needs to inherit from previous bar's last polarity
-                            intrabar_deltas[0] = volumes[0] * prev_polarity
-                            polarities[0] = prev_polarity
-
-                        # Update prev_polarity to last non-zero polarity
-                        for p in reversed(polarities):
-                            if p != 0:
-                                prev_polarity = p
-                                break
-
-                    # Sum deltas for this bar
-                    bar_delta = float(np.sum(intrabar_deltas))
-
-                    # Track cumulative high/low during the bar
-                    running = cumulative
-                    cvd_high = cumulative
-                    cvd_low = cumulative
-                    for d in intrabar_deltas:
-                        running += d
-                        cvd_high = max(cvd_high, running)
-                        cvd_low = min(cvd_low, running)
-
-                    cumulative += bar_delta
-                    prev_close = closes[-1]
-                else:
-                    # No intrabar data - fall back to close location method
-                    candle_range = row["High"] - row["Low"]
-                    if candle_range > 0:
-                        close_loc = (2 * row["Close"] - row["High"] - row["Low"]) / candle_range
-                    else:
-                        close_loc = 0.0
-                    bar_delta = float(row["Volume"] * close_loc)
-                    cvd_high = cumulative + max(0, bar_delta)
-                    cvd_low = cumulative + min(0, bar_delta)
-                    cumulative += bar_delta
-
-                results.append({
-                    "time": int(idx.timestamp()),
-                    "value": round(cumulative, 4),
-                    "delta": round(bar_delta, 4),
-                    "cvd_high": round(cvd_high, 4),
-                    "cvd_low": round(cvd_low, 4),
-                    "is_period_start": is_period_start,
-                })
-        else:
-            # No intrabar data - use close location value method
-            opens = df["Open"].values.astype(float)
-            highs = df["High"].values.astype(float)
-            lows = df["Low"].values.astype(float)
-            closes = df["Close"].values.astype(float)
-            volumes = df["Volume"].values.astype(float)
-
-            # Create prev_closes for polarity fallback
-            prev_closes = np.roll(closes, 1)
-            prev_closes[0] = opens[0]
-
-            deltas = _compute_bar_delta(
-                opens, highs, lows, closes, volumes, prev_closes, method=method
-            )
-
-            for i, (idx, row) in enumerate(df.iterrows()):
-                # Check for anchor period reset (e.g., new day)
-                bar_anchor_key = _get_anchor_key(idx, anchor)
-                is_period_start = False
-                if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
-                    # New anchor period - reset cumulative to 0
-                    cumulative = 0.0
-                    is_period_start = True
-                elif current_anchor_key is None:
-                    # First bar is also a period start
-                    is_period_start = True
-                current_anchor_key = bar_anchor_key
-
-                bar_delta = deltas[i]
-                cvd_high = cumulative + max(0, bar_delta)
-                cvd_low = cumulative + min(0, bar_delta)
-                cumulative += bar_delta
-
-                results.append({
-                    "time": int(idx.timestamp()),
-                    "value": round(cumulative, 4),
-                    "delta": round(bar_delta, 4),
-                    "cvd_high": round(cvd_high, 4),
-                    "cvd_low": round(cvd_low, 4),
-                    "is_period_start": is_period_start,
-                })
-
-        return results
-
-    except Exception as e:
-        print(f"[cvd] compute_cvd_with_intrabar error: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+    direction = np.where(
+        closes > opens, 1.0,
+        np.where(closes < opens, -1.0, 0.0)
+    )
+    return volumes * direction
 
 
-def compute_cvd(
-    df: pd.DataFrame,
-    method: str = "tradingview",
-    anchor: str = DEFAULT_ANCHOR
+def build_cvd_ohlc_from_intrabar(
+    main_df: pd.DataFrame,
+    intrabar_df: pd.DataFrame
 ) -> List[Dict[str, Any]]:
     """
-    Compute Cumulative Volume Delta from an OHLCV DataFrame (legacy interface).
+    Build CVD OHLC candles from lower timeframe data.
 
-    Methods:
-        - "tradingview": Close Location Value method (default)
-        - "polarity": Simple direction-based (close > open = buy)
-        - "body_weighted": Legacy method using body/range ratio
+    Replicates PineScript logic:
+    - For each main bar, get all intrabar deltas
+    - Track running cumulative to find high/low during the bar
+    - Open = previous bar's close (or 0 for first bar)
+    - Close = final cumulative value
 
     Args:
-        df: OHLCV DataFrame with DatetimeIndex
-        method: Calculation method
-        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
-                Default is "day" to match TradingView's default behavior.
+        main_df: Main timeframe OHLCV DataFrame
+        intrabar_df: Lower timeframe OHLCV DataFrame
+
+    Returns:
+        List of CVD candle dicts with time, open, high, low, close
     """
-    if df is None or len(df) < 2:
+    if main_df is None or len(main_df) < 1:
         return []
 
-    try:
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.copy()
-            df.columns = df.columns.get_level_values(0)
-        df = df.loc[:, ~df.columns.duplicated()].copy()
+    results = []
+    last_close = 0.0  # CVD close of previous bar (starts at 0)
 
-        for col in ["Open", "High", "Low", "Close"]:
-            df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
-        if "Volume" in df.columns:
-            df["Volume"] = pd.to_numeric(df["Volume"].squeeze(), errors="coerce").fillna(0)
+    for i, (idx, row) in enumerate(main_df.iterrows()):
+        bar_start = idx
+
+        # Determine bar end
+        if i < len(main_df) - 1:
+            bar_end = main_df.index[i + 1]
         else:
-            df["Volume"] = 1.0
-        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+            # Last bar: include remaining intrabar data
+            bar_end = intrabar_df.index[-1] + pd.Timedelta(seconds=1)
 
-        opens = df["Open"].values.astype(float)
-        highs = df["High"].values.astype(float)
-        lows = df["Low"].values.astype(float)
-        closes = df["Close"].values.astype(float)
-        vols = df["Volume"].values.astype(float)
+        # Get intrabars within this main bar
+        mask = (intrabar_df.index >= bar_start) & (intrabar_df.index < bar_end)
+        intrabars = intrabar_df[mask]
 
-        # Create prev_closes
-        prev_closes = np.roll(closes, 1)
-        prev_closes[0] = opens[0]
+        # CVD open is previous bar's close
+        cvd_open = last_close
 
-        if method == "tradingview":
-            deltas = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "close_location")
-        elif method == "polarity":
-            deltas = _compute_bar_delta(opens, highs, lows, closes, vols, prev_closes, "polarity")
-        elif method == "body_weighted":
-            direction = np.sign(closes - opens)
-            body = np.abs(closes - opens)
-            candle_range = highs - lows
-            with np.errstate(divide="ignore", invalid="ignore"):
-                body_ratio = np.where(candle_range > 0, body / candle_range, 0.0)
-            deltas = vols * body_ratio * direction
+        if len(intrabars) > 0:
+            # Compute delta for each intrabar
+            opens = intrabars["Open"].values.astype(float)
+            closes = intrabars["Close"].values.astype(float)
+            volumes = intrabars["Volume"].values.astype(float)
+
+            deltas = compute_bar_deltas(opens, closes, volumes)
+
+            # Track running cumulative to find high/low
+            running = cvd_open
+            cvd_high = cvd_open
+            cvd_low = cvd_open
+
+            for delta in deltas:
+                running += delta
+                cvd_high = max(cvd_high, running)
+                cvd_low = min(cvd_low, running)
+
+            cvd_close = running
         else:
-            direction = np.sign(closes - opens)
-            deltas = vols * direction
+            # No intrabar data: use main bar's polarity
+            delta = get_bar_delta(
+                float(row["Open"]),
+                float(row["Close"]),
+                float(row.get("Volume", 1.0))
+            )
+            cvd_close = cvd_open + delta
+            cvd_high = max(cvd_open, cvd_close)
+            cvd_low = min(cvd_open, cvd_close)
 
-        # Compute cumulative with anchor period resets
-        result = []
-        cumulative = 0.0
-        current_anchor_key = None
+        results.append({
+            "time": int(idx.timestamp()),
+            "open": round(cvd_open, 4),
+            "high": round(cvd_high, 4),
+            "low": round(cvd_low, 4),
+            "close": round(cvd_close, 4),
+        })
 
-        for i, idx in enumerate(df.index):
-            # Check for anchor period reset (e.g., new day)
-            bar_anchor_key = _get_anchor_key(idx, anchor)
-            is_period_start = False
-            if current_anchor_key is not None and bar_anchor_key != current_anchor_key:
-                # New anchor period - reset cumulative to 0
-                cumulative = 0.0
-                is_period_start = True
-            elif current_anchor_key is None:
-                # First bar is also a period start
-                is_period_start = True
-            current_anchor_key = bar_anchor_key
+        last_close = cvd_close
 
-            cumulative += deltas[i]
-            result.append({
-                "time": int(idx.timestamp()),
-                "value": float(round(cumulative, 4)),
-                "delta": float(round(deltas[i], 4)),
-                "is_period_start": is_period_start,
-            })
+    return results
 
-        return result
 
-    except Exception as e:
-        print(f"[cvd] compute_cvd error: {e}")
+def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Build CVD OHLC candles from single timeframe data (no intrabar).
+
+    Args:
+        df: OHLCV DataFrame
+
+    Returns:
+        List of CVD candle dicts
+    """
+    if df is None or len(df) < 1:
         return []
 
+    opens = df["Open"].values.astype(float)
+    closes = df["Close"].values.astype(float)
+    volumes = df["Volume"].values.astype(float) if "Volume" in df.columns else np.ones(len(df))
 
-# ── Divergence detection ───────────────────────────────────────────────────────
+    deltas = compute_bar_deltas(opens, closes, volumes)
+
+    results = []
+    last_close = 0.0
+
+    for i, (idx, row) in enumerate(df.iterrows()):
+        cvd_open = last_close
+        delta = deltas[i]
+        cvd_close = cvd_open + delta
+
+        # Without intrabar data, high/low are just the body extremes
+        cvd_high = max(cvd_open, cvd_close)
+        cvd_low = min(cvd_open, cvd_close)
+
+        results.append({
+            "time": int(idx.timestamp()),
+            "open": round(cvd_open, 4),
+            "high": round(cvd_high, 4),
+            "low": round(cvd_low, 4),
+            "close": round(cvd_close, 4),
+        })
+
+        last_close = cvd_close
+
+    return results
+
+
+def detect_pivot_highs(
+    values: np.ndarray,
+    left_bars: int = 5,
+    right_bars: int = 5
+) -> List[PivotPoint]:
+    """
+    Detect pivot highs in a series.
+
+    A pivot high at bar i is confirmed when:
+    - values[i] is the highest among values[i-left_bars : i+right_bars+1]
+
+    Args:
+        values: Array of values to find pivots in
+        left_bars: Number of bars to the left for pivot confirmation
+        right_bars: Number of bars to the right for pivot confirmation
+
+    Returns:
+        List of PivotPoint objects
+    """
+    pivots = []
+    n = len(values)
+
+    for i in range(left_bars, n - right_bars):
+        is_pivot = True
+        current = values[i]
+
+        # Check left bars
+        for j in range(i - left_bars, i):
+            if values[j] >= current:
+                is_pivot = False
+                break
+
+        # Check right bars
+        if is_pivot:
+            for j in range(i + 1, i + right_bars + 1):
+                if values[j] >= current:
+                    is_pivot = False
+                    break
+
+        if is_pivot:
+            pivots.append(PivotPoint(bar_index=i, value=current))
+
+    return pivots
+
+
+def detect_pivot_lows(
+    values: np.ndarray,
+    left_bars: int = 5,
+    right_bars: int = 5
+) -> List[PivotPoint]:
+    """
+    Detect pivot lows in a series.
+
+    A pivot low at bar i is confirmed when:
+    - values[i] is the lowest among values[i-left_bars : i+right_bars+1]
+
+    Args:
+        values: Array of values to find pivots in
+        left_bars: Number of bars to the left for pivot confirmation
+        right_bars: Number of bars to the right for pivot confirmation
+
+    Returns:
+        List of PivotPoint objects
+    """
+    pivots = []
+    n = len(values)
+
+    for i in range(left_bars, n - right_bars):
+        is_pivot = True
+        current = values[i]
+
+        # Check left bars
+        for j in range(i - left_bars, i):
+            if values[j] <= current:
+                is_pivot = False
+                break
+
+        # Check right bars
+        if is_pivot:
+            for j in range(i + 1, i + right_bars + 1):
+                if values[j] <= current:
+                    is_pivot = False
+                    break
+
+        if is_pivot:
+            pivots.append(PivotPoint(bar_index=i, value=current))
+
+    return pivots
+
 
 def detect_divergences(
-    candles: List[Dict],
-    cvd_points: List[Dict],
-    lookback: int = 20,
-    min_swing_pct: float = 0.003,
-) -> List[Dict]:
-    if not candles or not cvd_points or len(candles) != len(cvd_points):
-        return []
-
-    try:
-        n = min(len(candles), len(cvd_points))
-        candles = candles[-lookback:] if n > lookback else candles[-n:]
-        cvd_pts = cvd_points[-lookback:] if n > lookback else cvd_points[-n:]
-        m = len(candles)
-
-        if m < 6:
-            return []
-
-        closes = np.array([c["close"] for c in candles])
-        lows = np.array([c["low"] for c in candles])
-        highs = np.array([c["high"] for c in candles])
-        cvd_vals = np.array([p["value"] for p in cvd_pts])
-        times = [c["time"] for c in candles]
-        avg_price = float(np.mean(closes))
-
-        divergences = []
-
-        for i in range(2, m - 1):
-            if lows[i] < lows[i - 1] and lows[i] < lows[i + 1] if i + 1 < m else True:
-                prev_low_idx = None
-                for j in range(i - 2, max(-1, i - 10), -1):
-                    if lows[j] < lows[j - 1] if j > 0 else True:
-                        if lows[j] < lows[j + 1] if j + 1 < m else True:
-                            prev_low_idx = j
-                            break
-                if prev_low_idx is not None:
-                    price_lower_low = lows[i] < lows[prev_low_idx]
-                    cvd_higher_low = cvd_vals[i] > cvd_vals[prev_low_idx]
-                    swing_size = abs(lows[prev_low_idx] - lows[i]) / avg_price
-                    if price_lower_low and cvd_higher_low and swing_size >= min_swing_pct:
-                        divergences.append({
-                            "type": "bullish",
-                            "price_time": times[i],
-                            "price_value": float(lows[i]),
-                            "cvd_value": float(cvd_vals[i]),
-                            "label": "Bull Div",
-                        })
-
-            if highs[i] > highs[i - 1] and highs[i] > highs[i + 1] if i + 1 < m else True:
-                prev_high_idx = None
-                for j in range(i - 2, max(-1, i - 10), -1):
-                    if highs[j] > highs[j - 1] if j > 0 else True:
-                        if highs[j] > highs[j + 1] if j + 1 < m else True:
-                            prev_high_idx = j
-                            break
-                if prev_high_idx is not None:
-                    price_higher_high = highs[i] > highs[prev_high_idx]
-                    cvd_lower_high = cvd_vals[i] < cvd_vals[prev_high_idx]
-                    swing_size = abs(highs[i] - highs[prev_high_idx]) / avg_price
-                    if price_higher_high and cvd_lower_high and swing_size >= min_swing_pct:
-                        divergences.append({
-                            "type": "bearish",
-                            "price_time": times[i],
-                            "price_value": float(highs[i]),
-                            "cvd_value": float(cvd_vals[i]),
-                            "label": "Bear Div",
-                        })
-
-        seen = set()
-        unique = []
-        for d in reversed(divergences):
-            key = (d["type"], d["price_time"])
-            if key not in seen:
-                seen.add(key)
-                unique.append(d)
-        return list(reversed(unique))[-4:]
-
-    except Exception as e:
-        print(f"[cvd] detect_divergences error: {e}")
-        return []
-
-
-# ── CVD OHLC candles ────────────────────────────────────────────────────────────
-
-def compute_cvd_candles(
-    cvd_points: List[Dict[str, Any]],
-    df: pd.DataFrame,
-    include_wicks: bool = True
+    price_highs: np.ndarray,
+    price_lows: np.ndarray,
+    cvd_highs: np.ndarray,
+    cvd_lows: np.ndarray,
+    times: List[int],
+    left_pivot: int = 5,
+    right_pivot: int = 5,
+    max_pivot_bar_gap: int = 8
 ) -> List[Dict[str, Any]]:
     """
-    Build OHLC candles from CVD data.
+    Detect divergences between price and CVD.
 
-    TradingView CVD candle construction:
-    - Open: 0 if first bar of anchor period, otherwise previous CVD candle's close
-    - Close: cumulative volume delta at end of bar
-    - High: highest cumulative volume delta achieved during the bar
-    - Low: lowest cumulative volume delta achieved during the bar
+    Bearish divergence: Price makes higher high, CVD makes lower high
+    Bullish divergence: Price makes lower low, CVD makes higher low
 
     Args:
-        cvd_points: List of CVD points with value, delta, cvd_high, cvd_low, is_period_start
-        df: Original OHLCV DataFrame
-        include_wicks: If True, use cvd_high/cvd_low for wicks (TradingView style)
-                      If False, set high=low=body extremes (no wicks)
+        price_highs: Array of price highs
+        price_lows: Array of price lows
+        cvd_highs: Array of CVD highs
+        cvd_lows: Array of CVD lows
+        times: List of timestamps
+        left_pivot: Left bars for pivot detection
+        right_pivot: Right bars for pivot detection
+        max_pivot_bar_gap: Maximum bar gap between price and CVD pivots
+
+    Returns:
+        List of divergence dicts
     """
-    if not cvd_points or df is None or len(df) != len(cvd_points):
-        return []
+    divergences = []
 
-    candles = []
-    for i, pt in enumerate(cvd_points):
-        # TradingView rule: open is 0 at period start, otherwise previous close
-        is_period_start = pt.get("is_period_start", False)
-        if is_period_start or i == 0:
-            open_val = 0.0
-        else:
-            open_val = cvd_points[i - 1]["value"]
+    # Detect pivots on price and CVD
+    price_high_pivots = detect_pivot_highs(price_highs, left_pivot, right_pivot)
+    price_low_pivots = detect_pivot_lows(price_lows, left_pivot, right_pivot)
+    cvd_high_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
+    cvd_low_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
-        close_val = pt["value"]
+    # Check for bearish divergence: price higher highs, CVD lower highs
+    if len(price_high_pivots) >= 2 and len(cvd_high_pivots) >= 2:
+        # Get last two pivots of each
+        ph1, ph2 = price_high_pivots[-2], price_high_pivots[-1]
+        ch1, ch2 = cvd_high_pivots[-2], cvd_high_pivots[-1]
 
-        if include_wicks and "cvd_high" in pt and "cvd_low" in pt:
-            # Use tracked intrabar high/low for proper wicks
-            high = pt["cvd_high"]
-            low = pt["cvd_low"]
-            # Ensure high/low encompass the open value too
-            high = max(high, open_val)
-            low = min(low, open_val)
-        else:
-            # No wicks - high/low = body extremes
-            high = max(open_val, close_val)
-            low = min(open_val, close_val)
+        # Check conditions: price higher high AND CVD lower high
+        if ph2.value > ph1.value and ch2.value < ch1.value:
+            # Check bar gap constraint
+            if (abs(ph2.bar_index - ch2.bar_index) <= max_pivot_bar_gap and
+                abs(ph1.bar_index - ch1.bar_index) <= max_pivot_bar_gap):
+                divergences.append({
+                    "type": "bearish",
+                    "label": "Bear Div",
+                    "price_time": times[ph2.bar_index],
+                    "price_value": float(ph2.value),
+                    "cvd_value": float(ch2.value),
+                    "price_pivot_1": {"bar": ph1.bar_index, "value": float(ph1.value)},
+                    "price_pivot_2": {"bar": ph2.bar_index, "value": float(ph2.value)},
+                    "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
+                    "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
+                })
 
-        candles.append({
-            "time": pt["time"],
-            "open": round(open_val, 4),
-            "high": round(high, 4),
-            "low": round(low, 4),
-            "close": round(close_val, 4),
-        })
-    return candles
+    # Check for bullish divergence: price lower lows, CVD higher lows
+    if len(price_low_pivots) >= 2 and len(cvd_low_pivots) >= 2:
+        # Get last two pivots of each
+        pl1, pl2 = price_low_pivots[-2], price_low_pivots[-1]
+        cl1, cl2 = cvd_low_pivots[-2], cvd_low_pivots[-1]
+
+        # Check conditions: price lower low AND CVD higher low
+        if pl2.value < pl1.value and cl2.value > cl1.value:
+            # Check bar gap constraint
+            if (abs(pl2.bar_index - cl2.bar_index) <= max_pivot_bar_gap and
+                abs(pl1.bar_index - cl1.bar_index) <= max_pivot_bar_gap):
+                divergences.append({
+                    "type": "bullish",
+                    "label": "Bull Div",
+                    "price_time": times[pl2.bar_index],
+                    "price_value": float(pl2.value),
+                    "cvd_value": float(cl2.value),
+                    "price_pivot_1": {"bar": pl1.bar_index, "value": float(pl1.value)},
+                    "price_pivot_2": {"bar": pl2.bar_index, "value": float(pl2.value)},
+                    "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
+                    "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
+                })
+
+    return divergences
 
 
-# ── Full data endpoint helper ──────────────────────────────────────────────────
+def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clean and normalize a DataFrame for CVD calculation.
+
+    Args:
+        df: Input DataFrame
+
+    Returns:
+        Cleaned DataFrame with proper column types
+    """
+    if df is None or len(df) == 0:
+        return pd.DataFrame()
+
+    df = df.copy()
+
+    # Handle MultiIndex columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    # Remove duplicate columns
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    # Convert OHLC columns to numeric
+    for col in ["Open", "High", "Low", "Close"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].squeeze(), errors="coerce")
+
+    # Handle volume
+    if "Volume" in df.columns:
+        df["Volume"] = pd.to_numeric(df["Volume"].squeeze(), errors="coerce").fillna(0)
+    else:
+        df["Volume"] = 1.0
+
+    # Drop rows with missing OHLC data
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    return df
+
 
 def get_cvd_data(
     df: pd.DataFrame,
-    method: str = "tradingview",
-    detect_divs: bool = True,
-    lookback: int = 20,
     intrabar_df: Optional[pd.DataFrame] = None,
-    include_wicks: bool = True,
-    anchor: str = DEFAULT_ANCHOR,
+    left_pivot: int = 5,
+    right_pivot: int = 5,
+    max_pivot_bar_gap: int = 8,
+    detect_divs: bool = True
 ) -> Dict[str, Any]:
     """
     Get complete CVD data including candles, divergences, and stats.
 
+    Main entry point matching the interface expected by server.py.
+
     Args:
         df: Main timeframe OHLCV DataFrame
-        method: Calculation method ("tradingview", "polarity", "body_weighted")
-        detect_divs: Whether to detect divergences
-        lookback: Lookback period for divergence detection
         intrabar_df: Optional lower timeframe DataFrame for intrabar analysis
-        include_wicks: Whether to include wicks on CVD candles
-        anchor: Anchor period for CVD reset ("day", "week", "month", "year", "none")
-                Default is "day" to match TradingView's default behavior.
+        left_pivot: Left bars for pivot detection
+        right_pivot: Right bars for pivot detection
+        max_pivot_bar_gap: Maximum bar gap between price and CVD pivots
+        detect_divs: Whether to detect divergences
+
+    Returns:
+        Dict with cvd_candles, divergences, stats, has_volume, method
     """
-    # Pre-clean the dataframe
-    if isinstance(df.columns, pd.MultiIndex):
-        df = df.copy()
-        df.columns = df.columns.get_level_values(0)
-    df = df.loc[:, ~df.columns.duplicated()].dropna(subset=["Open", "High", "Low", "Close"]).copy()
+    # Clean dataframes
+    df = clean_dataframe(df)
+    if df is None or len(df) < 2:
+        return {
+            "cvd": [],
+            "cvd_candles": [],
+            "divergences": [],
+            "stats": {},
+            "has_volume": False,
+            "method": "none",
+        }
 
-    has_volume = bool("Volume" in df.columns and df["Volume"].sum() > len(df))
+    has_volume = "Volume" in df.columns and df["Volume"].sum() > len(df)
 
-    # Use intrabar analysis if available, otherwise fall back to single-timeframe
+    # Build CVD candles
     if intrabar_df is not None and len(intrabar_df) > 0:
-        cvd_points = compute_cvd_with_intrabar(df, intrabar_df, method="polarity", anchor=anchor)
-        used_method = "intrabar"
+        intrabar_df = clean_dataframe(intrabar_df)
+        cvd_candles = build_cvd_ohlc_from_intrabar(df, intrabar_df)
+        method = "intrabar"
     else:
-        cvd_points = compute_cvd(df, method=method, anchor=anchor)
-        used_method = method
+        cvd_candles = build_cvd_ohlc_single_tf(df)
+        method = "single_tf"
 
-    stats = {}
-    if cvd_points:
-        vals = [p["value"] for p in cvd_points]
-        stats["min"] = round(min(vals), 4)
-        stats["max"] = round(max(vals), 4)
-        stats["last"] = round(vals[-1], 4)
-        stats["net"] = round(vals[-1] - vals[0], 4)
+    if not cvd_candles:
+        return {
+            "cvd": [],
+            "cvd_candles": [],
+            "divergences": [],
+            "stats": {},
+            "has_volume": has_volume,
+            "method": method,
+        }
 
+    # Build legacy cvd format (list of value/delta dicts)
+    cvd_points = []
+    for i, candle in enumerate(cvd_candles):
+        delta = candle["close"] - candle["open"]
+        cvd_points.append({
+            "time": candle["time"],
+            "value": candle["close"],
+            "delta": round(delta, 4),
+            "cvd_high": candle["high"],
+            "cvd_low": candle["low"],
+        })
+
+    # Calculate stats
+    closes = [c["close"] for c in cvd_candles]
+    stats = {
+        "min": round(min(closes), 4),
+        "max": round(max(closes), 4),
+        "last": round(closes[-1], 4),
+        "net": round(closes[-1] - closes[0], 4),
+    }
+
+    # Detect divergences
     divergences = []
-    if detect_divs and cvd_points:
-        try:
-            candles_for_div = [
-                {
-                    "time": int(idx.timestamp()),
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
-                    "close": float(row["Close"]),
-                }
-                for idx, row in df.iterrows()
-            ]
-            divergences = detect_divergences(candles_for_div, cvd_points, lookback=lookback)
-        except Exception as e:
-            print(f"[cvd] divergence prep error: {e}")
+    if detect_divs and len(cvd_candles) >= (left_pivot + right_pivot + 2):
+        price_highs = df["High"].values.astype(float)
+        price_lows = df["Low"].values.astype(float)
+        cvd_highs = np.array([c["high"] for c in cvd_candles])
+        cvd_lows = np.array([c["low"] for c in cvd_candles])
+        times = [c["time"] for c in cvd_candles]
 
-    cvd_candles = compute_cvd_candles(cvd_points, df, include_wicks=include_wicks)
+        divergences = detect_divergences(
+            price_highs=price_highs,
+            price_lows=price_lows,
+            cvd_highs=cvd_highs,
+            cvd_lows=cvd_lows,
+            times=times,
+            left_pivot=left_pivot,
+            right_pivot=right_pivot,
+            max_pivot_bar_gap=max_pivot_bar_gap
+        )
 
     return {
         "cvd": cvd_points,
         "cvd_candles": cvd_candles,
         "divergences": divergences,
-        "method": used_method,
-        "anchor": anchor,
-        "has_volume": has_volume,
         "stats": stats,
+        "has_volume": has_volume,
+        "method": method,
     }
