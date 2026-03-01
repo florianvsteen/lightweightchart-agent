@@ -65,21 +65,70 @@
   }
   .header-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
 
-  #pair-select {
+  /* Hide native select, use custom dropdown */
+  #pair-select { display: none; }
+
+  /* Custom dropdown wrapper */
+  .pair-dropdown {
     margin-left: auto;
+    position: relative;
+  }
+  .pair-dropdown-trigger {
     background: var(--surface);
     border: 1px solid var(--border2);
     color: var(--text);
     font-family: 'Space Mono', monospace;
     font-size: 0.72rem;
-    padding: 5px 10px;
+    padding: 5px 28px 5px 10px;
     border-radius: 3px;
     cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
     min-width: 130px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+    transition: border-color 0.15s;
   }
-  #pair-select:focus { outline: none; border-color: var(--accent); }
+  .pair-dropdown-trigger:hover { border-color: #888; }
+  .pair-dropdown-trigger.open { border-color: var(--accent); }
+  .pair-dropdown-trigger::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--muted);
+    transition: transform 0.15s;
+  }
+  .pair-dropdown-trigger.open::after { transform: translateY(-50%) rotate(180deg); }
+
+  .pair-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .pair-dropdown-menu.open { display: block; }
+  .pair-dropdown-item {
+    padding: 8px 12px;
+    font-size: 0.72rem;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .pair-dropdown-item:hover { background: rgba(255,255,255,0.06); }
+  .pair-dropdown-item.selected { color: var(--accent); background: rgba(90,240,196,0.06); }
 
   .tf-bar { display: flex; gap: 3px; }
   .tf-btn {
@@ -117,6 +166,41 @@
     gap: 0;
   }
 
+  /* ── Left drawing toolbar ───────────────────────────────────────────── */
+  #left-toolbar {
+    width: 40px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 4px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+  }
+  .left-tool-btn {
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .left-tool-btn:hover { border-color: #888; color: #ccc; }
+  .left-tool-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.08); }
+  .left-tool-btn.danger { border-color: rgba(240,90,126,0.4); color: #f05a7e; }
+  .left-tool-btn.danger:hover { background: rgba(240,90,126,0.1); }
+  .left-tool-divider {
+    height: 1px;
+    background: var(--border2);
+    margin: 4px 2px;
+  }
+
   /* ── Chart column ─────────────────────────────────────────────────── */
   #chart-wrap {
     flex: 1;
@@ -137,27 +221,8 @@
   }
   #chart { width: 100%; height: 100%; }
 
-  /* ── Drawing toolbar ─────────────────────────────────────────────── */
-  #draw-toolbar {
-    display: flex;
-    gap: 3px;
-    align-items: center;
-  }
-  .draw-btn {
-    background: none;
-    border: 1px solid var(--border2);
-    border-radius: 3px;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.78rem;
-    padding: 4px 8px;
-    transition: all 0.15s;
-    line-height: 1;
-  }
-  .draw-btn:hover  { border-color: #888; color: #ccc; }
-  .draw-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.08); }
-  .draw-btn-danger { border-color: rgba(240,90,126,0.4) !important; color: #f05a7e !important; }
-  .draw-btn-danger:hover { background: rgba(240,90,126,0.1) !important; }
+  /* ── Drawing toolbar (legacy, kept for reference) ────────────────── */
+  #draw-toolbar { display: none; }
 
   /* Drawing cursor on chart panels */
   .drawing-active #chart,
@@ -223,9 +288,37 @@
     position: relative;
     overflow: hidden;
     background: var(--bg);
+    transition: height 0.2s ease-out;
   }
+  #cvd-panel.collapsed {
+    height: 28px !important;
+  }
+  #cvd-panel.collapsed #cvd-chart { display: none; }
+  #cvd-panel.collapsed #draw-overlay-cvd { display: none; }
 
   #cvd-chart { width: 100%; height: 100%; }
+
+  /* CVD collapse toggle */
+  #cvd-collapse-btn {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    background: rgba(10,10,12,0.8);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.65rem;
+    z-index: 15;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  #cvd-collapse-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   /* CVD header bar */
   #cvd-header {
@@ -568,24 +661,41 @@
   </div>
   <div id="session-badge">--</div>
 
-  <!-- Drawing toolbar -->
-  <div id="draw-toolbar">
-    <button class="draw-btn" data-tool="cursor"  title="Cursor (Esc)">&#9654;</button>
-    <button class="draw-btn" data-tool="hline"   title="Horizontal Line (H)">&#8213;</button>
-    <button class="draw-btn" data-tool="line"    title="Trend Line (L)">&#8725;</button>
-    <button class="draw-btn" data-tool="ray"     title="Ray (R)">&#8594;</button>
-    <button class="draw-btn" data-tool="box"     title="Box (B)">&#9645;</button>
-    <button class="draw-btn draw-btn-danger" id="draw-clear-all" title="Clear all drawings">&#128465;</button>
-  </div>
+  <!-- Drawing toolbar moved to left sidebar -->
 
+  <!-- Native select (hidden, kept for form fallback) -->
   <select id="pair-select">
     {% for p in pairs %}
     <option value="{{ p.id }}" {% if p.id == pair_id %}selected{% endif %}>{{ p.id }} — {{ p.label }}</option>
     {% endfor %}
   </select>
+
+  <!-- Custom dropdown for consistent downward opening -->
+  <div class="pair-dropdown" id="pair-dropdown">
+    <div class="pair-dropdown-trigger" id="pair-dropdown-trigger">
+      <span id="pair-dropdown-label">{{ pair_id }} — {{ label }}</span>
+    </div>
+    <div class="pair-dropdown-menu" id="pair-dropdown-menu">
+      {% for p in pairs %}
+      <div class="pair-dropdown-item{% if p.id == pair_id %} selected{% endif %}" data-value="{{ p.id }}">{{ p.id }} — {{ p.label }}</div>
+      {% endfor %}
+    </div>
+  </div>
 </header>
 
 <div class="main">
+  <!-- Left drawing toolbar -->
+  <div id="left-toolbar">
+    <button class="left-tool-btn active" data-tool="cursor" title="Cursor (Esc)">&#10010;</button>
+    <div class="left-tool-divider"></div>
+    <button class="left-tool-btn" data-tool="hline" title="Horizontal Line (H)">&#8213;</button>
+    <button class="left-tool-btn" data-tool="line" title="Trend Line (L)">&#8725;</button>
+    <button class="left-tool-btn" data-tool="ray" title="Ray (R)">&#8594;</button>
+    <button class="left-tool-btn" data-tool="box" title="Box (B)">&#9645;</button>
+    <div class="left-tool-divider"></div>
+    <button class="left-tool-btn danger" id="left-clear-all" title="Clear all drawings">&#128465;</button>
+  </div>
+
   <!-- Chart column -->
   <div id="chart-wrap">
     <!-- Price chart -->
@@ -607,6 +717,7 @@
         <span id="cvd-div-badge"></span>
         <span id="cvd-no-vol">· tick vol</span>
       </div>
+      <button id="cvd-collapse-btn" title="Collapse/Expand CVD">&#9650;</button>
       <div id="cvd-chart"></div>
       <canvas id="draw-overlay-cvd" style="position:absolute;top:0;left:0;pointer-events:none;z-index:5;"></canvas>
     </div>
@@ -789,6 +900,7 @@
 
   // ── CVD height persistence ──────────────────────────────────────────
   const CVD_HEIGHT_KEY = `cvd-height:${PAIR_ID}`;
+  const CVD_COLLAPSED_KEY = `cvd-collapsed:${PAIR_ID}`;
   const CVD_MIN = 80;
   const CVD_MAX = 600;
   const cvdPanel = document.getElementById('cvd-panel');
@@ -799,8 +911,32 @@
   function loadCvdHeight() {
     try { return parseInt(localStorage.getItem(CVD_HEIGHT_KEY)) || 150; } catch(e) { return 150; }
   }
-  // Apply saved height immediately so chart is created at the right size
+  function saveCvdCollapsed(collapsed) {
+    try { localStorage.setItem(CVD_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch(e) {}
+  }
+  function loadCvdCollapsed() {
+    try { return localStorage.getItem(CVD_COLLAPSED_KEY) === '1'; } catch(e) { return false; }
+  }
+
+  // Apply saved height and collapse state
   cvdPanel.style.height = loadCvdHeight() + 'px';
+  if (loadCvdCollapsed()) {
+    cvdPanel.classList.add('collapsed');
+    document.getElementById('cvd-collapse-btn').innerHTML = '&#9660;';
+  }
+
+  // CVD collapse button handler
+  document.getElementById('cvd-collapse-btn').addEventListener('click', () => {
+    const isCollapsed = cvdPanel.classList.toggle('collapsed');
+    document.getElementById('cvd-collapse-btn').innerHTML = isCollapsed ? '&#9660;' : '&#9650;';
+    saveCvdCollapsed(isCollapsed);
+    // Trigger resize to adjust price chart
+    if (!isCollapsed) {
+      cvdPanel.style.height = loadCvdHeight() + 'px';
+      cvdChart.applyOptions({ width: cvdContainer.clientWidth, height: loadCvdHeight() });
+    }
+    chart.applyOptions({ width: priceContainer.clientWidth });
+  });
 
   // ── CVD drag-to-resize ───────────────────────────────────────────────
   const cvdHandle = document.getElementById('cvd-resize-handle');
@@ -935,7 +1071,31 @@
     });
   });
 
-  // ── Pair selector ────────────────────────────────────────────────────
+  // ── Pair selector (custom dropdown) ──────────────────────────────────
+  const pairDropdown = document.getElementById('pair-dropdown');
+  const pairTrigger = document.getElementById('pair-dropdown-trigger');
+  const pairMenu = document.getElementById('pair-dropdown-menu');
+
+  pairTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = pairMenu.classList.toggle('open');
+    pairTrigger.classList.toggle('open', isOpen);
+  });
+
+  document.querySelectorAll('.pair-dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const value = item.dataset.value;
+      window.location.href = `/chart-view/${value}`;
+    });
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', () => {
+    pairMenu.classList.remove('open');
+    pairTrigger.classList.remove('open');
+  });
+
+  // Legacy native select (fallback)
   document.getElementById('pair-select').addEventListener('change', (e) => {
     window.location.href = `/chart-view/${e.target.value}`;
   });
@@ -1242,16 +1402,44 @@
   // Crosshair tooltip
   // ── Crosshair sync: price <-> CVD ──────────────────────────────────
   let _xhairSyncing = false;
+  let _lastCrosshairTime = null;  // Track time even when past last candle
 
   chart.subscribeCrosshairMove((param) => {
     // 1. Tooltip
     const tooltip = document.getElementById('candle-tooltip');
-    if (!param.time || !param.seriesData) {
-      tooltip.style.display = 'none';
+
+    // Get time from param or calculate from point position (for areas past last candle)
+    let displayTime = param.time;
+    if (!displayTime && param.point) {
+      displayTime = chart.timeScale().coordinateToTime(param.point.x);
+    }
+
+    if (!displayTime || !param.seriesData) {
+      // Even if no candle data, show time in tooltip if we have a valid time
+      if (displayTime) {
+        const rawTime = displayTime - TZ_OFFSET;
+        tooltip.style.display = '';
+        tooltip.innerHTML = `
+          <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
+          <div style="font-size:0.6rem;color:var(--muted);margin-top:4px;">No candle data</div>`;
+        _lastCrosshairTime = displayTime;
+      } else {
+        tooltip.style.display = 'none';
+      }
     } else {
       const data = param.seriesData.get(candleSeries);
       if (!data) {
-        tooltip.style.display = 'none';
+        // Show time even when no data at this point
+        if (displayTime) {
+          const rawTime = displayTime - TZ_OFFSET;
+          tooltip.style.display = '';
+          tooltip.innerHTML = `
+            <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
+            <div style="font-size:0.6rem;color:var(--muted);margin-top:4px;">No candle data</div>`;
+          _lastCrosshairTime = displayTime;
+        } else {
+          tooltip.style.display = 'none';
+        }
       } else {
         const rawTime = data.time - TZ_OFFSET;
         const isBull  = data.close >= data.open;
@@ -1264,44 +1452,90 @@
           <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
           <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull ? 'up' : 'down'}">${fmtPrice(data.close)}</span></div>
           <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull ? 'up' : 'down'}">${isBull ? '+' : ''}${change.toFixed(3)}%</span></div>`;
+        _lastCrosshairTime = data.time;
       }
     }
 
-    // 2. Sync crosshair to CVD chart at same timestamp
-    if (_xhairSyncing || !param.time || !cvdCandleSeries) return;
+    // 2. Sync crosshair to CVD chart at same timestamp (use point for areas past data)
+    if (_xhairSyncing || !cvdCandleSeries) return;
+    const syncTime = param.time || (param.point ? chart.timeScale().coordinateToTime(param.point.x) : null);
+    if (!syncTime) return;
+
     _xhairSyncing = true;
-    try { cvdChart.setCrosshairPosition(0, param.time, cvdCandleSeries); } catch(e) {}
+    // Try to sync by time, if that fails try to sync by matching visible range position
+    try {
+      cvdChart.setCrosshairPosition(0, syncTime, cvdCandleSeries);
+    } catch(e) {
+      // If setCrosshairPosition fails (no data at this time), sync via visible range
+      try {
+        const priceRange = chart.timeScale().getVisibleLogicalRange();
+        if (priceRange) cvdChart.timeScale().setVisibleLogicalRange(priceRange);
+      } catch(e2) {}
+    }
     _xhairSyncing = false;
   });
 
   // When hovering CVD, push crosshair back to price chart
   cvdChart.subscribeCrosshairMove((param) => {
-    if (_xhairSyncing || !param.time || !candleSeries) return;
+    if (_xhairSyncing || !candleSeries) return;
+
+    // Get time from param or calculate from point position
+    let syncTime = param.time;
+    if (!syncTime && param.point) {
+      syncTime = cvdChart.timeScale().coordinateToTime(param.point.x);
+    }
+    if (!syncTime) return;
+
     _xhairSyncing = true;
-    try { chart.setCrosshairPosition(0, param.time, candleSeries); } catch(e) {}
+    try {
+      chart.setCrosshairPosition(0, syncTime, candleSeries);
+    } catch(e) {
+      // If setCrosshairPosition fails, sync via visible range
+      try {
+        const cvdRange = cvdChart.timeScale().getVisibleLogicalRange();
+        if (cvdRange) chart.timeScale().setVisibleLogicalRange(cvdRange);
+      } catch(e2) {}
+    }
     _xhairSyncing = false;
   });
 
   // Clear both crosshairs when mouse leaves either panel
   priceContainer.addEventListener('mouseleave', () => {
     try { cvdChart.clearCrosshairPosition(); } catch(e) {}
+    document.getElementById('candle-tooltip').style.display = 'none';
   });
   cvdContainer.addEventListener('mouseleave', () => {
     try { chart.clearCrosshairPosition(); } catch(e) {}
   });
 
-  // Click to show candle detail
+  // Click to show candle detail - only trigger when clicking on actual candle
   priceContainer.addEventListener('click', (e) => {
     if (!_rawCandles.length) return;
     const rect = priceContainer.getBoundingClientRect();
     const clickedTime = chart.timeScale().coordinateToTime(e.clientX - rect.left);
     if (clickedTime == null) return;
     const rawClickedTime = clickedTime - TZ_OFFSET;
+
+    // Find closest candle
     const closest = _rawCandles.reduce((best, c) =>
       Math.abs(c.time - rawClickedTime) < Math.abs(best.time - rawClickedTime) ? c : best,
       _rawCandles[0]
     );
-    if (closest) showCandleDetail(closest);
+
+    // Calculate interval duration from candles (default to 60s for 1m)
+    let intervalSecs = 60;
+    if (_rawCandles.length >= 2) {
+      intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
+    }
+
+    // Only show detail if click is within half the interval duration of the candle
+    // This ensures clicking on empty areas (future/past timestamps) doesn't trigger
+    const tolerance = intervalSecs / 2;
+    const clickDiff = Math.abs(closest.time - rawClickedTime);
+
+    if (closest && clickDiff <= tolerance) {
+      showCandleDetail(closest);
+    }
   });
 
   // ── Data loading ─────────────────────────────────────────────────────
@@ -1458,6 +1692,11 @@
   function setDrawTool(tool) {
     _drawTool = tool;
     _drawInProgress = null;
+    // Update left toolbar buttons
+    document.querySelectorAll('.left-tool-btn[data-tool]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tool === tool);
+    });
+    // Also update old header buttons if they exist (for backwards compat)
     document.querySelectorAll('.draw-btn[data-tool]').forEach(b => {
       b.classList.toggle('active', b.dataset.tool === tool);
     });
@@ -1471,6 +1710,11 @@
     }));
   }
 
+  // Left toolbar event listeners
+  document.querySelectorAll('.left-tool-btn[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => setDrawTool(btn.dataset.tool));
+  });
+  // Legacy header toolbar
   document.querySelectorAll('.draw-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => setDrawTool(btn.dataset.tool));
   });
@@ -1514,7 +1758,7 @@
     } catch(e) { console.error('deleteDrawing:', e); }
   }
 
-  document.getElementById('draw-clear-all').addEventListener('click', async () => {
+  async function clearAllDrawings() {
     if (!_drawings.length) return;
     if (!confirm(`Delete all ${_drawings.length} drawing(s)?`)) return;
     const ids = _drawings.map(d => d.id);
@@ -1523,7 +1767,14 @@
     for (const id of ids) {
       try { await fetch(`/proxy/${PAIR_ID}/api/drawings/${id}`, { method: 'DELETE' }); } catch(e) {}
     }
-  });
+  }
+
+  // Left toolbar clear button
+  const leftClearBtn = document.getElementById('left-clear-all');
+  if (leftClearBtn) leftClearBtn.addEventListener('click', clearAllDrawings);
+  // Legacy header clear button
+  const headerClearBtn = document.getElementById('draw-clear-all');
+  if (headerClearBtn) headerClearBtn.addEventListener('click', clearAllDrawings);
 
   // ── Coordinate helpers ───────────────────────────────────────────────
   function chartForPanel(panelId) {
@@ -1711,6 +1962,7 @@
       if (pointsNeeded(_drawTool) === 1) {
         saveDrawing({ ..._drawInProgress });
         _drawInProgress = null;
+        setDrawTool('cursor');  // Return to cursor mode after drawing
         renderAllDrawings();
       }
     } else {
@@ -1718,6 +1970,7 @@
       if (_drawInProgress.points.length >= pointsNeeded(_drawTool)) {
         saveDrawing({ ..._drawInProgress });
         _drawInProgress = null;
+        setDrawTool('cursor');  // Return to cursor mode after drawing
         renderAllDrawings();
       }
     }
