@@ -470,7 +470,7 @@ def get_cvd_data(
             "method": "none",
         }
 
-    has_volume = "Volume" in df.columns and df["Volume"].sum() > len(df)
+    has_volume = bool("Volume" in df.columns and df["Volume"].sum() > len(df))
 
     # Build CVD candles
     # Clean intrabar_df and re-check length (clean_dataframe can return empty)
