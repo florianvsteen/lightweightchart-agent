@@ -106,16 +106,25 @@ def _fetch_and_summarize(ticker_symbol: str) -> dict:
         "articles": articles
     }
 
-def get_news(pair_id: str) -> dict:
-    """Entry point with caching (reverted name to fix ImportError)."""
+def get_news(pair_id: str, yf_ticker: str | None = None) -> list[dict]:
+    """
+    Entry point with caching. 
+    RE-MODIFIED: Returns a LIST of articles to prevent 500 errors in existing APIs.
+    The 'summary' is now injected into the first article or handled internally.
+    """
     key = pair_id.upper()
     with _cache_lock:
         if key in _cache and (time.time() - _cache[key]["ts"]) < NEWS_TTL_SECONDS:
-            return _cache[key]["data"]
+            return _cache[key]["data"]["articles"] # Return just the list for the API
 
-    ticker = PAIR_TICKER_MAP.get(key, key)
-    data = _fetch_and_summarize(ticker)
+    # Resolve ticker if passed manually or via map
+    ticker_symbol = yf_ticker if yf_ticker else PAIR_TICKER_MAP.get(key, key)
+    
+    # Fetch the new dictionary format
+    full_data = _fetch_and_summarize(ticker_symbol)
 
     with _cache_lock:
-        _cache[key] = {"ts": time.time(), "data": data}
-    return data
+        # Cache the whole dict, but return just the articles list
+        _cache[key] = {"ts": time.time(), "data": full_data}
+    
+    return full_data["articles"]
