@@ -775,9 +775,11 @@ class PairServer:
                 print(f"[REPLAY] filtered by timestamps: start={start_ts} end={end_ts} df_len={len(full_df)}")
             else:
                 # Fallback to index-based slicing for backward compatibility
+                # REPLACE the fallback with this:
                 raw_total = request.args.get("total")
                 if raw_total:
-                    full_df = full_df.iloc[:int(raw_total) + 1]
+                    # Instead of just iloc, ensure we don't exceed the original browser snapshot
+                    full_df = full_df.iloc[:int(raw_total)]
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
             params = dict(self.detector_params.get("accumulation", {}))
