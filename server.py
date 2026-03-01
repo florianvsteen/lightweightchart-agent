@@ -199,6 +199,11 @@ class PairServer:
         _api_bias.__name__ = f"api_bias_{pair_id}"
         app.route("/api/bias")(_api_bias)
 
+        def _api_cvd():
+            return self._api_cvd()
+        _api_cvd.__name__ = f"api_cvd_{pair_id}"
+        app.route("/api/cvd")(_api_cvd)
+
         def _api_candle_explain():
             return self._api_candle_explain()
         _api_candle_explain.__name__ = f"api_candle_explain_{pair_id}"
@@ -246,16 +251,8 @@ class PairServer:
     def _process_alerts(self, detector_results: dict):
         """
         Check results and fire Discord alerts on breakout.
-
-        Accumulation alert rules (FIXED):
-          1. Only fire when the detector explicitly returns status == 'confirmed'
-             (impulsive breakout). 'looking' after an active zone means the breakout
-             was NOT impulsive — do NOT alert.
-          2. Cooldown is enforced by setting last_active_zone to a 'cooldown' dict.
-             Any new active zone discovered during cooldown is deliberately IGNORED
-             to prevent the cooldown from being bypassed.
         """
-        from sessions import is_weekend_halt
+        from tools.sessions import is_weekend_halt
         if is_weekend_halt(self.market_timing):
             return
 
@@ -263,7 +260,6 @@ class PairServer:
 
             # ── Accumulation ──────────────────────────────────────────
             if name == "accumulation":
-                # Clean up alerted timestamps older than 4 hours
                 cutoff = int(time.time()) - (4 * 3600)
                 if name in self.last_alerted and isinstance(self.last_alerted[name], int):
                     if self.last_alerted[name] < cutoff:
@@ -273,23 +269,16 @@ class PairServer:
                 prev = self.last_active_zone.get(name)
                 prev_status = (prev or {}).get("status")
 
-                # ── Cooldown guard ─────────────────────────────────────
-                # During cooldown, we ignore ALL zone transitions — including
-                # new active zones — so the cooldown cannot be bypassed.
                 if prev_status == "cooldown":
                     if int(time.time()) < (prev or {}).get("cooldown_until", 0):
-                        continue  # still cooling down — skip everything
+                        continue
                     else:
-                        # Cooldown expired — clear and fall through to normal logic
                         self.last_active_zone[name] = None
                         prev = None
                         prev_status = None
 
                 zone = result if (result and isinstance(result, dict)) else None
 
-                # ── Track active zone ──────────────────────────────────
-                # Store the active zone so we can detect when it breaks out.
-                # Only update last_active_zone when NOT in cooldown (guard above handles that).
                 is_active_found = (
                     zone is not None
                     and zone.get("is_active")
@@ -302,16 +291,11 @@ class PairServer:
                     if zone_start != already_alerted:
                         self.last_active_zone[name] = zone
 
-                # ── Alert ONLY on explicit 'confirmed' status ──────────
-                # The detector sets 'confirmed' only when the breakout candle is
-                # impulsive (body > avg window body). 'looking' after an active zone
-                # means the breakout failed the impulse check — do NOT alert.
                 elif zone is not None and zone.get("status") == "confirmed":
                     zone_start = zone.get("start", 0)
                     already_alerted = self.last_alerted.get(name, 0)
 
                     if zone_start != already_alerted:
-                        # The detector confirmed the breakout — alert
                         confirmed_zone = dict(zone)
                         self.last_active_zone[name] = confirmed_zone
                         self.last_alerted[name] = zone_start
@@ -329,7 +313,6 @@ class PairServer:
                             daemon=True,
                         ).start()
 
-                        # Immediately set cooldown so no further alerts fire
                         cooldown_minutes = self.detector_params.get("accumulation", {}).get(
                             "alert_cooldown_minutes", 15
                         )
@@ -339,7 +322,6 @@ class PairServer:
                         self.last_active_zone[name] = cooldown_zone
 
                 elif prev_status == "confirmed":
-                    # Previous cycle was confirmed — transition to cooldown
                     cooldown_minutes = self.detector_params.get("accumulation", {}).get(
                         "alert_cooldown_minutes", 15
                     )
@@ -359,7 +341,6 @@ class PairServer:
                 curr_active = {z["start"] for z in zones if z.get("is_active")}
                 prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                # Remove invalidated zones from last_alerted so they can re-fire if they return
                 invalidated = prev_starts - curr_active
                 changed = False
                 for start_ts in invalidated:
@@ -460,7 +441,6 @@ class PairServer:
                     self._cached_detector_results = results
                     self._cached_candles.update(candles_by_interval)
 
-                # Refresh bias cache once per day
                 try:
                     from detectors.bias import get_bias
                     if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 86400:
@@ -512,7 +492,6 @@ class PairServer:
                     "bias":      self._bias_cache,
                 })
 
-            # Accumulation state overrides (in-memory only)
             for det_name in self.detector_names:
                 if det_name == "accumulation":
                     held = self.last_active_zone.get(det_name)
@@ -539,7 +518,7 @@ class PairServer:
             return jsonify({"error": str(e)}), 500
 
     def _api_bias(self):
-        """Return current bias for this pair (used by mission control for all pairs)."""
+        """Return current bias for this pair."""
         try:
             now = time.time()
             if self._bias_cache and (now - self._bias_cache_ts) < 86400:
@@ -553,16 +532,33 @@ class PairServer:
         except Exception as e:
             return jsonify({"bias": "misaligned", "aligned": False, "reason": str(e)}), 500
 
+    def _api_cvd(self):
+        """
+        Return CVD (Cumulative Volume Delta) data for the requested interval.
+        Accepts ?interval=1m  (default: pair's default_interval)
+        """
+        try:
+            from tools.cvd import get_cvd_data
+            interval = request.args.get("interval", self.default_interval)
+            df = self._fetch_df(interval)
+            if df is None or len(df) < 5:
+                return jsonify({
+                    "cvd":         [],
+                    "divergences": [],
+                    "stats":       {},
+                    "has_volume":  False,
+                })
+            result = get_cvd_data(df)
+            return jsonify(result)
+        except Exception as e:
+            import traceback
+            print(traceback.format_exc())
+            return jsonify({"error": str(e), "cvd": [], "divergences": [], "stats": {}}), 500
+
     def _api_candle_explain(self):
         """
         Given ?ts=<unix_ts>, explain in plain English why that candle
         is or isn't a valid aggressor (accumulation) or base candle (supply/demand).
-
-        All logic lives in the detector modules — this method just:
-          1. Parses the timestamp
-          2. Cleans the dataframe
-          3. Finds the candle index
-          4. Delegates to the appropriate detector's explain_candle()
         """
         try:
             ts_raw = request.args.get("ts")
@@ -616,9 +612,6 @@ class PairServer:
     def _debug(self):
         from config import PAIRS
         tz = os.environ.get("TZ", "Europe/Brussels")
-        # Use proxy prefix so links work behind a reverse proxy.
-        # If a PROXY_PREFIX env var is set (e.g. "/proxy"), pair links become
-        # /proxy/{pair_id}/debug instead of http://host:{port}/debug.
         proxy_prefix = os.environ.get("PROXY_PREFIX", "").rstrip("/")
         pairs_list = [
             {"id": pid, "label": cfg["label"], "port": cfg["port"],
@@ -637,7 +630,7 @@ class PairServer:
     def _debug_data(self):
         try:
             from detectors.accumulation import detect as accum_detect
-            from sessions import get_current_session
+            from tools.sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
             df = self._get_df(interval, {})
@@ -663,7 +656,7 @@ class PairServer:
             return jsonify({
                 "pair":              self.pair_id,
                 "session":           get_current_session(self.market_timing),
-                "status":            result.get("status", "looking"),   # ← add this
+                "status":            result.get("status", "looking"),
                 "adx_threshold":     params.get("adx_threshold", 25),
                 "last_close": round(float(df["Close"].iloc[-1]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
@@ -673,9 +666,9 @@ class PairServer:
                 "best_zone":         result.get("best_zone"),
                 "secondary_zone":    result.get("secondary_zone"),
                 "breakout_candle":   result.get("breakout_candle"),
-                "breakout_dir":      result.get("breakout_dir"),        # ← add this
-                "breakout_body":     result.get("breakout_body"),       # ← add this
-                "impulse_ratio":     result.get("impulse_ratio"),       # ← add this
+                "breakout_dir":      result.get("breakout_dir"),
+                "breakout_body":     result.get("breakout_body"),
+                "impulse_ratio":     result.get("impulse_ratio"),
                 "candles":           result.get("candles", [])[:-1],
             })
         except Exception as e:
@@ -690,7 +683,7 @@ class PairServer:
 
         try:
             from detectors.accumulation import detect as accum_detect
-            from sessions import get_current_session
+            from tools.sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
             with self._cache_lock:
@@ -700,15 +693,15 @@ class PairServer:
             else:
                 full_df = _provider_get_df(self.ticker, interval, self.period)
             full_df = full_df.dropna()
-            
+
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
-            
+
             params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             min_candles = params.get("min_candles", 20)
-            
-            full_df = full_df.iloc[:-1].copy()  # strip still-forming candle — keep only this one
+
+            full_df = full_df.iloc[:-1].copy()
             total = len(full_df)
             idx   = raw_idx if raw_idx >= 1 else total
             idx   = max(min_candles + 3, min(idx, total))
@@ -730,7 +723,7 @@ class PairServer:
                 "idx":               idx,
                 "total":             total,
                 "session":           get_current_session(self.market_timing),
-                "status":            result.get("status", "looking"),   # ← add this
+                "status":            result.get("status", "looking"),
                 "adx_threshold":     params.get("adx_threshold", 25),
                 "last_close": round(float(df["Close"].iloc[-1]), 5),
                 "windows_checked":   result.get("windows_checked", 0),
@@ -740,9 +733,9 @@ class PairServer:
                 "best_zone":         result.get("best_zone"),
                 "secondary_zone":    result.get("secondary_zone"),
                 "breakout_candle":   result.get("breakout_candle"),
-                "breakout_dir":      result.get("breakout_dir"),        # ← add this
-                "breakout_body":     result.get("breakout_body"),       # ← add this
-                "impulse_ratio":     result.get("impulse_ratio"),       # ← add this
+                "breakout_dir":      result.get("breakout_dir"),
+                "breakout_body":     result.get("breakout_body"),
+                "impulse_ratio":     result.get("impulse_ratio"),
                 "candles":           result.get("candles", []),
             })
         except Exception as e:
@@ -772,7 +765,6 @@ class PairServer:
                 df[col] = pd.to_numeric(df[col].squeeze(), errors='coerce')
             df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-            import numpy as np
             bodies   = np.abs(df['Close'].values - df['Open'].values)
             avg_body = float(np.mean(bodies))
 
@@ -995,7 +987,6 @@ class PairServer:
         try:
             if PLAYWRIGHT_AVAILABLE:
                 highlight_ts = zone.get("start", "")
-                # Pass center_ts so the chart JS can scroll the breakout candle to center
                 breakout_ts = ""
                 if zone.get("breakout_candle"):
                     breakout_ts = zone["breakout_candle"].get("time", "")
@@ -1009,14 +1000,10 @@ class PairServer:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page(viewport={"width": 1280, "height": 720})
                     page.goto(page_url)
-                    # Wait for the chart to signal it has centered on the target candle.
-                    # _screenshotReady is set by the page after setVisibleLogicalRange completes.
-                    # Falls back to a 6s hard timeout if centering never fires (e.g. no data).
                     try:
                         page.wait_for_function("window._screenshotReady === true", timeout=6000)
                     except Exception:
-                        pass  # timeout — chart rendered but centering may not have fired
-                    # Small settle delay to let the chart finish painting
+                        pass
                     page.wait_for_timeout(300)
                     page.screenshot(path=screenshot_path)
                     browser.close()
@@ -1064,8 +1051,6 @@ class PairServer:
     def run(self):
         print(f"[{self.pair_id}] Starting on http://0.0.0.0:{self.port}")
 
-        # Apply ProxyFix so Flask respects X-Forwarded-For/Proto/Host headers
-        # from the reverse proxy, preventing redirects to raw port URLs.
         from werkzeug.middleware.proxy_fix import ProxyFix
         self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
