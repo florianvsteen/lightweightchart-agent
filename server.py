@@ -731,12 +731,7 @@ class PairServer:
             from tools.sessions import get_current_session
 
             interval = request.args.get("interval", "1m")
-            with self._cache_lock:
-                cached = self._df_cache.get(interval)
-            if cached is not None and len(cached) > 0:
-                full_df = cached.copy()
-            else:
-                full_df = _provider_get_df(self.ticker, interval, self.period)
+            full_df = _provider_get_df(self.ticker, interval, self.period)
                 
             full_df = full_df.dropna()
             print(f"[REPLAY] raw_idx={raw_idx} raw_total={request.args.get('total')} full_df_len={len(full_df)}")
