@@ -252,6 +252,58 @@
   .draw-ctx-item.danger { color: #f05a7e; }
   .draw-ctx-item.danger:hover { background: rgba(240,90,126,0.1); }
 
+  /* Delete selected button state */
+  .left-tool-btn.danger.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  .left-tool-btn.danger.disabled:hover {
+    background: none;
+    border-color: rgba(240,90,126,0.4);
+  }
+
+  /* Selection indicator tooltip */
+  #selection-indicator {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 0.72rem;
+    color: var(--accent);
+    display: none;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  #selection-indicator.visible { display: flex; align-items: center; gap: 12px; }
+  #selection-indicator kbd {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text);
+  }
+  #selection-indicator button {
+    background: rgba(240,90,126,0.15);
+    border: 1px solid rgba(240,90,126,0.4);
+    border-radius: 3px;
+    padding: 4px 10px;
+    color: #f05a7e;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  #selection-indicator button:hover {
+    background: rgba(240,90,126,0.25);
+    border-color: #f05a7e;
+  }
+
   /* ── CVD resize handle ───────────────────────────────────────────── */
   #cvd-resize-handle {
     height: 5px;
@@ -693,6 +745,7 @@
     <button class="left-tool-btn" data-tool="ray" title="Ray (R)">&#8594;</button>
     <button class="left-tool-btn" data-tool="box" title="Box (B)">&#9645;</button>
     <div class="left-tool-divider"></div>
+    <button class="left-tool-btn danger disabled" id="left-delete-selected" title="Delete selected (Del)">&#10006;</button>
     <button class="left-tool-btn danger" id="left-clear-all" title="Clear all drawings">&#128465;</button>
   </div>
 
@@ -726,6 +779,13 @@
   <!-- Drawing context menu -->
   <div id="draw-context-menu">
     <div class="draw-ctx-item danger" id="draw-ctx-delete">🗑 Delete drawing</div>
+  </div>
+
+  <!-- Selection indicator -->
+  <div id="selection-indicator">
+    <span>Drawing selected</span>
+    <kbd>Del</kbd> or <kbd>⌫</kbd> to delete
+    <button id="indicator-delete-btn">Delete</button>
   </div>
 
   <!-- Right Panel -->
@@ -1726,10 +1786,11 @@
   // ════════════════════════════════════════════════════════════════════
 
   // ── State ────────────────────────────────────────────────────────────
-  let _drawTool      = 'cursor';   // current active tool
-  let _drawings      = [];          // all loaded drawings
+  let _drawTool       = 'cursor';   // current active tool
+  let _drawings       = [];         // all loaded drawings
   let _drawInProgress = null;       // {type, chart, points:[{time,value}]}
   let _hoveredDrawing = null;       // id of drawing under mouse
+  let _selectedDrawing = null;      // id of selected drawing (click to select)
   let _contextTarget  = null;       // drawing id for context menu
 
   const TOOL_STYLES = {
@@ -1738,6 +1799,39 @@
     ray:   { color: '#c080e0', lineWidth: 1, lineStyle: 0 },
     box:   { color: '#50b896', lineWidth: 1, lineStyle: 0 },
   };
+
+  // ── Selection UI ────────────────────────────────────────────────────
+  function updateSelectionUI() {
+    const deleteBtn = document.getElementById('left-delete-selected');
+    const indicator = document.getElementById('selection-indicator');
+    if (_selectedDrawing) {
+      deleteBtn.classList.remove('disabled');
+      indicator.classList.add('visible');
+    } else {
+      deleteBtn.classList.add('disabled');
+      indicator.classList.remove('visible');
+    }
+  }
+
+  function selectDrawing(id) {
+    _selectedDrawing = id;
+    updateSelectionUI();
+    renderAllDrawings();
+  }
+
+  function clearSelection() {
+    _selectedDrawing = null;
+    updateSelectionUI();
+    renderAllDrawings();
+  }
+
+  function deleteSelectedDrawing() {
+    if (_selectedDrawing) {
+      deleteDrawing(_selectedDrawing);
+      _selectedDrawing = null;
+      updateSelectionUI();
+    }
+  }
 
   // ── Toolbar ──────────────────────────────────────────────────────────
   function setDrawTool(tool) {
@@ -1814,6 +1908,8 @@
     if (!confirm(`Delete all ${_drawings.length} drawing(s)?`)) return;
     const ids = _drawings.map(d => d.id);
     _drawings = [];
+    _selectedDrawing = null;
+    updateSelectionUI();
     renderAllDrawings();
     for (const id of ids) {
       try { await fetch(`/proxy/${PAIR_ID}/api/drawings/${id}`, { method: 'DELETE' }); } catch(e) {}
@@ -1972,7 +2068,7 @@
       renderDivergenceLines(ctx, panelId);
 
       const panelDrawings = _drawings.filter(d => d && d.chart === panelId);
-      panelDrawings.forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
+      panelDrawings.forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing, false, d.id === _selectedDrawing));
 
       // Draw in-progress preview
       if (_drawInProgress && _drawInProgress.chart === panelId) {
@@ -1981,10 +2077,27 @@
     });
   }
 
-  function renderDrawing(ctx, d, panelId, hovered, preview) {
+  function renderDrawing(ctx, d, panelId, hovered, preview, selected) {
     const style = d.style || TOOL_STYLES[d.type] || TOOL_STYLES.line;
-    ctx.strokeStyle = hovered ? '#ffffff' : style.color;
-    ctx.lineWidth   = hovered ? style.lineWidth + 1 : style.lineWidth;
+
+    // Selected state: cyan glow effect
+    if (selected) {
+      ctx.strokeStyle = '#5af0c4';
+      ctx.lineWidth = style.lineWidth + 2;
+      ctx.shadowColor = '#5af0c4';
+      ctx.shadowBlur = 8;
+    } else if (hovered) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = style.lineWidth + 1;
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.lineWidth;
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+    }
+
     ctx.globalAlpha = preview ? 0.55 : 1;
     setLineDash(ctx, style.lineStyle);
 
@@ -2022,8 +2135,8 @@
       const x1 = Math.min(pts[0].x, pts[1].x), x2 = Math.max(pts[0].x, pts[1].x);
       const y1 = Math.min(pts[0].y, pts[1].y), y2 = Math.max(pts[0].y, pts[1].y);
       ctx.rect(x1, y1, x2-x1, y2-y1);
-      ctx.globalAlpha = hovered ? 0.15 : 0.07;
-      ctx.fillStyle = style.color;
+      ctx.globalAlpha = selected ? 0.2 : (hovered ? 0.15 : 0.07);
+      ctx.fillStyle = selected ? '#5af0c4' : style.color;
       ctx.fill();
       ctx.globalAlpha = preview ? 0.55 : 1;
     }
@@ -2031,6 +2144,8 @@
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   }
 
   // ── Hit testing ──────────────────────────────────────────────────────
@@ -2081,7 +2196,26 @@
   function pointsNeeded(tool) { return tool === 'hline' ? 1 : 2; }
 
   function handleChartClick(e, panelId) {
-    if (_drawTool === 'cursor') return;
+    // In cursor mode, handle selection
+    if (_drawTool === 'cursor') {
+      const el = containerForPanel(panelId);
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const hit = hitTest(mx, my, panelId);
+      if (hit) {
+        // Toggle selection: if already selected, deselect; else select
+        if (_selectedDrawing === hit) {
+          clearSelection();
+        } else {
+          selectDrawing(hit);
+        }
+      } else {
+        // Click on empty area: deselect
+        clearSelection();
+      }
+      return;
+    }
     e.stopPropagation();
 
     const pt = mouseToPoint(e, panelId);
@@ -2127,8 +2261,8 @@
         const ctx = cvs.getContext('2d');
         ctx.clearRect(0, 0, cvs.width, cvs.height);
         _drawings.filter(d => d && d.chart === panelId)
-          .forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing));
-        renderDrawing(ctx, preview, panelId, false, true);
+          .forEach(d => renderDrawing(ctx, d, panelId, d.id === _hoveredDrawing, false, d.id === _selectedDrawing));
+        renderDrawing(ctx, preview, panelId, false, true, false);
         return;
       }
     }
@@ -2177,6 +2311,11 @@
   // Context menu actions
   document.getElementById('draw-ctx-delete').addEventListener('click', () => {
     if (_contextTarget) {
+      // If deleted drawing was selected, clear selection
+      if (_selectedDrawing === _contextTarget) {
+        _selectedDrawing = null;
+        updateSelectionUI();
+      }
       deleteDrawing(_contextTarget);
       _contextTarget = null;
     }
@@ -2188,12 +2327,34 @@
     document.getElementById('draw-context-menu').classList.remove('visible');
   });
 
-  // Escape cancels in-progress drawing
+  // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && _drawInProgress) {
-      _drawInProgress = null;
-      renderAllDrawings();
+    // Escape cancels in-progress drawing or clears selection
+    if (e.key === 'Escape') {
+      if (_drawInProgress) {
+        _drawInProgress = null;
+        renderAllDrawings();
+      } else if (_selectedDrawing) {
+        clearSelection();
+      }
     }
+    // Delete or Backspace deletes selected drawing
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _selectedDrawing) {
+      // Don't delete if user is typing in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      deleteSelectedDrawing();
+    }
+  });
+
+  // Delete selected button in toolbar
+  document.getElementById('left-delete-selected').addEventListener('click', () => {
+    deleteSelectedDrawing();
+  });
+
+  // Delete button in selection indicator
+  document.getElementById('indicator-delete-btn').addEventListener('click', () => {
+    deleteSelectedDrawing();
   });
 
   // Re-render drawings when charts scroll/zoom (coordinates change)
