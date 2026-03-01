@@ -826,6 +826,7 @@ async function runDetector() {
     // so that df[-1] IS the aggressor candidate.
     const res  = await fetch(BASE_URL + '/debug/replay?idx=' + replayIdx + '&interval=' + currentTF);
     const data = await res.json();
+    console.log('runDetector: replayIdx', replayIdx, 'sending idx', replayIdx);
     if (data.error) { console.error('Replay error:', data.error); return; }
     replayResult = data;
     renderAccumPanel(data, true);
@@ -1196,7 +1197,9 @@ document.getElementById('btn-prev').addEventListener('click', () => {
   stopPlay(); if (replayIdx > 18) seekTo(replayIdx - 1, true);  // step back
 });
 document.getElementById('btn-next').addEventListener('click', () => {
-  stopPlay(); if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1, true);  // step forward
+  stopPlay();
+  console.log('next: replayIdx before', replayIdx, 'total', liveData.candles.length);
+  if (replayIdx < liveData.candles.length) seekTo(replayIdx + 1, true);  // step forward
 });
 document.getElementById('btn-analyze').addEventListener('click', runDetector);
 
