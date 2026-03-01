@@ -1193,7 +1193,7 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      ();
+      loadData(); //
       loadCvd(true);   // interval changed — force fresh fetch
     });
   });
