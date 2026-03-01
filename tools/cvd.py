@@ -248,65 +248,59 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
-    left_pivot: int = 5,
-    max_width: int = 10, # <--- NEW: Strict 10-candle limit
+    max_width: int = 10,
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
 
-    # 1. Get Synchronized Anchors (The 1-to-1 points)
+    # 1. Get every single fractal peak/valley where Price and CVD agree
     s_highs, s_lows = detect_synchronized_pivots(
-        price_highs, price_lows, cvd_highs, cvd_lows, left_pivot
+        price_highs, price_lows, cvd_highs, cvd_lows
     )
 
     # --- DEBUGGING OUTPUT ---
-    print("\n--- DIVERGENCE DETECTOR DEBUG ---")
+    print("\n--- FRACTAL DETECTOR DEBUG ---")
     print(f"Total Bars Processed: {len(times)}")
-    print(f"Synchronized High Anchors (Price+CVD): {len(s_highs)}")
-    print(f"Synchronized Low Anchors (Price+CVD):  {len(s_lows)}")
-    print("---------------------------------\n")
+    print(f"Fractal High Anchors: {len(s_highs)}")
+    print(f"Fractal Low Anchors:  {len(s_lows)}")
+    print("------------------------------\n")
 
-    # 2. Bearish Divergence (HH in Price + LH in CVD)
+    # 2. Bearish Scan (HH Price, LH CVD)
     for i in range(1, len(s_highs)):
-        h1, h2 = s_highs[i-1], s_highs[i]
-        
-        # Check Max Width Constraint
-        if abs(h2['index'] - h1['index']) > max_width:
-            continue
+        h2 = s_highs[i]
+        # Look back at previous fractal highs within 10 candles
+        for j in range(i - 1, -1, -1):
+            h1 = s_highs[j]
+            if h2['index'] - h1['index'] > max_width:
+                break # Too far away
+            
+            if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
+                divergences.append({
+                    "type": "bearish", "label": "Bear Div", "price_time": times[h2['index']],
+                    "price_pivot_1": {"bar": h1['index'], "value": float(h1['p_val'])},
+                    "price_pivot_2": {"bar": h2['index'], "value": float(h2['p_val'])},
+                    "cvd_pivot_1": {"bar": h1['index'], "value": float(h1['c_val'])},
+                    "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
+                })
+                break # Only match the most recent valid divergence
 
-        if h2['p_val'] > h1['p_val'] and h2['c_val'] < h1['c_val']:
-            divergences.append({
-                "type": "bearish",
-                "label": "Bear Div",
-                "price_time": times[h2['index']],
-                "price_value": float(h2['p_val']),
-                "cvd_value": float(h2['c_val']),
-                "price_pivot_1": {"bar": h1['index'], "value": float(h1['p_val'])},
-                "price_pivot_2": {"bar": h2['index'], "value": float(h2['p_val'])},
-                "cvd_pivot_1": {"bar": h1['index'], "value": float(h1['c_val'])},
-                "cvd_pivot_2": {"bar": h2['index'], "value": float(h2['c_val'])}
-            })
-
-    # 3. Bullish Divergence (LL in Price + HL in CVD)
+    # 3. Bullish Scan (LL Price, HL CVD)
     for i in range(1, len(s_lows)):
-        l1, l2 = s_lows[i-1], s_lows[i]
-        
-        # Check Max Width Constraint
-        if abs(l2['index'] - l1['index']) > max_width:
-            continue
-
-        if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
-            divergences.append({
-                "type": "bullish",
-                "label": "Bull Div",
-                "price_time": times[l2['index']],
-                "price_value": float(l2['p_val']),
-                "cvd_value": float(l2['c_val']),
-                "price_pivot_1": {"bar": l1['index'], "value": float(l1['p_val'])},
-                "price_pivot_2": {"bar": l2['index'], "value": float(l2['p_val'])},
-                "cvd_pivot_1": {"bar": l1['index'], "value": float(l1['c_val'])},
-                "cvd_pivot_2": {"bar": l2['index'], "value": float(l2['c_val'])}
-            })
+        l2 = s_lows[i]
+        for j in range(i - 1, -1, -1):
+            l1 = s_lows[j]
+            if l2['index'] - l1['index'] > max_width:
+                break
+            
+            if l2['p_val'] < l1['p_val'] and l2['c_val'] > l1['c_val']:
+                divergences.append({
+                    "type": "bullish", "label": "Bull Div", "price_time": times[l2['index']],
+                    "price_pivot_1": {"bar": l1['index'], "value": float(l1['p_val'])},
+                    "price_pivot_2": {"bar": l2['index'], "value": float(l2['p_val'])},
+                    "cvd_pivot_1": {"bar": l1['index'], "value": float(l1['c_val'])},
+                    "cvd_pivot_2": {"bar": l2['index'], "value": float(l2['c_val'])}
+                })
+                break
 
     return divergences
     
