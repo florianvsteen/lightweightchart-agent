@@ -17,6 +17,8 @@
     --accent:  #5af0c4;
     --accent2: #f05a7e;
     --blue:    #5a9ef0;
+    --cvd-bull: #5af0c4;
+    --cvd-bear: #f05a7e;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -115,21 +117,91 @@
     gap: 0;
   }
 
-  /* ── Chart ────────────────────────────────────────────────────────── */
+  /* ── Chart column ─────────────────────────────────────────────────── */
   #chart-wrap {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
+  /* Price chart */
   #chart-container {
     flex: 1;
     border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     position: relative;
     overflow: hidden;
+    min-height: 0;
   }
   #chart { width: 100%; height: 100%; }
+
+  /* ── CVD chart panel ──────────────────────────────────────────────── */
+  #cvd-panel {
+    height: 150px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  #cvd-chart { width: 100%; height: 100%; }
+
+  /* CVD header bar */
+  #cvd-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    z-index: 10;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(10,10,12,0.85) 0%, transparent 100%);
+  }
+  #cvd-title {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #cvd-value {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  #cvd-net-badge {
+    font-size: 0.58rem;
+    padding: 1px 6px;
+    border-radius: 2px;
+    border: 1px solid;
+    letter-spacing: 0.06em;
+  }
+  #cvd-net-badge.bull { border-color: rgba(90,240,196,0.4); color: var(--cvd-bull); background: rgba(90,240,196,0.06); }
+  #cvd-net-badge.bear { border-color: rgba(240,90,126,0.4); color: var(--cvd-bear); background: rgba(240,90,126,0.06); }
+  #cvd-net-badge.flat { border-color: var(--border2); color: var(--muted); }
+
+  /* Divergence badge */
+  #cvd-div-badge {
+    font-size: 0.58rem;
+    padding: 1px 6px;
+    border-radius: 2px;
+    letter-spacing: 0.06em;
+    display: none;
+  }
+  #cvd-div-badge.bull-div { border: 1px solid rgba(90,240,196,0.5); color: var(--cvd-bull); background: rgba(90,240,196,0.08); display: inline-block; }
+  #cvd-div-badge.bear-div { border: 1px solid rgba(240,90,126,0.5); color: var(--cvd-bear); background: rgba(240,90,126,0.08); display: inline-block; }
+
+  /* No-volume note */
+  #cvd-no-vol {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    display: none;
+  }
 
   /* Candle tooltip */
   #candle-tooltip {
@@ -177,7 +249,6 @@
     margin-bottom: 10px;
   }
 
-  /* Combined bias pill + individual timeframe grid */
   #bias-combined-row {
     display: flex;
     align-items: center;
@@ -200,7 +271,6 @@
   .bias-pill.strong_bearish { border-color: rgba(231,76,60,0.5); color: #e74c3c; background: rgba(231,76,60,0.08); font-weight: 700; }
   .bias-pill.misaligned     { border-color: var(--border2); color: var(--muted); }
 
-  /* Daily / Weekly breakdown grid */
   #bias-breakdown {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -231,10 +301,7 @@
   .bias-tf-val.bearish        { color: var(--accent2); }
   .bias-tf-val.strong_bearish { color: #e74c3c; }
   .bias-tf-val.misaligned     { color: var(--muted); }
-  .bias-tf-price {
-    font-size: 0.6rem;
-    color: var(--muted);
-  }
+  .bias-tf-price { font-size: 0.6rem; color: var(--muted); }
 
   .bias-misaligned-warn {
     display: none;
@@ -247,7 +314,6 @@
     margin-top: 2px;
   }
 
-  /* Detector status */
   #detector-section {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
@@ -275,7 +341,6 @@
   .det-dot.bearish   { background: var(--accent2); box-shadow: 0 0 5px rgba(240,90,126,0.4); }
   .det-dot.cooldown  { background: #d4a017; box-shadow: 0 0 5px rgba(212,160,23,0.4); }
 
-  /* Candle click detail */
   #candle-section {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
@@ -351,7 +416,6 @@
     border-bottom: 1px solid var(--border);
   }
   .news-item:last-child { border-bottom: none; }
-
   .news-source {
     font-size: 0.55rem;
     letter-spacing: 0.15em;
@@ -359,14 +423,23 @@
     color: var(--muted);
     margin-bottom: 3px;
   }
-
-  .news-headline {
+  .news-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3px;
+  }
+  .news-age { font-size: 0.55rem; color: var(--muted); letter-spacing: 0.08em; white-space: nowrap; }
+  a.news-headline {
+    display: block;
     font-size: 0.68rem;
     color: var(--text);
     line-height: 1.5;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
+    text-decoration: none;
+    transition: color 0.15s;
   }
-
+  a.news-headline:hover { color: var(--accent); }
   .news-sentiment {
     display: inline-block;
     font-size: 0.55rem;
@@ -379,47 +452,8 @@
   .news-sentiment.bullish  { border-color: rgba(90,240,196,0.3); color: var(--accent); background: rgba(90,240,196,0.05); }
   .news-sentiment.bearish  { border-color: rgba(240,90,126,0.3); color: var(--accent2); background: rgba(240,90,126,0.05); }
   .news-sentiment.neutral  { border-color: var(--border2); color: var(--muted); }
-
-  .news-meta-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 3px;
-  }
-
-  .news-age {
-    font-size: 0.55rem;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-  }
-
-  a.news-headline {
-    display: block;
-    font-size: 0.68rem;
-    color: var(--text);
-    line-height: 1.5;
-    margin-bottom: 4px;
-    text-decoration: none;
-    transition: color 0.15s;
-  }
-
-  a.news-headline:hover {
-    color: var(--accent);
-  }
-  
-  .news-loading {
-    font-size: 0.65rem;
-    color: var(--muted);
-    padding: 12px 0;
-    text-align: center;
-    font-style: italic;
-  }
-
-  .news-dot {
-    display: inline-block;
-    animation: blink 1.2s step-end infinite;
-  }
+  .news-loading { font-size: 0.65rem; color: var(--muted); padding: 12px 0; text-align: center; font-style: italic; }
+  .news-dot { display: inline-block; animation: blink 1.2s step-end infinite; }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
   /* Weekend overlay */
@@ -464,27 +498,36 @@
 </header>
 
 <div class="main">
-  <!-- Chart -->
+  <!-- Chart column -->
   <div id="chart-wrap">
+    <!-- Price chart -->
     <div id="chart-container">
       <div id="chart"></div>
       <div id="candle-tooltip"></div>
+    </div>
+
+    <!-- CVD chart panel -->
+    <div id="cvd-panel">
+      <div id="cvd-header">
+        <span id="cvd-title">CVD</span>
+        <span id="cvd-value">—</span>
+        <span id="cvd-net-badge" class="flat">flat</span>
+        <span id="cvd-div-badge"></span>
+        <span id="cvd-no-vol">· tick vol</span>
+      </div>
+      <div id="cvd-chart"></div>
     </div>
   </div>
 
   <!-- Right Panel -->
   <div id="right-panel">
 
-    <!-- ── Bias ──────────────────────────────────────────────────── -->
+    <!-- Bias -->
     <div id="bias-section">
       <div class="section-title">Bias</div>
-
-      <!-- Combined verdict pill -->
       <div id="bias-combined-row">
         <span class="bias-pill" id="bias-pill">Loading...</span>
       </div>
-
-      <!-- Daily / Weekly breakdown -->
       <div id="bias-breakdown">
         <div class="bias-tf-cell">
           <div class="bias-tf-label">Daily</div>
@@ -497,7 +540,6 @@
           <div class="bias-tf-price" id="weekly-bias-price">O — · C —</div>
         </div>
       </div>
-
       <div class="bias-misaligned-warn" id="bias-misaligned-warn">
         ⚡ Daily &amp; weekly conflict — lower confidence
       </div>
@@ -545,7 +587,7 @@
   const ALWAYS_OPEN    = {{ 'true' if always_open else 'false' }};
   const TIMEZONE       = "{{ timezone }}";
   const DEFAULT_IV     = "{{ default_interval }}";
-  const DETECTOR_TYPE  = "{{ detector_type }}";  // 'accumulation' or 'supply_demand'
+  const DETECTOR_TYPE  = "{{ detector_type }}";
 
   // ── Timezone ────────────────────────────────────────────────────────
   function getTzOffset(tz) {
@@ -607,6 +649,7 @@
   // ── Price formatter ──────────────────────────────────────────────────
   function fmtPrice(p, id) {
     if (p==null) return '---';
+    id = id || PAIR_ID;
     if (['EURUSD','EURGBP','GBPUSD','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(id)) return p.toFixed(5);
     if (['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'].includes(id)) return p.toFixed(3);
     if (id==='XAUUSD') return p.toFixed(2);
@@ -622,15 +665,16 @@
     return {type:'price',precision:0,minMove:1};
   }
 
-  // ── Chart Setup ──────────────────────────────────────────────────────
+  // ── Price chart setup ────────────────────────────────────────────────
   let currentInterval = DEFAULT_IV;
 
-  const container = document.getElementById('chart');
-  const chart = LightweightCharts.createChart(container, {
+  const priceContainer = document.getElementById('chart');
+  const chart = LightweightCharts.createChart(priceContainer, {
     layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
     grid: { vertLines:{visible:false}, horzLines:{visible:false} },
     timeScale: { timeVisible:true, borderColor:'#1e1e28' },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#1e1e28' },
   });
 
   const candleSeries = chart.addCandlestickSeries({
@@ -645,9 +689,96 @@
   window._chartRef = chart;
   window._tzOffset = TZ_OFFSET;
 
-  window.addEventListener('resize', () => {
-    chart.applyOptions({width: container.clientWidth});
+  // ── CVD chart setup ──────────────────────────────────────────────────
+  const cvdContainer = document.getElementById('cvd-chart');
+  const cvdChart = LightweightCharts.createChart(cvdContainer, {
+    layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
+    grid: { vertLines:{visible:false}, horzLines:{color:'#1e1e28'} },
+    timeScale: { timeVisible:true, borderColor:'#1e1e28', visible: true },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#1e1e28' },
+    leftPriceScale:  { visible: false },
+    handleScroll: true,
+    handleScale:  true,
   });
+
+  // CVD line + histogram series
+  let cvdLineSeries   = null;
+  let cvdHistSeries   = null;
+  let cvdZeroSeries   = null;
+
+  function initCvdSeries() {
+    if (cvdLineSeries) {
+      try { cvdChart.removeSeries(cvdLineSeries); } catch(e) {}
+      cvdLineSeries = null;
+    }
+    if (cvdHistSeries) {
+      try { cvdChart.removeSeries(cvdHistSeries); } catch(e) {}
+      cvdHistSeries = null;
+    }
+    if (cvdZeroSeries) {
+      try { cvdChart.removeSeries(cvdZeroSeries); } catch(e) {}
+      cvdZeroSeries = null;
+    }
+
+    // Zero baseline
+    cvdZeroSeries = cvdChart.addLineSeries({
+      color: 'rgba(74,74,96,0.5)',
+      lineWidth: 1,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+
+    // Histogram bars for delta
+    cvdHistSeries = cvdChart.addHistogramSeries({
+      color: 'rgba(90,240,196,0.25)',
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'left',
+      scaleMargins: { top: 0.7, bottom: 0 },
+    });
+
+    // Main CVD line
+    cvdLineSeries = cvdChart.addLineSeries({
+      color: '#5af0c4',
+      lineWidth: 2,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      lastPriceAnimation: 1,
+    });
+  }
+
+  initCvdSeries();
+
+  // Sync time scales: when price chart scrolls, CVD follows
+  let _syncingFromPrice = false;
+  let _syncingFromCvd   = false;
+
+  chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (_syncingFromCvd) return;
+    if (!range) return;
+    _syncingFromPrice = true;
+    try { cvdChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+    _syncingFromPrice = false;
+  });
+
+  cvdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (_syncingFromPrice) return;
+    if (!range) return;
+    _syncingFromCvd = true;
+    try { chart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+    _syncingFromCvd = false;
+  });
+
+  // ── Resize handler ───────────────────────────────────────────────────
+  function handleResize() {
+    chart.applyOptions({ width: priceContainer.clientWidth });
+    cvdChart.applyOptions({ width: cvdContainer.clientWidth });
+  }
+  window.addEventListener('resize', handleResize);
 
   // ── Timeframe buttons ────────────────────────────────────────────────
   document.querySelectorAll('.tf-btn').forEach(btn => {
@@ -657,6 +788,7 @@
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
       loadData();
+      loadCvd();
     });
   });
 
@@ -751,6 +883,80 @@
     return all;
   }
 
+  // ── CVD rendering ────────────────────────────────────────────────────
+  function renderCvd(cvdData) {
+    if (!cvdData || !cvdData.cvd || !cvdData.cvd.length) return;
+
+    const points    = cvdData.cvd;
+    const divs      = cvdData.divergences || [];
+    const stats     = cvdData.stats || {};
+    const hasVolume = cvdData.has_volume;
+
+    // Build line data (time-shifted)
+    const lineData = points.map(p => ({ time: shiftTime(p.time), value: p.value }));
+
+    // Build histogram data: colour by delta sign
+    const histData = points.map(p => ({
+      time:  shiftTime(p.time),
+      value: p.delta,
+      color: p.delta >= 0 ? 'rgba(90,240,196,0.35)' : 'rgba(240,90,126,0.35)',
+    }));
+
+    // Zero line: span from first to last timestamp
+    const zeroData = [
+      { time: lineData[0].time,                     value: 0 },
+      { time: lineData[lineData.length - 1].time,   value: 0 },
+    ];
+
+    // Colour the CVD line based on trend direction
+    const net = stats.net || 0;
+    const lineColor = net > 0 ? '#5af0c4' : net < 0 ? '#f05a7e' : '#7070a0';
+
+    cvdLineSeries.applyOptions({ color: lineColor });
+    cvdZeroSeries.setData(zeroData);
+    cvdHistSeries.setData(histData);
+    cvdLineSeries.setData(lineData);
+
+    // Add divergence markers on the CVD line
+    if (divs.length) {
+      const markers = divs.map(d => ({
+        time:     shiftTime(d.price_time),
+        position: d.type === 'bullish' ? 'belowBar' : 'aboveBar',
+        shape:    d.type === 'bullish' ? 'arrowUp'  : 'arrowDown',
+        color:    d.type === 'bullish' ? '#5af0c4'  : '#f05a7e',
+        text:     d.label,
+        size:     1,
+      })).sort((a, b) => a.time - b.time);
+      cvdLineSeries.setMarkers(markers);
+    } else {
+      cvdLineSeries.setMarkers([]);
+    }
+
+    // Update header badges
+    const lastVal = stats.last;
+    document.getElementById('cvd-value').textContent =
+      lastVal != null ? (lastVal > 0 ? '+' : '') + lastVal.toLocaleString(undefined, {maximumFractionDigits: 2}) : '—';
+
+    const netBadge = document.getElementById('cvd-net-badge');
+    const netLabel = net > 0 ? '↑ buying' : net < 0 ? '↓ selling' : '— flat';
+    netBadge.textContent = netLabel;
+    netBadge.className = `${net > 0 ? 'bull' : net < 0 ? 'bear' : 'flat'}`;
+
+    // Divergence badge: show the most recent divergence
+    const divBadge = document.getElementById('cvd-div-badge');
+    if (divs.length) {
+      const latest = divs[divs.length - 1];
+      divBadge.textContent = latest.label;
+      divBadge.className = latest.type === 'bullish' ? 'bull-div' : 'bear-div';
+    } else {
+      divBadge.className = '';
+      divBadge.textContent = '';
+    }
+
+    // No-volume note
+    document.getElementById('cvd-no-vol').style.display = hasVolume ? 'none' : 'inline';
+  }
+
   // ── Bias display ─────────────────────────────────────────────────────
   function biasIcon(b) {
     switch(b) {
@@ -769,9 +975,6 @@
       case 'strong_bearish': return 'Strong Bearish';
       default:               return 'Misaligned';
     }
-  }
-  function biasCssClass(b) {
-    return b || 'misaligned';
   }
 
   function updateBiasDisplay(biasInfo) {
@@ -795,29 +998,21 @@
     const daily    = biasInfo.daily_bias  || 'misaligned';
     const weekly   = biasInfo.weekly_bias || 'misaligned';
 
-    // Combined pill
     pill.textContent = `${biasIcon(combined)} ${biasShortLabel(combined)}`;
-    pill.className   = `bias-pill ${biasCssClass(combined)}`;
+    pill.className   = `bias-pill ${combined}`;
 
-    // Daily cell
     dailyVal.textContent = `${biasIcon(daily)} ${biasShortLabel(daily)}`;
-    dailyVal.className   = `bias-tf-val ${biasCssClass(daily)}`;
+    dailyVal.className   = `bias-tf-val ${daily}`;
     if (biasInfo.daily_open != null && biasInfo.daily_close != null) {
-      dailyPx.textContent = `O ${fmtPrice(biasInfo.daily_open, PAIR_ID)} · C ${fmtPrice(biasInfo.daily_close, PAIR_ID)}`;
-    } else {
-      dailyPx.textContent = '';
+      dailyPx.textContent = `O ${fmtPrice(biasInfo.daily_open)} · C ${fmtPrice(biasInfo.daily_close)}`;
     }
 
-    // Weekly cell
     weeklyVal.textContent = `${biasIcon(weekly)} ${biasShortLabel(weekly)}`;
-    weeklyVal.className   = `bias-tf-val ${biasCssClass(weekly)}`;
+    weeklyVal.className   = `bias-tf-val ${weekly}`;
     if (biasInfo.weekly_open != null && biasInfo.weekly_close != null) {
-      weeklyPx.textContent = `O ${fmtPrice(biasInfo.weekly_open, PAIR_ID)} · C ${fmtPrice(biasInfo.weekly_close, PAIR_ID)}`;
-    } else {
-      weeklyPx.textContent = '';
+      weeklyPx.textContent = `O ${fmtPrice(biasInfo.weekly_open)} · C ${fmtPrice(biasInfo.weekly_close)}`;
     }
 
-    // Misaligned warning
     warn.style.display = (combined === 'misaligned') ? '' : 'none';
   }
 
@@ -841,7 +1036,7 @@
         text.textContent='Aggressor candle confirmed ✓';
       } else if (z.status==='found') {
         dot.className='det-dot found';
-        text.textContent=`Accumulation found`;
+        text.textContent='Accumulation found';
       } else if (z.status==='active') {
         dot.className='det-dot potential';
         text.textContent='Accumulation forming';
@@ -866,7 +1061,6 @@
   // ── Candle click ─────────────────────────────────────────────────────
   let _rawCandles = [];
   window._rawCandles = _rawCandles;
-  let _detectorResults = {};
 
   async function showCandleDetail(c) {
     const isBull = c.close >= c.open;
@@ -874,10 +1068,10 @@
     const change = c.open>0 ? ((c.close-c.open)/c.open*100) : 0;
     det.innerHTML = `
       <div class="cd-row"><span class="cd-label">Time</span><span class="cd-val">${fmtTime(c.time)}</span></div>
-      <div class="cd-row"><span class="cd-label">Open</span><span class="cd-val">${fmtPrice(c.open,PAIR_ID)}</span></div>
-      <div class="cd-row"><span class="cd-label">High</span><span class="cd-val">${fmtPrice(c.high,PAIR_ID)}</span></div>
-      <div class="cd-row"><span class="cd-label">Low</span><span class="cd-val">${fmtPrice(c.low,PAIR_ID)}</span></div>
-      <div class="cd-row"><span class="cd-label">Close</span><span class="cd-val ${isBull?'up':'down'}">${fmtPrice(c.close,PAIR_ID)}</span></div>
+      <div class="cd-row"><span class="cd-label">Open</span><span class="cd-val">${fmtPrice(c.open)}</span></div>
+      <div class="cd-row"><span class="cd-label">High</span><span class="cd-val">${fmtPrice(c.high)}</span></div>
+      <div class="cd-row"><span class="cd-label">Low</span><span class="cd-val">${fmtPrice(c.low)}</span></div>
+      <div class="cd-row"><span class="cd-label">Close</span><span class="cd-val ${isBull?'up':'down'}">${fmtPrice(c.close)}</span></div>
       <div class="cd-row"><span class="cd-label">Change</span><span class="cd-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>
       <div id="candle-explain"><span class="ce-loading">Analysing candle…</span></div>`;
 
@@ -905,7 +1099,7 @@
     }
   }
 
-  // Subscribe to crosshair move to show candle data in tooltip
+  // Crosshair tooltip
   chart.subscribeCrosshairMove((param) => {
     const tooltip = document.getElementById('candle-tooltip');
     if (!param.time || !param.seriesData) { tooltip.style.display='none'; return; }
@@ -917,24 +1111,30 @@
     tooltip.style.display = '';
     tooltip.innerHTML = `
       <div class="ct-pair">${PAIR_ID} · ${fmtTime(rawTime)}</div>
-      <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open,PAIR_ID)}</span></div>
-      <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high,PAIR_ID)}</span></div>
-      <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low,PAIR_ID)}</span></div>
-      <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull?'up':'down'}">${fmtPrice(data.close,PAIR_ID)}</span></div>
+      <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open)}</span></div>
+      <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high)}</span></div>
+      <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
+      <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull?'up':'down'}">${fmtPrice(data.close)}</span></div>
       <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull?'up':'down'}">${isBull?'+':''}${change.toFixed(3)}%</span></div>`;
   });
 
-  // Click to lock candle detail in right panel
-  container.addEventListener('click', (e) => {
-    const logical = chart.timeScale().coordinateToLogical(e.clientX - container.getBoundingClientRect().left);
-    if (logical==null) return;
+  // Click to show candle detail
+  priceContainer.addEventListener('click', (e) => {
     if (!_rawCandles.length) return;
-    const ts = _rawCandles.reduce((best,c) => Math.abs(shiftTime(c.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) < Math.abs(shiftTime(best.time)-chart.timeScale().coordinateToTime(e.clientX-container.getBoundingClientRect().left)) ? c : best, _rawCandles[0]);
-    if (ts) showCandleDetail(ts);
+    const rect = priceContainer.getBoundingClientRect();
+    const clickedTime = chart.timeScale().coordinateToTime(e.clientX - rect.left);
+    if (clickedTime == null) return;
+    const rawClickedTime = clickedTime - TZ_OFFSET;
+    const closest = _rawCandles.reduce((best, c) =>
+      Math.abs(c.time - rawClickedTime) < Math.abs(best.time - rawClickedTime) ? c : best,
+      _rawCandles[0]
+    );
+    if (closest) showCandleDetail(closest);
   });
 
-  // ── Data load ─────────────────────────────────────────────────────────
- let _cachedBias = null;
+  // ── Data loading ─────────────────────────────────────────────────────
+  let _cachedBias = null;
+
   async function loadBias() {
     try {
       const res = await fetch(`/proxy/${PAIR_ID}/api/bias`);
@@ -942,7 +1142,7 @@
         _cachedBias = await res.json().catch(() => null);
         updateBiasDisplay(_cachedBias);
       }
-    } catch(e) { /* keep last cached value */ }
+    } catch(e) {}
   }
 
   async function loadData() {
@@ -953,17 +1153,16 @@
       const data = await dataRes.json();
       const biasInfo = _cachedBias;
 
-      _rawCandles = data.candles||[];
+      _rawCandles = data.candles || [];
       window._rawCandles = _rawCandles;
-      _detectorResults = data.detectors||{};
 
       candleSeries.setData([]);
       const shifted = _rawCandles.map(c=>({...c, time:shiftTime(c.time)}));
       if (shifted.length) candleSeries.setData(shifted);
 
       clearSeries();
-      const det = data.detectors||{};
-      if (det.accumulation) activeSeries.accumulation = renderAccumulation(det.accumulation);
+      const det = data.detectors || {};
+      if (det.accumulation)  activeSeries.accumulation  = renderAccumulation(det.accumulation);
       if (det.supply_demand) activeSeries.supply_demand = renderSupplyDemand(det.supply_demand);
 
       updateBiasDisplay(biasInfo);
@@ -972,7 +1171,19 @@
     } catch(e) { console.error('loadData error:', e); }
   }
 
-  // ── News loading ──────────────────────────────────────────────────────
+  async function loadCvd() {
+    if (isWeekend()) return;
+    try {
+      const res = await fetch(`/proxy/${PAIR_ID}/api/cvd?interval=${currentInterval}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.cvd && data.cvd.length) {
+        renderCvd(data);
+      }
+    } catch(e) { console.error('loadCvd error:', e); }
+  }
+
+  // ── News ─────────────────────────────────────────────────────────────
   let _newsLoading = false;
   async function loadNews() {
     if (_newsLoading) return;
@@ -981,14 +1192,13 @@
     const list = document.getElementById('news-list');
     btn.disabled = true;
     list.innerHTML = '<div class="news-loading">Fetching news<span class="news-dot">...</span></div>';
-
     try {
       const res = await fetch(`/api/news/${PAIR_ID}`);
       if (!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
       renderNews(data.articles||[]);
     } catch(e) {
-      list.innerHTML = `<div class="news-loading">Failed to load news. Try again.</div>`;
+      list.innerHTML = '<div class="news-loading">Failed to load news. Try again.</div>';
     } finally {
       _newsLoading = false;
       btn.disabled = false;
@@ -1009,7 +1219,7 @@
       return `
         <div class="news-item">
           <div class="news-meta-row">
-            <span class="news-source">${escHtml(a.source || '')}</span>
+            <span class="news-source">${escHtml(a.source||'')}</span>
             ${age}
           </div>
           <a class="news-headline" ${link}>${escHtml(a.headline)}</a>
@@ -1017,7 +1227,6 @@
         </div>`;
     }).join('');
   }
-
 
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1028,9 +1237,11 @@
   // ── Init ─────────────────────────────────────────────────────────────
   loadData();
   loadBias();
+  loadCvd();
   loadNews();
   setInterval(loadData, 60 * 1000);
-  setInterval(loadBias, 24 * 60 * 60 * 1000); 
+  setInterval(loadCvd,  60 * 1000);
+  setInterval(loadBias, 24 * 60 * 60 * 1000);
 </script>
 </body>
 </html>
