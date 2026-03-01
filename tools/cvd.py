@@ -239,7 +239,7 @@ def get_cvd_data(
       }
     }
     """
-    has_volume = "Volume" in df.columns and df["Volume"].sum() > len(df)
+    has_volume = bool("Volume" in df.columns and df["Volume"].sum() > len(df))
 
     cvd_points = compute_cvd(df, method=method)
 
