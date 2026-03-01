@@ -703,45 +703,23 @@
   });
 
   // CVD line + histogram series
-  let cvdLineSeries   = null;
-  let cvdHistSeries   = null;
-  let cvdZeroSeries   = null;
+  let cvdBaselineSeries = null;
 
   function initCvdSeries() {
-    if (cvdLineSeries) {
-      try { cvdChart.removeSeries(cvdLineSeries); } catch(e) {}
-      cvdLineSeries = null;
-    }
-    if (cvdHistSeries) {
-      try { cvdChart.removeSeries(cvdHistSeries); } catch(e) {}
-      cvdHistSeries = null;
-    }
-    if (cvdZeroSeries) {
-      try { cvdChart.removeSeries(cvdZeroSeries); } catch(e) {}
-      cvdZeroSeries = null;
+    if (cvdBaselineSeries) {
+      try { cvdChart.removeSeries(cvdBaselineSeries); } catch(e) {}
+      cvdBaselineSeries = null;
     }
 
-    // Zero baseline
-    cvdZeroSeries = cvdChart.addLineSeries({
-      color: 'rgba(74,74,96,0.5)',
-      lineWidth: 1,
-      lineStyle: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-
-    // Histogram bars for delta
-    cvdHistSeries = cvdChart.addHistogramSeries({
-      color: 'rgba(90,240,196,0.25)',
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'left',
-      scaleMargins: { top: 0.7, bottom: 0 },
-    });
-
-    // Main CVD line
-    cvdLineSeries = cvdChart.addLineSeries({
-      color: '#5af0c4',
+    // Baseline area: green fill above zero, red fill below — matches TradingView CVD style
+    cvdBaselineSeries = cvdChart.addBaselineSeries({
+      baseValue: { type: 'price', price: 0 },
+      topLineColor:      '#5af0c4',
+      topFillColor1:     'rgba(90,240,196,0.4)',
+      topFillColor2:     'rgba(90,240,196,0.05)',
+      bottomLineColor:   '#f05a7e',
+      bottomFillColor1:  'rgba(240,90,126,0.05)',
+      bottomFillColor2:  'rgba(240,90,126,0.4)',
       lineWidth: 2,
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 3,
@@ -892,32 +870,12 @@
     const stats     = cvdData.stats || {};
     const hasVolume = cvdData.has_volume;
 
-    // Build line data (time-shifted)
+    // Build baseline data (cumulative CVD value, time-shifted)
     const lineData = points.map(p => ({ time: shiftTime(p.time), value: p.value }));
 
-    // Build histogram data: colour by delta sign
-    const histData = points.map(p => ({
-      time:  shiftTime(p.time),
-      value: p.delta,
-      color: p.delta >= 0 ? 'rgba(90,240,196,0.35)' : 'rgba(240,90,126,0.35)',
-    }));
+    cvdBaselineSeries.setData(lineData);
 
-    // Zero line: span from first to last timestamp
-    const zeroData = [
-      { time: lineData[0].time,                     value: 0 },
-      { time: lineData[lineData.length - 1].time,   value: 0 },
-    ];
-
-    // Colour the CVD line based on trend direction
-    const net = stats.net || 0;
-    const lineColor = net > 0 ? '#5af0c4' : net < 0 ? '#f05a7e' : '#7070a0';
-
-    cvdLineSeries.applyOptions({ color: lineColor });
-    cvdZeroSeries.setData(zeroData);
-    cvdHistSeries.setData(histData);
-    cvdLineSeries.setData(lineData);
-
-    // Add divergence markers on the CVD line
+    // Add divergence markers
     if (divs.length) {
       const markers = divs.map(d => ({
         time:     shiftTime(d.price_time),
@@ -927,20 +885,21 @@
         text:     d.label,
         size:     1,
       })).sort((a, b) => a.time - b.time);
-      cvdLineSeries.setMarkers(markers);
+      cvdBaselineSeries.setMarkers(markers);
     } else {
-      cvdLineSeries.setMarkers([]);
+      cvdBaselineSeries.setMarkers([]);
     }
 
     // Update header badges
     const lastVal = stats.last;
+    const net     = stats.net || 0;
     document.getElementById('cvd-value').textContent =
       lastVal != null ? (lastVal > 0 ? '+' : '') + lastVal.toLocaleString(undefined, {maximumFractionDigits: 2}) : '—';
 
     const netBadge = document.getElementById('cvd-net-badge');
     const netLabel = net > 0 ? '↑ buying' : net < 0 ? '↓ selling' : '— flat';
     netBadge.textContent = netLabel;
-    netBadge.className = `${net > 0 ? 'bull' : net < 0 ? 'bear' : 'flat'}`;
+    netBadge.className = net > 0 ? 'bull' : net < 0 ? 'bear' : 'flat';
 
     // Divergence badge: show the most recent divergence
     const divBadge = document.getElementById('cvd-div-badge');
