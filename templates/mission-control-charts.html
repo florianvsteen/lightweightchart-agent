@@ -937,6 +937,43 @@
   // ── Price chart setup ────────────────────────────────────────────────
   let currentInterval = DEFAULT_IV;
 
+  // ── Candle countdown timer ─────────────────────────────────────────────
+  function intervalToSeconds(interval) {
+    const match = interval.match(/^(\d+)(m|h|d|w)$/);
+    if (!match) return 60;
+    const val = parseInt(match[1], 10);
+    const unit = match[2];
+    if (unit === 'm') return val * 60;
+    if (unit === 'h') return val * 3600;
+    if (unit === 'd') return val * 86400;
+    if (unit === 'w') return val * 604800;
+    return 60;
+  }
+
+  function getCandleCountdown(intervalSecs) {
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const candleStart = nowSecs - (nowSecs % intervalSecs);
+    const candleEnd = candleStart + intervalSecs;
+    const remaining = candleEnd - nowSecs;
+    return Math.max(0, remaining);
+  }
+
+  function formatCountdown(secs) {
+    if (secs >= 3600) {
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  let _countdownPriceLine = null;
+  let _lastPrice = null;
+  let _countdownTimer = null;
+
   const priceContainer = document.getElementById('chart');
   const chart = LightweightCharts.createChart(priceContainer, {
     layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
@@ -957,6 +994,34 @@
 
   window._chartRef = chart;
   window._tzOffset = TZ_OFFSET;
+
+  // ── Candle countdown update functions ─────────────────────────────────
+  function updateCandleCountdown() {
+    if (_lastPrice === null) return;
+    const intervalSecs = intervalToSeconds(currentInterval);
+    const remaining = getCandleCountdown(intervalSecs);
+    const countdownStr = formatCountdown(remaining);
+
+    if (_countdownPriceLine) {
+      try { candleSeries.removePriceLine(_countdownPriceLine); } catch(e) {}
+    }
+
+    _countdownPriceLine = candleSeries.createPriceLine({
+      price: _lastPrice,
+      color: 'rgba(90, 240, 196, 0.9)',
+      lineWidth: 1,
+      lineStyle: 0,
+      axisLabelVisible: true,
+      title: countdownStr,
+      lineVisible: false,
+    });
+  }
+
+  function startCandleCountdownTimer() {
+    if (_countdownTimer) clearInterval(_countdownTimer);
+    _countdownTimer = setInterval(updateCandleCountdown, 1000);
+    updateCandleCountdown();
+  }
 
   // ── CVD height persistence ──────────────────────────────────────────
   const CVD_HEIGHT_KEY = `cvd-height:${PAIR_ID}`;
@@ -1680,6 +1745,11 @@
         candleSeries.setData(shifted);
         chart.timeScale().scrollToRealTime();  // jump to latest candle
         scheduleScaleSync();
+
+        // Update last price for countdown and start countdown timer
+        const lastCandle = _rawCandles[_rawCandles.length - 1];
+        _lastPrice = lastCandle.close;
+        startCandleCountdownTimer();
       }
       // Re-enable sync after a short delay so both charts settle first
       setTimeout(() => { _syncEnabled = true; }, 100);
