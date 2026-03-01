@@ -774,7 +774,7 @@ function seekTo(count, isStep) {
 
   scrubberUpdating = true;
   document.getElementById('scrubber').value = count - 1;
-  scrubberUpdating = false;
+  requestAnimationFrame(() => { scrubberUpdating = false; });
   _updateScrubLabel();
 
   // Reset overlay and panel to "awaiting analysis"
