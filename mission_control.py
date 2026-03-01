@@ -8,6 +8,7 @@ Central hub Flask app. Serves:
   /debug/<pair>        → redirects to that pair's debug page (via proxy)
   /proxy/<pair>/api/data         → proxies to individual pair server
   /proxy/<pair>/api/bias         → proxies to individual pair server
+  /proxy/<pair>/api/cvd          → proxies CVD data from individual pair server
   /proxy/<pair>/api/candle-explain → proxies to individual pair server
   /proxy/<pair>/debug            → proxies debug page from individual pair server
   /proxy/<pair>/debug/data       → proxies debug data endpoint
@@ -15,7 +16,7 @@ Central hub Flask app. Serves:
   /proxy/<pair>/debug/sd         → proxies debug S&D endpoint
   /proxy/<pair>/debug/sd/bias    → proxies debug S&D bias endpoint
   /proxy/<pair>/debug/fvg        → proxies debug FVG endpoint
-  /api/news/<pair>               → fetches live news via Claude API + web search
+  /api/news/<pair>               → fetches live news via yfinance
 """
 
 import os
@@ -23,7 +24,7 @@ import json
 import requests
 
 from flask import Flask, render_template, jsonify, redirect, request
-from news import get_news as _get_news
+from tools.news import get_news as _get_news
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -149,6 +150,11 @@ def proxy_api_data(pair_id):
 @app.route("/proxy/<pair_id>/api/bias")
 def proxy_api_bias(pair_id):
     return _json_proxy(pair_id, "/api/bias")
+
+
+@app.route("/proxy/<pair_id>/api/cvd")
+def proxy_api_cvd(pair_id):
+    return _json_proxy(pair_id, "/api/cvd")
 
 
 @app.route("/proxy/<pair_id>/api/candle-explain")
