@@ -348,7 +348,7 @@ def get_cvd_data(
             ind_highs=cvd_highs,
             ind_lows=cvd_lows,
             times=times,
-            max_width=15 # Matching the scanning range for choppy setups
+            max_width=15
         )
 
         # DEBUGGING OUTPUT
