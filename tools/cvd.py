@@ -214,75 +214,61 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 def detect_pivot_highs(
     values: np.ndarray,
-    opens: np.ndarray,
-    closes: np.ndarray,
-    left_bars: int = 5
+    left_bars: int = 5,
+    right_bars: int = 5
 ) -> List[PivotPoint]:
     pivots = []
     n = len(values)
-
-    for i in range(left_bars, n - 1):
+    for i in range(left_bars, n - right_bars):
         is_pivot = True
         current = values[i]
-
-        # Check left bars (allow flat tops on the left)
+        
+        # Check left (allows flat tops)
         for j in range(i - left_bars, i):
             if values[j] > current:
                 is_pivot = False
                 break
-
-        if not is_pivot:
-            continue
-
-        # Check right bars: wait for a bearish candle (close < open)
-        confirmed = False
-        for j in range(i + 1, n):
-            if values[j] >= current:  # Invalidated! A new/equal high was made before a red candle
-                break
-            if closes[j] < opens[j]:  # Confirmed! We hit a red candle without breaking the high
-                confirmed = True
-                break
-
-        if confirmed:
+                
+        # Check right (strict lower)
+        if is_pivot:
+            for j in range(i + 1, i + right_bars + 1):
+                if values[j] >= current:
+                    is_pivot = False
+                    break
+                    
+        if is_pivot:
             pivots.append(PivotPoint(bar_index=i, value=current))
-
+            
     return pivots
 
 
 def detect_pivot_lows(
     values: np.ndarray,
-    opens: np.ndarray,
-    closes: np.ndarray,
-    left_bars: int = 5
+    left_bars: int = 5,
+    right_bars: int = 5
 ) -> List[PivotPoint]:
     pivots = []
     n = len(values)
-
-    for i in range(left_bars, n - 1):
+    for i in range(left_bars, n - right_bars):
         is_pivot = True
         current = values[i]
-
-        # Check left bars (allow flat bottoms on the left)
+        
+        # Check left (allows flat bottoms)
         for j in range(i - left_bars, i):
             if values[j] < current:
                 is_pivot = False
                 break
-
-        if not is_pivot:
-            continue
-
-        # Check right bars: wait for a bullish candle (close > open)
-        confirmed = False
-        for j in range(i + 1, n):
-            if values[j] <= current:  # Invalidated! A new/equal low was made before a green candle
-                break
-            if closes[j] > opens[j]:  # Confirmed! We hit a green candle without breaking the low
-                confirmed = True
-                break
-
-        if confirmed:
+                
+        # Check right (strict higher)
+        if is_pivot:
+            for j in range(i + 1, i + right_bars + 1):
+                if values[j] <= current:
+                    is_pivot = False
+                    break
+                    
+        if is_pivot:
             pivots.append(PivotPoint(bar_index=i, value=current))
-
+            
     return pivots
 
 
