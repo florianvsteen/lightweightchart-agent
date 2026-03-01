@@ -214,27 +214,18 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 def detect_pivot_highs(
     values: np.ndarray,
-    left_bars: int = 5,
-    right_bars: int = 5
+    opens: np.ndarray,
+    closes: np.ndarray,
+    left_bars: int = 5
 ) -> List[PivotPoint]:
     """
-    Detect pivot highs in a series.
-
-    A pivot high at bar i is confirmed when:
-    - values[i] is the highest among values[i-left_bars : i+right_bars+1]
-
-    Args:
-        values: Array of values to find pivots in
-        left_bars: Number of bars to the left for pivot confirmation
-        right_bars: Number of bars to the right for pivot confirmation
-
-    Returns:
-        List of PivotPoint objects
+    Detect pivot highs.
+    Confirmed immediately upon the first bearish candle (close < open).
     """
     pivots = []
     n = len(values)
 
-    for i in range(left_bars, n - right_bars):
+    for i in range(left_bars, n - 1):
         is_pivot = True
         current = values[i]
 
@@ -244,14 +235,19 @@ def detect_pivot_highs(
                 is_pivot = False
                 break
 
-        # Check right bars
-        if is_pivot:
-            for j in range(i + 1, i + right_bars + 1):
-                if values[j] >= current: # Keep right side strict to prevent double-counting a flat top
-                    is_pivot = False
-                    break
+        if not is_pivot:
+            continue
 
-        if is_pivot:
+        # Check right bars: wait for a bearish candle, ensuring no higher highs before it
+        confirmed = False
+        for j in range(i + 1, n):
+            if values[j] > current: # Invalidated by a new high
+                break
+            if closes[j] < opens[j]: # Confirmed by a bearish candle
+                confirmed = True
+                break
+
+        if confirmed:
             pivots.append(PivotPoint(bar_index=i, value=current))
 
     return pivots
@@ -259,44 +255,40 @@ def detect_pivot_highs(
 
 def detect_pivot_lows(
     values: np.ndarray,
-    left_bars: int = 5,
-    right_bars: int = 5
+    opens: np.ndarray,
+    closes: np.ndarray,
+    left_bars: int = 5
 ) -> List[PivotPoint]:
     """
-    Detect pivot lows in a series.
-
-    A pivot low at bar i is confirmed when:
-    - values[i] is the lowest among values[i-left_bars : i+right_bars+1]
-
-    Args:
-        values: Array of values to find pivots in
-        left_bars: Number of bars to the left for pivot confirmation
-        right_bars: Number of bars to the right for pivot confirmation
-
-    Returns:
-        List of PivotPoint objects
+    Detect pivot lows.
+    Confirmed immediately upon the first bullish candle (close > open).
     """
     pivots = []
     n = len(values)
 
-    for i in range(left_bars, n - right_bars):
+    for i in range(left_bars, n - 1):
         is_pivot = True
         current = values[i]
 
         # Check left bars
         for j in range(i - left_bars, i):
-            if values[j] < current:  # Changed to strictly < for lows (allows flat bottoms on the left)
+            if values[j] < current:  
                 is_pivot = False
                 break
 
-        # Check right bars
-        if is_pivot:
-            for j in range(i + 1, i + right_bars + 1):
-                if values[j] <= current:  # Keep <= on the right to prevent double-counting
-                    is_pivot = False
-                    break
+        if not is_pivot:
+            continue
 
-        if is_pivot:
+        # Check right bars: wait for a bullish candle, ensuring no lower lows before it
+        confirmed = False
+        for j in range(i + 1, n):
+            if values[j] < current: # Invalidated by a new low
+                break
+            if closes[j] > opens[j]: # Confirmed by a bullish candle
+                confirmed = True
+                break
+
+        if confirmed:
             pivots.append(PivotPoint(bar_index=i, value=current))
 
     return pivots
@@ -308,9 +300,13 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
+    price_opens: np.ndarray,  # NEW
+    price_closes: np.ndarray, # NEW
+    cvd_opens: np.ndarray,    # NEW
+    cvd_closes: np.ndarray,   # NEW
     left_pivot: int = 5,
-    right_pivot: int = 5,
-    max_pivot_bar_gap: int = 8
+    max_pivot_bar_gap: int = 8,
+    **kwargs # Catch any leftover arguments like right_pivot gracefully
 ) -> List[Dict[str, Any]]:
     """
     Detect divergences between price and CVD.
@@ -333,11 +329,11 @@ def detect_divergences(
     """
     divergences = []
 
-    # Detect pivots on price and CVD
-    price_high_pivots = detect_pivot_highs(price_highs, left_pivot, right_pivot)
-    price_low_pivots = detect_pivot_lows(price_lows, left_pivot, right_pivot)
-    cvd_high_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
-    cvd_low_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
+    # Pass the Opens and Closes into our new pivot functions (no longer using right_pivot)
+    price_high_pivots = detect_pivot_highs(price_highs, price_opens, price_closes, left_pivot)
+    price_low_pivots = detect_pivot_lows(price_lows, price_opens, price_closes, left_pivot)
+    cvd_high_pivots = detect_pivot_highs(cvd_highs, cvd_opens, cvd_closes, left_pivot)
+    cvd_low_pivots = detect_pivot_lows(cvd_lows, cvd_opens, cvd_closes, left_pivot)
 
     # --- DEBUGGING OUTPUT ---
     print("\n--- DIVERGENCE DETECTOR DEBUG ---")
