@@ -345,8 +345,8 @@ def get_cvd_data(
         divergences, h_count, l_count = detect_divergences(
             price_highs=price_highs,
             price_lows=price_lows,
-            ind_highs=cvd_highs,
-            ind_lows=cvd_lows,
+            ind_highs=cvd_highs,  # Changed from cvd_highs=cvd_highs
+            ind_lows=cvd_lows,    # Changed from cvd_lows=cvd_lows
             times=times,
             max_width=15
         )
