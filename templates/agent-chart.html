@@ -260,6 +260,70 @@
         function shiftTime(ts) { return ts + TZ_OFFSET; }
         let currentInterval = "{{ default_interval }}";
 
+        // ── Candle countdown timer ─────────────────────────────────────
+        function intervalToSeconds(interval) {
+            const match = interval.match(/^(\d+)(m|h|d|w)$/);
+            if (!match) return 60;
+            const val = parseInt(match[1], 10);
+            const unit = match[2];
+            if (unit === 'm') return val * 60;
+            if (unit === 'h') return val * 3600;
+            if (unit === 'd') return val * 86400;
+            if (unit === 'w') return val * 604800;
+            return 60;
+        }
+
+        function getCandleCountdown(intervalSecs) {
+            const nowSecs = Math.floor(Date.now() / 1000);
+            const candleStart = nowSecs - (nowSecs % intervalSecs);
+            const candleEnd = candleStart + intervalSecs;
+            const remaining = candleEnd - nowSecs;
+            return Math.max(0, remaining);
+        }
+
+        function formatCountdown(secs) {
+            if (secs >= 3600) {
+                const h = Math.floor(secs / 3600);
+                const m = Math.floor((secs % 3600) / 60);
+                const s = secs % 60;
+                return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+            const m = Math.floor(secs / 60);
+            const s = secs % 60;
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        let _countdownPriceLine = null;
+        let _lastPrice = null;
+        let _countdownTimer = null;
+
+        function updateCandleCountdown() {
+            if (_lastPrice === null) return;
+            const intervalSecs = intervalToSeconds(currentInterval);
+            const remaining = getCandleCountdown(intervalSecs);
+            const countdownStr = formatCountdown(remaining);
+
+            if (_countdownPriceLine) {
+                try { candleSeries.removePriceLine(_countdownPriceLine); } catch(e) {}
+            }
+
+            _countdownPriceLine = candleSeries.createPriceLine({
+                price: _lastPrice,
+                color: 'rgba(90, 240, 196, 0.9)',
+                lineWidth: 1,
+                lineStyle: 0,
+                axisLabelVisible: true,
+                title: countdownStr,
+                lineVisible: false,
+            });
+        }
+
+        function startCandleCountdownTimer() {
+            if (_countdownTimer) clearInterval(_countdownTimer);
+            _countdownTimer = setInterval(updateCandleCountdown, 1000);
+            updateCandleCountdown();
+        }
+
         // ── Session clock ─────────────────────────────────────────────
         const SESSION_LABELS = { asian: 'Asian', london: 'London', new_york: 'New York' };
         const SESSION_WINDOWS_UTC = [
@@ -772,6 +836,13 @@
                     candleSeries.setData([]);
                     const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
                     candleSeries.setData(shifted);
+
+                    // Update last price for countdown and start countdown timer
+                    if (data.candles.length > 0) {
+                        const lastCandle = data.candles[data.candles.length - 1];
+                        _lastPrice = lastCandle.close;
+                        startCandleCountdownTimer();
+                    }
 
                     // Center on screenshot target candle (Playwright mode)
                     maybeCenterOnScreenshot(data.candles);
