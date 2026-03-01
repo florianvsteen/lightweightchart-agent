@@ -218,10 +218,6 @@ def detect_pivot_highs(
     closes: np.ndarray,
     left_bars: int = 5
 ) -> List[PivotPoint]:
-    """
-    Detect pivot highs.
-    Confirmed immediately upon the first bearish candle (close < open).
-    """
     pivots = []
     n = len(values)
 
@@ -229,7 +225,7 @@ def detect_pivot_highs(
         is_pivot = True
         current = values[i]
 
-        # Check left bars
+        # Check left bars (allow flat tops on the left)
         for j in range(i - left_bars, i):
             if values[j] > current:
                 is_pivot = False
@@ -238,12 +234,12 @@ def detect_pivot_highs(
         if not is_pivot:
             continue
 
-        # Check right bars: wait for a bearish candle, ensuring no higher highs before it
+        # Check right bars: wait for a bearish candle (close < open)
         confirmed = False
         for j in range(i + 1, n):
-            if values[j] > current: # Invalidated by a new high
+            if values[j] >= current:  # Invalidated! A new/equal high was made before a red candle
                 break
-            if closes[j] < opens[j]: # Confirmed by a bearish candle
+            if closes[j] < opens[j]:  # Confirmed! We hit a red candle without breaking the high
                 confirmed = True
                 break
 
@@ -259,10 +255,6 @@ def detect_pivot_lows(
     closes: np.ndarray,
     left_bars: int = 5
 ) -> List[PivotPoint]:
-    """
-    Detect pivot lows.
-    Confirmed immediately upon the first bullish candle (close > open).
-    """
     pivots = []
     n = len(values)
 
@@ -270,21 +262,21 @@ def detect_pivot_lows(
         is_pivot = True
         current = values[i]
 
-        # Check left bars
+        # Check left bars (allow flat bottoms on the left)
         for j in range(i - left_bars, i):
-            if values[j] < current:  
+            if values[j] < current:
                 is_pivot = False
                 break
 
         if not is_pivot:
             continue
 
-        # Check right bars: wait for a bullish candle, ensuring no lower lows before it
+        # Check right bars: wait for a bullish candle (close > open)
         confirmed = False
         for j in range(i + 1, n):
-            if values[j] < current: # Invalidated by a new low
+            if values[j] <= current:  # Invalidated! A new/equal low was made before a green candle
                 break
-            if closes[j] > opens[j]: # Confirmed by a bullish candle
+            if closes[j] > opens[j]:  # Confirmed! We hit a green candle without breaking the low
                 confirmed = True
                 break
 
@@ -300,14 +292,15 @@ def detect_divergences(
     cvd_highs: np.ndarray,
     cvd_lows: np.ndarray,
     times: List[int],
-    price_opens: np.ndarray,  # NEW
-    price_closes: np.ndarray, # NEW
-    cvd_opens: np.ndarray,    # NEW
-    cvd_closes: np.ndarray,   # NEW
+    price_opens: np.ndarray,
+    price_closes: np.ndarray,
+    cvd_opens: np.ndarray,
+    cvd_closes: np.ndarray,
     left_pivot: int = 5,
     max_pivot_bar_gap: int = 8,
-    **kwargs # Catch any leftover arguments like right_pivot gracefully
+    **kwargs # Catch any leftover arguments gracefully
 ) -> List[Dict[str, Any]]:
+    
     """
     Detect divergences between price and CVD.
 
@@ -526,13 +519,13 @@ def get_cvd_data(
     if detect_divs and len(cvd_candles) >= (left_pivot + 2):
         price_highs = df["High"].values.astype(float)
         price_lows = df["Low"].values.astype(float)
-        price_opens = df["Open"].values.astype(float)    # NEW
-        price_closes = df["Close"].values.astype(float)  # NEW
+        price_opens = df["Open"].values.astype(float)
+        price_closes = df["Close"].values.astype(float)
         
         cvd_highs = np.array([c["high"] for c in cvd_candles])
         cvd_lows = np.array([c["low"] for c in cvd_candles])
-        cvd_opens = np.array([c["open"] for c in cvd_candles])    # NEW
-        cvd_closes = np.array([c["close"] for c in cvd_candles])  # NEW
+        cvd_opens = np.array([c["open"] for c in cvd_candles])
+        cvd_closes = np.array([c["close"] for c in cvd_candles])
         times = [c["time"] for c in cvd_candles]
 
         divergences = detect_divergences(
@@ -541,10 +534,10 @@ def get_cvd_data(
             cvd_highs=cvd_highs,
             cvd_lows=cvd_lows,
             times=times,
-            price_opens=price_opens,    # NEW
-            price_closes=price_closes,  # NEW
-            cvd_opens=cvd_opens,        # NEW
-            cvd_closes=cvd_closes,      # NEW
+            price_opens=price_opens,
+            price_closes=price_closes,
+            cvd_opens=cvd_opens,
+            cvd_closes=cvd_closes,
             left_pivot=left_pivot,
             max_pivot_bar_gap=max_pivot_bar_gap
         )
