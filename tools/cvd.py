@@ -217,7 +217,7 @@ def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int =
     n = len(values)
     for i in range(left_bars, n - right_bars):
         current = values[i]
-        # Use <= on left to allow flat-topped CVD peaks
+        # CHANGE: Use <= to allow the CVD to be flat on the left side of the peak
         if all(values[i-left_bars:i] <= current) and all(values[i+1:i+right_bars+1] < current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
@@ -227,7 +227,7 @@ def detect_pivot_lows(values: np.ndarray, left_bars: int = 5, right_bars: int = 
     n = len(values)
     for i in range(left_bars, n - right_bars):
         current = values[i]
-        # Use >= on left to allow flat-bottomed CVD valleys
+        # CHANGE: Use >= to allow the CVD to be flat on the left side of the valley
         if all(values[i-left_bars:i] >= current) and all(values[i+1:i+right_bars+1] > current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
