@@ -280,7 +280,7 @@ def detect_divergences(
     times: List[int],
     left_pivot: int = 5,
     right_pivot: int = 1,  # Fast 1-candle confirmation
-    max_pivot_bar_gap: int = 8,
+    max_pivot_bar_gap: int = 2, # <--- Tight 2-bar gap allowance to catch slight misalignments
     **kwargs
 ) -> List[Dict[str, Any]]:
     divergences = []
@@ -294,21 +294,21 @@ def detect_divergences(
     for i in range(1, len(price_high_pivots)):
         ph2 = price_high_pivots[i]
         
-        # EXACT MATCH: The current peak MUST be a Joint Pivot (Price + CVD on same bar)
-        ch2 = next((p for p in cvd_high_pivots if p.bar_index == ph2.bar_index), None)
+        # ALLOW SMALL GAP: Find true CVD peak within 2 bars of Price peak
+        ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
         if not ch2:
-            continue # Skip if CVD didn't peak exactly here
+            continue 
             
-        # Scan backward through the last 5 price pivots to find the previous Joint Pivot
+        # Scan backward through the last 5 price pivots to find the anchor
         for j in range(i - 1, max(-1, i - 6), -1):
             ph1 = price_high_pivots[j]
             
-            # EXACT MATCH for the previous peak
-            ch1 = next((p for p in cvd_high_pivots if p.bar_index == ph1.bar_index), None)
+            # ALLOW SMALL GAP: Find true CVD peak within 2 bars of previous Price peak
+            ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
             if not ch1:
-                continue # Skip intermediate solitary price pivots
+                continue 
                 
-            # Both anchors are perfectly vertically aligned. Check divergence rules:
+            # Both anchors found. Check divergence rules:
             if ph2.value > ph1.value and ch2.value < ch1.value:
                 divergences.append({
                     "type": "bearish",
@@ -321,27 +321,27 @@ def detect_divergences(
                     "cvd_pivot_1": {"bar": ch1.bar_index, "value": float(ch1.value)},
                     "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
                 })
-                break # Found the divergence, stop scanning backward for this peak
+                break # Found the divergence, stop scanning backward
 
     # 2. Bullish divergences
     for i in range(1, len(price_low_pivots)):
         pl2 = price_low_pivots[i]
         
-        # EXACT MATCH: The current valley MUST be a Joint Pivot (Price + CVD on same bar)
-        cl2 = next((p for p in cvd_low_pivots if p.bar_index == pl2.bar_index), None)
+        # ALLOW SMALL GAP: Find true CVD valley within 2 bars of Price valley
+        cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
         if not cl2:
-            continue # Skip if CVD didn't bottom exactly here
+            continue 
             
-        # Scan backward through the last 5 price pivots to find the previous Joint Pivot
+        # Scan backward through the last 5 price pivots to find the anchor
         for j in range(i - 1, max(-1, i - 6), -1):
             pl1 = price_low_pivots[j]
             
-            # EXACT MATCH for the previous valley
-            cl1 = next((p for p in cvd_low_pivots if p.bar_index == pl1.bar_index), None)
+            # ALLOW SMALL GAP: Find true CVD valley within 2 bars of previous Price valley
+            cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
             if not cl1:
-                continue # Skip intermediate solitary price pivots
+                continue 
                 
-            # Both anchors are perfectly vertically aligned. Check divergence rules:
+            # Both anchors found. Check divergence rules:
             if pl2.value < pl1.value and cl2.value > cl1.value:
                 divergences.append({
                     "type": "bullish",
@@ -354,7 +354,7 @@ def detect_divergences(
                     "cvd_pivot_1": {"bar": cl1.bar_index, "value": float(cl1.value)},
                     "cvd_pivot_2": {"bar": cl2.bar_index, "value": float(cl2.value)},
                 })
-                break # Found the divergence, stop scanning backward for this valley
+                break # Found the divergence, stop scanning backward
 
     return divergences
 
