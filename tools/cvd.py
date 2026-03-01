@@ -213,24 +213,22 @@ def build_cvd_ohlc_single_tf(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def detect_pivot_highs(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
-    """Replicates ta.pivothigh(values, 5, 1)"""
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
         current = values[i]
-        # Must be strictly higher than all bars in the window
-        if all(values[i-left_bars:i] < current) and all(values[i+1:i+right_bars+1] < current):
+        # Use <= on left to allow flat-topped CVD peaks
+        if all(values[i-left_bars:i] <= current) and all(values[i+1:i+right_bars+1] < current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
 
 def detect_pivot_lows(values: np.ndarray, left_bars: int = 5, right_bars: int = 1) -> List[PivotPoint]:
-    """Replicates ta.pivotlow(values, 5, 1)"""
     pivots = []
     n = len(values)
     for i in range(left_bars, n - right_bars):
         current = values[i]
-        # Must be strictly lower than all bars in the window
-        if all(values[i-left_bars:i] > current) and all(values[i+1:i+right_bars+1] > current):
+        # Use >= on left to allow flat-bottomed CVD valleys
+        if all(values[i-left_bars:i] >= current) and all(values[i+1:i+right_bars+1] > current):
             pivots.append(PivotPoint(bar_index=i, value=current))
     return pivots
     
@@ -252,22 +250,13 @@ def detect_divergences(
     ch_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
     cl_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
-    # --- DEBUGGING OUTPUT ---
+    # --- DEBUGGING OUTPUT (Fixed Variable Names) ---
     print("\n--- DIVERGENCE DETECTOR DEBUG ---")
     print(f"Total Bars Processed: {len(times)}")
     print(f"Price High Pivots found: {len(ph_pivots)}")
     print(f"Price Low Pivots found:  {len(pl_pivots)}")
     print(f"CVD High Pivots found:   {len(ch_pivots)}")
     print(f"CVD Low Pivots found:    {len(cl_pivots)}")
-    print("---------------------------------\n")
-
-    # --- DEBUGGING OUTPUT ---
-    print("\n--- DIVERGENCE DETECTOR DEBUG ---")
-    print(f"Total Bars Processed: {len(times)}")
-    print(f"Price High Pivots found: {len(price_high_pivots)}")
-    print(f"Price Low Pivots found:  {len(price_low_pivots)}")
-    print(f"CVD High Pivots found:   {len(cvd_high_pivots)}")
-    print(f"CVD Low Pivots found:    {len(cvd_low_pivots)}")
     print("---------------------------------\n")
 
     # 1. Bearish Divergence: Price Higher High AND CVD Lower High
