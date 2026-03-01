@@ -339,17 +339,16 @@ def detect_divergences(
     cvd_high_pivots = detect_pivot_highs(cvd_highs, left_pivot, right_pivot)
     cvd_low_pivots = detect_pivot_lows(cvd_lows, left_pivot, right_pivot)
 
-    # Check for bearish divergence: price higher highs, CVD lower highs
-    if len(price_high_pivots) >= 2 and len(cvd_high_pivots) >= 2:
-        # Get last two pivots of each
-        ph1, ph2 = price_high_pivots[-2], price_high_pivots[-1]
-        ch1, ch2 = cvd_high_pivots[-2], cvd_high_pivots[-1]
+    # 1. Bearish divergences (Price Higher High, CVD Lower High)
+    for i in range(1, len(price_high_pivots)):
+        ph1, ph2 = price_high_pivots[i-1], price_high_pivots[i]
+        
+        # Find matching CVD high pivots that occur near our price pivots
+        ch1 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph1.bar_index) <= max_pivot_bar_gap), None)
+        ch2 = next((p for p in cvd_high_pivots if abs(p.bar_index - ph2.bar_index) <= max_pivot_bar_gap), None)
 
-        # Check conditions: price higher high AND CVD lower high
-        if ph2.value > ph1.value and ch2.value < ch1.value:
-            # Check bar gap constraint
-            if (abs(ph2.bar_index - ch2.bar_index) <= max_pivot_bar_gap and
-                abs(ph1.bar_index - ch1.bar_index) <= max_pivot_bar_gap):
+        if ch1 and ch2:
+            if ph2.value > ph1.value and ch2.value < ch1.value:
                 divergences.append({
                     "type": "bearish",
                     "label": "Bear Div",
@@ -362,17 +361,16 @@ def detect_divergences(
                     "cvd_pivot_2": {"bar": ch2.bar_index, "value": float(ch2.value)},
                 })
 
-    # Check for bullish divergence: price lower lows, CVD higher lows
-    if len(price_low_pivots) >= 2 and len(cvd_low_pivots) >= 2:
-        # Get last two pivots of each
-        pl1, pl2 = price_low_pivots[-2], price_low_pivots[-1]
-        cl1, cl2 = cvd_low_pivots[-2], cvd_low_pivots[-1]
+    # 2. Bullish divergences (Price Lower Low, CVD Higher Low)
+    for i in range(1, len(price_low_pivots)):
+        pl1, pl2 = price_low_pivots[i-1], price_low_pivots[i]
+        
+        # Find matching CVD low pivots that occur near our price pivots
+        cl1 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl1.bar_index) <= max_pivot_bar_gap), None)
+        cl2 = next((p for p in cvd_low_pivots if abs(p.bar_index - pl2.bar_index) <= max_pivot_bar_gap), None)
 
-        # Check conditions: price lower low AND CVD higher low
-        if pl2.value < pl1.value and cl2.value > cl1.value:
-            # Check bar gap constraint
-            if (abs(pl2.bar_index - cl2.bar_index) <= max_pivot_bar_gap and
-                abs(pl1.bar_index - cl1.bar_index) <= max_pivot_bar_gap):
+        if cl1 and cl2:
+            if pl2.value < pl1.value and cl2.value > cl1.value:
                 divergences.append({
                     "type": "bullish",
                     "label": "Bull Div",
