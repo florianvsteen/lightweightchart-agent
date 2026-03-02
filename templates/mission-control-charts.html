@@ -536,40 +536,6 @@
     margin-top: 2px;
   }
 
-  /* ── HTF Candles section ─────────────────────────────────────────────── */
-  #htf-section {
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  #htf-charts {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  .htf-chart-cell {
-    background: var(--bg);
-    border: 1px solid var(--border2);
-    border-radius: 3px;
-    padding: 6px;
-  }
-
-  .htf-chart-label {
-    font-size: 0.55rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 4px;
-  }
-
-  .htf-chart-container {
-    height: 80px;
-    width: 100%;
-  }
-
   #detector-section {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
@@ -744,6 +710,8 @@
     <button class="tf-btn" data-interval="15m">15m</button>
     <button class="tf-btn" data-interval="30m">30m</button>
     <button class="tf-btn" data-interval="1h">1h</button>
+    <button class="tf-btn" data-interval="1d">1D</button>
+    <button class="tf-btn" data-interval="1wk">1W</button>
   </div>
   <div id="session-badge">--</div>
 
@@ -845,21 +813,6 @@
       </div>
       <div class="bias-misaligned-warn" id="bias-misaligned-warn">
         ⚡ Daily &amp; weekly conflict — lower confidence
-      </div>
-    </div>
-
-    <!-- HTF Candles -->
-    <div id="htf-section">
-      <div class="section-title">HTF Candles</div>
-      <div id="htf-charts">
-        <div class="htf-chart-cell">
-          <div class="htf-chart-label">Daily (5)</div>
-          <div class="htf-chart-container" id="daily-chart"></div>
-        </div>
-        <div class="htf-chart-cell">
-          <div class="htf-chart-label">Weekly (5)</div>
-          <div class="htf-chart-container" id="weekly-chart"></div>
-        </div>
       </div>
     </div>
 
@@ -988,14 +941,14 @@
 
   // ── Candle countdown timer ─────────────────────────────────────────────
   function intervalToSeconds(interval) {
-    const match = interval.match(/^(\d+)(m|h|d|w)$/);
+    const match = interval.match(/^(\d+)(m|h|d|wk?)$/);
     if (!match) return 60;
     const val = parseInt(match[1], 10);
     const unit = match[2];
     if (unit === 'm') return val * 60;
     if (unit === 'h') return val * 3600;
     if (unit === 'd') return val * 86400;
-    if (unit === 'w') return val * 604800;
+    if (unit === 'w' || unit === 'wk') return val * 604800;
     return 60;
   }
 
@@ -1185,60 +1138,6 @@
   }
 
   initCvdSeries();
-
-  // ── HTF (Daily/Weekly) mini-charts ──────────────────────────────────
-  const dailyChartContainer = document.getElementById('daily-chart');
-  const weeklyChartContainer = document.getElementById('weekly-chart');
-
-  const htfChartOptions = {
-    layout: { background:{color:'#0a0a0c'}, textColor:'#4a4a60' },
-    grid: { vertLines:{visible:false}, horzLines:{visible:false} },
-    timeScale: { visible: false },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { visible: false },
-    leftPriceScale: { visible: false },
-    handleScroll: false,
-    handleScale: false,
-  };
-
-  const dailyChart = LightweightCharts.createChart(dailyChartContainer, htfChartOptions);
-  const weeklyChart = LightweightCharts.createChart(weeklyChartContainer, htfChartOptions);
-
-  const dailySeries = dailyChart.addCandlestickSeries({
-    upColor:       '#5af0c4',
-    downColor:     '#f05a7e',
-    wickUpColor:   '#5af0c4',
-    wickDownColor: '#f05a7e',
-    borderVisible: false,
-  });
-
-  const weeklySeries = weeklyChart.addCandlestickSeries({
-    upColor:       '#5af0c4',
-    downColor:     '#f05a7e',
-    wickUpColor:   '#5af0c4',
-    wickDownColor: '#f05a7e',
-    borderVisible: false,
-  });
-
-  async function loadHtfCandles() {
-    try {
-      const res = await fetch(`/api/htf-candles/${PAIR_ID}`);
-      if (!res.ok) return;
-      const data = await res.json();
-
-      if (data.daily && data.daily.length) {
-        dailySeries.setData(data.daily.map(c => ({ ...c, time: c.time + TZ_OFFSET })));
-        dailyChart.timeScale().fitContent();
-      }
-
-      if (data.weekly && data.weekly.length) {
-        weeklySeries.setData(data.weekly.map(c => ({ ...c, time: c.time + TZ_OFFSET })));
-        weeklyChart.timeScale().fitContent();
-      }
-    } catch(e) {
-      console.error('Failed to load HTF candles:', e);
-    }
-  }
 
   // Sync time scales: when price chart scrolls, CVD follows
   let _syncingFromPrice = false;
@@ -1949,7 +1848,6 @@
   // ── Init ─────────────────────────────────────────────────────────────
   loadData();
   loadBias();
-  loadHtfCandles();
   loadCvd();
   loadNews();
   loadDrawings();
@@ -1959,7 +1857,6 @@
       await loadCvd(true);
   }, 30 * 1000);
   setInterval(loadBias, 24 * 60 * 60 * 1000);
-  setInterval(loadHtfCandles, 24 * 60 * 60 * 1000);  // Refresh HTF candles daily
 
   // ════════════════════════════════════════════════════════════════════
   // DRAWING ENGINE
