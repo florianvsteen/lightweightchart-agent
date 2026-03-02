@@ -1145,9 +1145,12 @@ function selectWindow(windowSize) {
       const impCol = w.is_confirmed ? 'var(--pass)' : 'var(--red)';
       const impTxt = w.is_confirmed ? '✓ CONFIRMED — IMPULSIVE AGGRESSOR' : '✗ NOT IMPULSIVE — rejected';
       const boBody = bo ? Math.abs(bo.close - bo.open) : 0;
+      // NEW: Dynamically calculate the threshold based on the multiplier passed from Python
+      const multiplier = w.required_ratio || 1.5; 
+      const threshold = w.avg_body * multiplier;
       const impSub = w.is_confirmed
-        ? 'Body ' + fmtPrice(boBody) + ' > zone avg ' + fmtPrice(w.avg_body) + ' (ratio ' + (w.impulse_ratio??'—') + '×)'
-        : 'Body ' + fmtPrice(boBody) + ' ≤ zone avg ' + fmtPrice(w.avg_body) + ' — not impulsive enough';
+        ? 'Body ' + fmtPrice(boBody) + ' > threshold ' + fmtPrice(threshold) + ' (' + (w.impulse_ratio??'—') + '× vs ' + multiplier + '× req)'
+        : 'Body ' + fmtPrice(boBody) + ' < threshold ' + fmtPrice(threshold) + ' (' + (w.impulse_ratio??'—') + '× is below ' + multiplier + '× req)';
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
           '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Check (' + modeLabel + ')</div>' +
