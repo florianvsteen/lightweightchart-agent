@@ -214,6 +214,7 @@
         <div id="misaligned-banner">⚡ Bias misaligned — lower confidence zones</div>
         <div id="interval-bar">
             <button class="tf-btn active" data-interval="1m">1m</button>
+            <button class="tf-btn" data-interval="3m">3m</button>
             <button class="tf-btn" data-interval="5m">5m</button>
             <button class="tf-btn" data-interval="15m">15m</button>
             <button class="tf-btn" data-interval="30m">30m</button>
@@ -268,7 +269,6 @@
         window._tzOffset = TZ_OFFSET;
 
         function shiftTime(ts) { return ts + TZ_OFFSET; }
-        let currentInterval = "{{ default_interval }}";
 
         // ── Candle countdown timer ─────────────────────────────────────
         function intervalToSeconds(interval) {
