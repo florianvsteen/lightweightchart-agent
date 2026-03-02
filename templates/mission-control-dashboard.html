@@ -324,18 +324,37 @@
 <script>
 const PAIRS = {{ pairs_js | safe }};
 
-const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
-];
+// Session windows per market type (start/end in UTC hours, startMin for minute precision)
+const SESSION_WINDOWS = {
+  FOREX: [
+    { name: 'asian',    label: 'Asian Session',    start: 1,  startMin: 0,  end: 7  },
+    { name: 'london',   label: 'London Session',   start: 8,  startMin: 0,  end: 12 },
+    { name: 'new_york', label: 'New York Session', start: 13, startMin: 0,  end: 19 },
+  ],
+  NYSE: [
+    { name: 'london',   label: 'London Session',   start: 8,  startMin: 0,  end: 12 },
+    { name: 'new_york', label: 'New York Session', start: 14, startMin: 30, end: 21 },
+  ],
+  CRYPTO: [
+    { name: 'asian',    label: 'Asian Session',    start: 1,  startMin: 0,  end: 7  },
+    { name: 'london',   label: 'London Session',   start: 8,  startMin: 0,  end: 12 },
+    { name: 'new_york', label: 'New York Session', start: 13, startMin: 0,  end: 19 },
+  ],
+};
 
-function getCurrentSession() {
+function getCurrentSession(marketTiming = 'FOREX') {
   const now = new Date();
   const dow  = now.getUTCDay();
   const hour = now.getUTCHours();
+  const mins = now.getUTCMinutes();
+  const totalMins = hour * 60 + mins;
   if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 1)) return null;
-  return SESSION_WINDOWS.find(s => hour >= s.start && hour < s.end) || null;
+  const windows = SESSION_WINDOWS[marketTiming] || SESSION_WINDOWS.FOREX;
+  return windows.find(s => {
+    const startMins = s.start * 60 + (s.startMin || 0);
+    const endMins = s.end * 60;
+    return totalMins >= startMins && totalMins < endMins;
+  }) || null;
 }
 
 function isWeekendHalt() {
@@ -606,15 +625,18 @@ function updateClock() {
   const lbl = document.getElementById('refresh-label');
   if (lbl && !_wsConnected) lbl.textContent = 'LIVE · 15s';
 
-  const sess = getCurrentSession();
+  const sess = getCurrentSession('FOREX'); // Use FOREX for global session indicator
+  const forexWindows = SESSION_WINDOWS.FOREX;
   if (sess) {
     badge.textContent = sess.label || sess.name;
     badge.className   = sess.name;
   } else {
     const utcH = now.getUTCHours();
-    const next = SESSION_WINDOWS.find(s => s.start > utcH) || SESSION_WINDOWS[0];
+    const utcM = now.getUTCMinutes();
+    const totalMins = utcH * 60 + utcM;
+    const next = forexWindows.find(s => (s.start * 60 + (s.startMin || 0)) > totalMins) || forexWindows[0];
     const target = new Date(now);
-    target.setUTCHours(next.start, 0, 0, 0);
+    target.setUTCHours(next.start, next.startMin || 0, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     const diff = target - now;
     const dh = Math.floor(diff / 3600000);

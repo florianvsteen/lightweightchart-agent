@@ -80,11 +80,12 @@ loader.set_broadcast_callback(broadcast_chart_data)
 def _pairs_js():
     return [
         {
-            "id":          pair_id,
-            "label":       cfg.get("label", pair_id),
-            "port":        cfg.get("port", 0),
-            "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
-            "always_open": cfg.get("market_timing") == "CRYPTO",
+            "id":            pair_id,
+            "label":         cfg.get("label", pair_id),
+            "port":          cfg.get("port", 0),
+            "type":          "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
+            "always_open":   cfg.get("market_timing") == "CRYPTO",
+            "market_timing": cfg.get("market_timing", "FOREX"),
         }
         for pair_id, cfg in PAIRS.items()
     ]
@@ -185,6 +186,7 @@ def chart_view(pair_id):
         pair_id=pair_id,
         label=cfg["label"],
         always_open=cfg.get("market_timing") == "CRYPTO",
+        market_timing=cfg.get("market_timing", "FOREX"),
         timezone=tz,
         default_interval=default_interval,
         detector_type=detector_type,
