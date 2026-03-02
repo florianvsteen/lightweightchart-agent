@@ -443,7 +443,10 @@ class PairServer:
                     intervals_to_cache = set()
                     for name in self.detector_names:
                         tf = self.detector_params.get(name, {}).get("timeframe", self.interval)
-                        intervals_to_cache.add(tf)
+                        if isinstance(tf, list):
+                            intervals_to_cache.update(tf)
+                        else:
+                            intervals_to_cache.add(tf)
                     intervals_to_cache.add(self.default_interval)
                     intervals_to_cache.add(self.interval)
 
