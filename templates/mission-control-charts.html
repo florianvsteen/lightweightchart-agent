@@ -1256,7 +1256,17 @@
   // ── Detector overlays ────────────────────────────────────────────────
   function renderAccumulation(zone) {
     const all=[];
-    if (!zone.top||!zone.bottom||!zone.start) return all;
+    // Handle multi-timeframe: zone may be {"1m": {...}, "3m": {...}} instead of a single result
+    if (zone && !zone.status && typeof zone === 'object' && !zone.top) {
+      const tfs = Object.keys(zone);
+      const bestTf = tfs.find(t => zone[t]?.status === 'confirmed') ||
+                     tfs.find(t => zone[t]?.status === 'found') ||
+                     tfs.find(t => zone[t]?.status === 'active') ||
+                     tfs.find(t => zone[t]?.status === 'cooldown') ||
+                     tfs[0];
+      zone = zone[bestTf];
+    }
+    if (!zone || !zone.top||!zone.bottom||!zone.start) return all;
     const isCooldown=zone.status==='cooldown';
     const isFound=zone.status==='found'||zone.status==='confirmed';
     const lineColor=isCooldown?`rgba(212,160,23,0.6)`:`rgba(200,200,200,${isFound?0.55:0.28})`;
@@ -1465,7 +1475,20 @@
     const text = document.getElementById('det-status-text');
 
     if (DETECTOR_TYPE==='accumulation') {
-      const z=det.accumulation;
+      let z=det.accumulation;
+      // Handle multi-timeframe: z may be {"1m": {...}, "3m": {...}} instead of a single result
+      if (z && !z.status && typeof z === 'object') {
+        const tfs = Object.keys(z);
+        // Priority: confirmed > found > active > cooldown > out_of_session > weekend > looking
+        const bestTf = tfs.find(t => z[t]?.status === 'confirmed') ||
+                       tfs.find(t => z[t]?.status === 'found') ||
+                       tfs.find(t => z[t]?.status === 'active') ||
+                       tfs.find(t => z[t]?.status === 'cooldown') ||
+                       tfs.find(t => z[t]?.status === 'out_of_session') ||
+                       tfs.find(t => z[t]?.status === 'weekend') ||
+                       tfs[0];
+        z = z[bestTf];
+      }
       if (!z||z.status==='looking') {
         dot.className='det-dot looking';
         text.textContent='Looking for accumulation';
