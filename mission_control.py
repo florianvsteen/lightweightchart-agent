@@ -1,7 +1,7 @@
 """
 mission_control.py
 
-Central hub Flask app. Serves:
+Central hub Flask app with WebSocket support. Serves:
   /dashboard           → mission-control-dashboard.html (pair grid)
   /chart-view/<pair>   → mission-control-charts.html  (trading terminal)
   /debug               → redirects to first pair's debug page
@@ -17,6 +17,11 @@ Central hub Flask app. Serves:
   /proxy/<pair>/debug/sd/bias    → proxies debug S&D bias endpoint
   /proxy/<pair>/debug/fvg        → proxies debug FVG endpoint
   /api/news/<pair>               → fetches live news via yfinance
+
+WebSocket events:
+  subscribe     → client subscribes to pair data updates
+  unsubscribe   → client unsubscribes from pair updates
+  chart_data    → server pushes new chart data to subscribed clients
 """
 
 import os
@@ -24,7 +29,10 @@ import json
 import requests
 
 from flask import Flask, render_template, jsonify, redirect, request
+from flask_socketio import SocketIO, emit, join_room, leave_room
+
 from tools.news import get_news as _get_news
+from tools.loaddata import get_loader
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -38,6 +46,28 @@ app = Flask(
     template_folder=os.path.join(ROOT, "templates"),
     static_folder=os.path.join(ROOT, "static") if os.path.exists(os.path.join(ROOT, "static")) else None,
 )
+
+# Configure SocketIO with async_mode for better performance
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+# ── DataLoader Setup ───────────────────────────────────────────────────
+loader = get_loader()
+
+
+def broadcast_chart_data(pair_id: str, interval: str, data: dict):
+    """Broadcast chart data to all clients subscribed to this pair."""
+    room = f"pair:{pair_id.upper()}"
+    socketio.emit("chart_data", {
+        "pair_id": pair_id.upper(),
+        "interval": interval,
+        "candles": data.get("candles", []),
+        "detectors": data.get("detectors", {}),
+    }, room=room)
+
+
+# Register the broadcast callback
+loader.set_broadcast_callback(broadcast_chart_data)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -72,6 +102,54 @@ def _proxy_to(pair_id, path):
         return r, None, None
     except Exception as e:
         return None, str(e), 502
+
+
+# ── WebSocket Events ───────────────────────────────────────────────────
+
+@socketio.on("connect")
+def handle_connect():
+    """Handle client connection."""
+    print(f"[WebSocket] Client connected: {request.sid}")
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    """Handle client disconnection."""
+    print(f"[WebSocket] Client disconnected: {request.sid}")
+
+
+@socketio.on("subscribe")
+def handle_subscribe(data):
+    """Handle client subscription to a pair's data updates."""
+    pair_id = data.get("pair_id", "").upper()
+    interval = data.get("interval", "1m")
+
+    if pair_id not in PAIRS:
+        emit("error", {"message": f"Unknown pair: {pair_id}"})
+        return
+
+    room = f"pair:{pair_id}"
+    join_room(room)
+    print(f"[WebSocket] Client {request.sid} subscribed to {pair_id}")
+
+    # Send cached data immediately if available
+    cached = loader.get_data(pair_id, interval)
+    if cached:
+        emit("chart_data", {
+            "pair_id": pair_id,
+            "interval": interval,
+            "candles": cached.get("candles", []),
+            "detectors": cached.get("detectors", {}),
+        })
+
+
+@socketio.on("unsubscribe")
+def handle_unsubscribe(data):
+    """Handle client unsubscription from a pair's data updates."""
+    pair_id = data.get("pair_id", "").upper()
+    room = f"pair:{pair_id}"
+    leave_room(room)
+    print(f"[WebSocket] Client {request.sid} unsubscribed from {pair_id}")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────
@@ -238,8 +316,15 @@ def api_news(pair_id):
 
 if __name__ == "__main__":
     port = int(os.environ.get("MISSION_CONTROL_PORT", 9000))
+
+    # Start the background data loader
+    loader.start()
+
     print(f"[MissionControl] Starting on http://0.0.0.0:{port}")
     print(f"[MissionControl] Dashboard:  http://localhost:{port}/dashboard")
     print(f"[MissionControl] Chart view: http://localhost:{port}/chart-view/<PAIR>")
     print(f"[MissionControl] Debug:      http://localhost:{port}/debug")
-    app.run(host="0.0.0.0", port=port, use_reloader=False, threaded=True)
+    print(f"[MissionControl] WebSocket:  ws://localhost:{port}/socket.io/")
+
+    # Use SocketIO's run method instead of Flask's
+    socketio.run(app, host="0.0.0.0", port=port, use_reloader=False)
