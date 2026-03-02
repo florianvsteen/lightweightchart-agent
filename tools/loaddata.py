@@ -4,7 +4,7 @@ tools/loaddata.py
 Centralized data loader with WebSocket broadcast support.
 
 This module:
-  - Fetches data for all configured pairs in a background thread every 15 seconds
+  - Fetches data for all configured pairs at clock-aligned times (:00, :15, :30, :45)
   - Caches the data in memory for instant access
   - Broadcasts updates to WebSocket subscribers when new data is available
 
@@ -93,7 +93,7 @@ class DataLoader:
         self._running = True
         self._thread = threading.Thread(target=self._fetch_loop, daemon=True)
         self._thread.start()
-        print("[DataLoader] Background fetch thread started (interval: {}s)".format(FETCH_INTERVAL))
+        print("[DataLoader] Background fetch thread started (clock-aligned at :00, :15, :30, :45)")
 
     def stop(self):
         """Stop the background fetch thread."""
@@ -103,17 +103,50 @@ class DataLoader:
         print("[DataLoader] Background fetch thread stopped")
 
     def _fetch_loop(self):
-        """Background loop that fetches data for all pairs."""
+        """Background loop that fetches data for all pairs at clock-aligned times.
+
+        Polls at :00, :15, :30, :45 second marks of each minute to ensure
+        candle updates are synchronized with market data timing.
+        """
         while self._running:
+            # Wait until next aligned time (:00, :15, :30, :45)
+            self._sleep_until_next_interval()
+
             try:
                 self._fetch_all_pairs()
             except Exception as e:
                 print(f"[DataLoader] Error in fetch loop: {e}")
-            # Use eventlet.sleep if available for proper greenlet yielding
-            if USING_EVENTLET:
-                eventlet.sleep(FETCH_INTERVAL)
-            else:
-                time.sleep(FETCH_INTERVAL)
+
+    def _sleep_until_next_interval(self):
+        """Sleep until the next 15-second clock-aligned interval.
+
+        Targets: :00, :15, :30, :45 seconds of each minute.
+        """
+        now = time.time()
+        current_second = now % 60
+
+        # Find next target (0, 15, 30, 45)
+        targets = [0, 15, 30, 45, 60]  # 60 wraps to 0 of next minute
+        next_target = None
+        for t in targets:
+            if t > current_second:
+                next_target = t
+                break
+
+        # Calculate sleep duration
+        if next_target == 60:
+            sleep_duration = 60 - current_second
+        else:
+            sleep_duration = next_target - current_second
+
+        # Ensure minimum sleep to avoid busy-looping
+        if sleep_duration < 0.1:
+            sleep_duration += 15
+
+        if USING_EVENTLET:
+            eventlet.sleep(sleep_duration)
+        else:
+            time.sleep(sleep_duration)
 
     def _fetch_all_pairs(self):
         """Fetch data for all configured pairs and intervals."""
