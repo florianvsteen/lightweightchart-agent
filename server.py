@@ -162,6 +162,11 @@ class PairServer:
         _get_data.__name__ = f"get_data_{pair_id}"
         app.route("/api/data")(_get_data)
 
+        def _stream_data():
+            return self._api_stream()
+        _stream_data.__name__ = f"stream_data_{pair_id}"
+        app.route("/api/stream")(_stream_data)
+
         def _test_alert():
             return self._test_alert()
         _test_alert.__name__ = f"test_alert_{pair_id}"
@@ -536,7 +541,7 @@ class PairServer:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    def _api_stream():
+    def _api_stream(self):
         from flask import Response
         import json, time
         chart_interval = request.args.get("interval", self.interval)
@@ -550,6 +555,14 @@ class PairServer:
                         detector_results = dict(self._cached_detector_results)
                         candles = list(self._cached_candles.get(chart_interval, []))
                         
+                    # Fallback if cache is empty for this specific interval
+                    if not candles:
+                        try:
+                            df_chart = self._fetch_df(chart_interval)
+                            candles = [{"time": int(idx.timestamp()), "open": float(r["Open"]), "high": float(r["High"]), "low": float(r["Low"]), "close": float(r["Close"])} for idx, r in df_chart.iterrows()]
+                        except Exception:
+                            candles = []
+    
                     payload = {
                         "pair": self.pair_id,
                         "candles": candles,
@@ -558,11 +571,17 @@ class PairServer:
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 time.sleep(0.5)
-
-        return Response(event_stream(), mimetype="text/event-stream")
-        
-        _api_stream.__name__ = f"api_stream_{pair_id}"
-        app.route("/api/stream")(_api_stream)
+    
+        # Add headers to prevent Flask/Nginx from holding the data
+        return Response(
+            event_stream(), 
+            mimetype="text/event-stream",
+            headers={
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
+        )
 
     def _api_bias(self):
         """Return current bias for this pair."""
