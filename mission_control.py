@@ -1,7 +1,7 @@
 """
 mission_control.py
 
-Central hub Flask app with WebSocket support. Serves:
+Central hub Flask app. Serves:
   /dashboard           → mission-control-dashboard.html (pair grid)
   /chart-view/<pair>   → mission-control-charts.html  (trading terminal)
   /debug               → redirects to first pair's debug page
@@ -17,13 +17,6 @@ Central hub Flask app with WebSocket support. Serves:
   /proxy/<pair>/debug/sd/bias    → proxies debug S&D bias endpoint
   /proxy/<pair>/debug/fvg        → proxies debug FVG endpoint
   /api/news/<pair>               → fetches live news via yfinance
-
-WebSocket events:
-  subscribe     → client subscribes to pair data updates
-  unsubscribe   → client unsubscribes from pair updates
-  chart_data    → server pushes new chart data to subscribed clients
-
-NOTE: When using app.py as entry point, eventlet.monkey_patch() is called first.
 """
 
 import os
@@ -31,11 +24,7 @@ import json
 import requests
 
 from flask import Flask, render_template, jsonify, redirect, request
-from flask_socketio import SocketIO, emit, join_room, leave_room
-
 from tools.news import get_news as _get_news
-from tools.loaddata import get_loader
-from tools.sessions import SESSIONS, FOREX
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -50,64 +39,19 @@ app = Flask(
     static_folder=os.path.join(ROOT, "static") if os.path.exists(os.path.join(ROOT, "static")) else None,
 )
 
-# Configure SocketIO with eventlet for proper WebSocket support
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
-
-# ── DataLoader Setup ───────────────────────────────────────────────────
-loader = get_loader()
-
-
-def broadcast_chart_data(pair_id: str, interval: str, data: dict):
-    """Broadcast chart data to all clients subscribed to this pair.
-
-    This function is called from the DataLoader's background thread.
-    Using namespace='/' explicitly ensures proper context for background emits.
-    """
-    room = f"pair:{pair_id.upper()}"
-    socketio.emit("chart_data", {
-        "pair_id": pair_id.upper(),
-        "interval": interval,
-        "candles": data.get("candles", []),
-        "detectors": data.get("detectors", {}),
-    }, room=room, namespace='/')
-
-
-# Register the broadcast callback
-loader.set_broadcast_callback(broadcast_chart_data)
-
-
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def _pairs_js():
     return [
         {
-            "id":            pair_id,
-            "label":         cfg.get("label", pair_id),
-            "port":          cfg.get("port", 0),
-            "type":          "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
-            "always_open":   cfg.get("market_timing") == "CRYPTO",
-            "market_timing": cfg.get("market_timing", FOREX),
+            "id":          pair_id,
+            "label":       cfg.get("label", pair_id),
+            "port":        cfg.get("port", 0),
+            "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
+            "always_open": cfg.get("market_timing") == "CRYPTO",
         }
         for pair_id, cfg in PAIRS.items()
     ]
-
-
-def _sessions_js():
-    """Convert SESSIONS dict to a JSON-serializable format for frontend use.
-
-    Format: { "FOREX": { "asian": { start: 1, startMin: 0, end: 7, endMin: 0 }, ... }, ... }
-    """
-    result = {}
-    for market_type, sessions in SESSIONS.items():
-        result[market_type] = {}
-        for session_name, (sh, sm, eh, em) in sessions.items():
-            result[market_type][session_name] = {
-                "start": sh,
-                "startMin": sm,
-                "end": eh,
-                "endMin": em,
-            }
-    return result
 
 
 def _pairs_list():
@@ -130,54 +74,6 @@ def _proxy_to(pair_id, path):
         return None, str(e), 502
 
 
-# ── WebSocket Events ───────────────────────────────────────────────────
-
-@socketio.on("connect")
-def handle_connect():
-    """Handle client connection."""
-    print(f"[WebSocket] Client connected: {request.sid}")
-
-
-@socketio.on("disconnect")
-def handle_disconnect():
-    """Handle client disconnection."""
-    print(f"[WebSocket] Client disconnected: {request.sid}")
-
-
-@socketio.on("subscribe")
-def handle_subscribe(data):
-    """Handle client subscription to a pair's data updates."""
-    pair_id = data.get("pair_id", "").upper()
-    interval = data.get("interval", "1m")
-
-    if pair_id not in PAIRS:
-        emit("error", {"message": f"Unknown pair: {pair_id}"})
-        return
-
-    room = f"pair:{pair_id}"
-    join_room(room)
-    print(f"[WebSocket] Client {request.sid} subscribed to {pair_id}")
-
-    # Send cached data immediately if available
-    cached = loader.get_data(pair_id, interval)
-    if cached:
-        emit("chart_data", {
-            "pair_id": pair_id,
-            "interval": interval,
-            "candles": cached.get("candles", []),
-            "detectors": cached.get("detectors", {}),
-        })
-
-
-@socketio.on("unsubscribe")
-def handle_unsubscribe(data):
-    """Handle client unsubscription from a pair's data updates."""
-    pair_id = data.get("pair_id", "").upper()
-    room = f"pair:{pair_id}"
-    leave_room(room)
-    print(f"[WebSocket] Client {request.sid} unsubscribed from {pair_id}")
-
-
 # ── Routes ─────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -186,7 +82,6 @@ def dashboard():
     return render_template(
         "mission-control-dashboard.html",
         pairs_js=json.dumps(_pairs_js()),
-        sessions_js=json.dumps(_sessions_js()),
     )
 
 
@@ -200,15 +95,12 @@ def chart_view(pair_id):
     tz = os.environ.get("TZ", "UTC")
     detector_type = "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation"
     default_interval = cfg.get("default_interval", cfg.get("interval", "1m"))
-    market_timing = cfg.get("market_timing", FOREX)
 
     return render_template(
         "mission-control-charts.html",
         pair_id=pair_id,
         label=cfg["label"],
-        always_open=market_timing == "CRYPTO",
-        market_timing=market_timing,
-        sessions_js=json.dumps(_sessions_js()),
+        always_open=cfg.get("market_timing") == "CRYPTO",
         timezone=tz,
         default_interval=default_interval,
         detector_type=detector_type,
@@ -345,20 +237,9 @@ def api_news(pair_id):
 # ── Run ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Monkey-patch eventlet when running standalone
-    import eventlet
-    eventlet.monkey_patch()
-
     port = int(os.environ.get("MISSION_CONTROL_PORT", 9000))
-
-    # Start the background data loader
-    loader.start()
-
     print(f"[MissionControl] Starting on http://0.0.0.0:{port}")
     print(f"[MissionControl] Dashboard:  http://localhost:{port}/dashboard")
     print(f"[MissionControl] Chart view: http://localhost:{port}/chart-view/<PAIR>")
     print(f"[MissionControl] Debug:      http://localhost:{port}/debug")
-    print(f"[MissionControl] WebSocket:  ws://localhost:{port}/socket.io/")
-
-    # Use SocketIO's run method instead of Flask's
-    socketio.run(app, host="0.0.0.0", port=port, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, use_reloader=False, threaded=True)
