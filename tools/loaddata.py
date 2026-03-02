@@ -20,8 +20,16 @@ Usage:
 """
 
 import time
-import threading
 from typing import Optional
+
+# Use eventlet's green threading if available, otherwise fall back to standard threading
+try:
+    import eventlet
+    from eventlet.green import threading
+    USING_EVENTLET = True
+except ImportError:
+    import threading
+    USING_EVENTLET = False
 
 from config import PAIRS
 from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
@@ -101,7 +109,11 @@ class DataLoader:
                 self._fetch_all_pairs()
             except Exception as e:
                 print(f"[DataLoader] Error in fetch loop: {e}")
-            time.sleep(FETCH_INTERVAL)
+            # Use eventlet.sleep if available for proper greenlet yielding
+            if USING_EVENTLET:
+                eventlet.sleep(FETCH_INTERVAL)
+            else:
+                time.sleep(FETCH_INTERVAL)
 
     def _fetch_all_pairs(self):
         """Fetch data for all configured pairs and intervals."""
