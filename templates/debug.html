@@ -1147,10 +1147,10 @@ function selectWindow(windowSize) {
       const boBody = bo ? Math.abs(bo.close - bo.open) : 0;
       // NEW: Dynamically calculate the threshold based on the multiplier passed from Python
       const multiplier = w.required_ratio || 1.5; 
-      const threshold = w.avg_body * multiplier;
+      const threshold = w.avg_range * multiplier; // Change avg_body to avg_range
       const impSub = w.is_confirmed
-        ? 'Body ' + fmtPrice(boBody) + ' > threshold ' + fmtPrice(threshold) + ' (' + (w.impulse_ratio??'—') + '× vs ' + multiplier + '× req)'
-        : 'Body ' + fmtPrice(boBody) + ' < threshold ' + fmtPrice(threshold) + ' (' + (w.impulse_ratio??'—') + '× is below ' + multiplier + '× req)';
+        ? 'Body ' + fmtPrice(boBody) + ' > range-threshold ' + fmtPrice(threshold)
+        : 'Body ' + fmtPrice(boBody) + ' < range-threshold ' + fmtPrice(threshold);
       breakoutHtml =
         '<div style="margin-top:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px">' +
           '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Breakout Check (' + modeLabel + ')</div>' +
