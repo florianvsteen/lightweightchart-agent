@@ -557,7 +557,11 @@ async function fetchPair(pair) {
         statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} (bias misaligned ⚡)`;
         statusEl.className   = 'status-text';
       } else if (isMisaligned) {
-        statusEl.textContent = 'Bias misaligned — scanning both directions';
+        // Dynamically figure out what the backend is actually scanning for based on the weekly bias
+        const weeklyBias = (bias.weekly_bias || '').toLowerCase();
+        const seeking = weeklyBias.includes('bull') ? 'demand zones' : 
+                        weeklyBias.includes('bear') ? 'supply zones' : 'weekly direction';
+        statusEl.textContent = `Bias misaligned — seeking ${seeking}`;
         statusEl.className   = 'status-text dim';
       } else if (zones.length > 0) {
         statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} active`;
