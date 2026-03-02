@@ -857,6 +857,7 @@
   const PAIR_ID        = "{{ pair_id }}";
   const PAIR_LABEL     = "{{ label }}";
   const ALWAYS_OPEN    = {{ 'true' if always_open else 'false' }};
+  const MARKET_TIMING  = "{{ market_timing }}";
   const TIMEZONE       = "{{ timezone }}";
   const DEFAULT_IV     = "{{ default_interval }}";
   const DETECTOR_TYPE  = "{{ detector_type }}";
@@ -903,15 +904,36 @@
   updateWeekendOverlay();
 
   // ── Session badge ────────────────────────────────────────────────────
-  const SESSION_WINDOWS = [
-    { name:'asian',    label:'Asian Session',    start:1,  end:7  },
-    { name:'london',   label:'London Session',   start:8,  end:12 },
-    { name:'new_york', label:'New York Session', start:13, end:19 },
-  ];
+  // Session windows per market type (from sessions.py)
+  // Each session: { name, label, startH, startM, endH, endM } in UTC
+  const SESSION_WINDOWS = {
+    FOREX: [
+      { name:'asian',    label:'Asian Session',    startH:1,  startM:0,  endH:7,  endM:0  },
+      { name:'london',   label:'London Session',   startH:8,  startM:0,  endH:12, endM:0  },
+      { name:'new_york', label:'New York Session', startH:13, startM:0,  endH:19, endM:0  },
+    ],
+    NYSE: [
+      { name:'london',   label:'London Session',   startH:8,  startM:0,  endH:12, endM:0  },
+      { name:'new_york', label:'New York Session', startH:14, startM:30, endH:19, endM:0  },
+    ],
+    CRYPTO: [
+      { name:'asian',    label:'Asian Session',    startH:1,  startM:0,  endH:7,  endM:0  },
+      { name:'london',   label:'London Session',   startH:8,  startM:0,  endH:12, endM:0  },
+      { name:'new_york', label:'New York Session', startH:13, startM:0,  endH:19, endM:0  },
+    ],
+  };
   function updateSessionBadge() {
-    const h = new Date().getUTCHours();
+    const now = new Date();
+    const h = now.getUTCHours();
+    const m = now.getUTCMinutes();
+    const totalMins = h * 60 + m;
     const badge = document.getElementById('session-badge');
-    const sess  = SESSION_WINDOWS.find(s=>h>=s.start&&h<s.end);
+    const windows = SESSION_WINDOWS[MARKET_TIMING] || SESSION_WINDOWS.FOREX;
+    const sess = windows.find(s => {
+      const start = s.startH * 60 + s.startM;
+      const end   = s.endH * 60 + s.endM;
+      return totalMins >= start && totalMins < end;
+    });
     if (sess) { badge.textContent=sess.label; badge.className=sess.name; }
     else { badge.textContent='Between Sessions'; badge.className=''; }
   }
