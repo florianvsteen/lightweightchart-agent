@@ -51,13 +51,6 @@ from tools.sessions import (
     is_weekend_halt, get_current_session, FOREX
 )
 
-# Kept for backward-compat with any external code that imports these directly
-SESSION_WINDOWS = {
-    "asian":    (1,  7),
-    "london":   (8,  12),
-    "new_york": (13, 19),
-}
-
 
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
     x = np.arange(len(closes), dtype=float)
