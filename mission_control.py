@@ -257,7 +257,15 @@ def proxy_api_stream(pair_id):
         except Exception as e:
             yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
 
-    return Response(stream_generator(), mimetype="text/event-stream")
+    return Response(
+        stream_generator(), 
+        mimetype="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
+    )
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
