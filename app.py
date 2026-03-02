@@ -9,11 +9,15 @@ Usage:
     python app.py US30 XAUUSD      # Start specific pairs only
 """
 
+# Eventlet monkey-patching MUST be first for WebSocket support
+import eventlet
+eventlet.monkey_patch()
+
 import sys
 import threading
 from config import PAIRS
 from server import PairServer
-from mission_control import app as mission_app
+from mission_control import app as mission_app, socketio, loader
 
 
 def launch_pair(pair_id: str, config: dict, stagger: int = 0):
@@ -54,14 +58,18 @@ def main():
         t.start()
         threads.append(t)
 
-    # Start mission control dashboard
+    # Start mission control dashboard with WebSocket support
+    def start_mission_control():
+        loader.start()  # Start the centralized data loader
+        socketio.run(mission_app, host="0.0.0.0", port=6767, use_reloader=False)
+
     mc_thread = threading.Thread(
-        target=lambda: mission_app.run(host="0.0.0.0", port=6767, use_reloader=False),
+        target=start_mission_control,
         daemon=True,
         name="mission-control",
     )
     mc_thread.start()
-    print("  Mission Control → http://localhost:6767")
+    print("  Mission Control → http://localhost:6767 (WebSocket enabled)")
     print("=" * 50)
 
     # Keep main thread alive

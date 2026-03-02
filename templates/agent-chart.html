@@ -3,6 +3,7 @@
 <head>
     <title>{{ label }} — Chart Agent</title>
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -920,8 +921,181 @@
                 .catch(err => console.error('Fetch error:', err));
         }
 
-        setInterval(loadData, 60 * 1000);
+        // ── WebSocket Support ─────────────────────────────────────────────
+        // Connect to mission_control WebSocket for real-time updates
+        // Falls back to HTTP polling if WebSocket connection fails
+
+        let socket = null;
+        let wsConnected = false;
+        let pollingInterval = null;
+        const PAIR_ID = '{{ pair_id }}';
+
+        // Mission control WebSocket URL (same host, port 6767)
+        const MC_WS_URL = `${window.location.protocol}//${window.location.hostname}:6767`;
+
+        function initWebSocket() {
+            try {
+                socket = io(MC_WS_URL, {
+                    transports: ['websocket', 'polling'],
+                    reconnection: true,
+                    reconnectionDelay: 1000,
+                    reconnectionAttempts: 5,
+                    timeout: 10000
+                });
+
+                socket.on('connect', () => {
+                    console.log('[WebSocket] Connected to mission_control');
+                    wsConnected = true;
+
+                    // Subscribe to this pair's updates
+                    socket.emit('subscribe', {
+                        pair_id: PAIR_ID,
+                        interval: currentInterval
+                    });
+
+                    // Stop HTTP polling when WebSocket is connected
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        console.log('[WebSocket] Stopped HTTP polling');
+                    }
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('[WebSocket] Disconnected from mission_control');
+                    wsConnected = false;
+                    startPolling();
+                });
+
+                socket.on('connect_error', (err) => {
+                    console.log('[WebSocket] Connection error:', err.message);
+                    wsConnected = false;
+                    startPolling();
+                });
+
+                socket.on('chart_data', (data) => {
+                    if (data.pair_id !== PAIR_ID) return;
+                    console.log('[WebSocket] Received chart_data for', data.pair_id);
+                    processChartData(data);
+                });
+
+                socket.on('error', (err) => {
+                    console.error('[WebSocket] Error:', err);
+                });
+
+            } catch (err) {
+                console.error('[WebSocket] Init error:', err);
+                startPolling();
+            }
+        }
+
+        function processChartData(data) {
+            if (!data.candles || data.candles.length === 0) {
+                showClosedOverlay('no_data');
+                return;
+            }
+            hideClosedOverlay();
+
+            // Store raw candles for Playwright centering
+            window._rawCandles = data.candles;
+
+            candleSeries.setData([]);
+            const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
+            candleSeries.setData(shifted);
+
+            // Update last price for countdown and start countdown timer
+            if (data.candles.length > 0) {
+                const lastCandle = data.candles[data.candles.length - 1];
+                _lastPrice = lastCandle.close;
+                startCandleCountdownTimer();
+            }
+
+            // Center on screenshot target candle (Playwright mode)
+            maybeCenterOnScreenshot(data.candles);
+
+            for (const [name, seriesList] of Object.entries(activeSeries)) {
+                (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+                delete activeSeries[name];
+            }
+
+            const detectors = data.detectors || {};
+            for (const [name, result] of Object.entries(detectors)) {
+                const renderer = detectorRenderers[name];
+                if (result && renderer) {
+                    activeSeries[name] = renderer(chart, result);
+
+                    if (name === 'supply_demand') {
+                        const bias  = result.bias  || {};
+                        const zones = result.zones || [];
+                        updateBiasBadge(bias);
+                        const hasMisaligned = bias.bias === 'misaligned';
+                        if (hasMisaligned && zones.length > 0) {
+                            setStatus(name, 'sd_misaligned_found');
+                        } else if (hasMisaligned) {
+                            setStatus(name, 'sd_misaligned');
+                        } else if (zones.length > 0) {
+                            setStatus(name, 'sd_found');
+                        } else if (bias.bias === 'strong_bullish') {
+                            setStatus(name, 'sd_strong_bullish');
+                        } else if (bias.bias === 'bullish') {
+                            setStatus(name, 'sd_bullish');
+                        } else if (bias.bias === 'strong_bearish') {
+                            setStatus(name, 'sd_strong_bearish');
+                        } else if (bias.bias === 'bearish') {
+                            setStatus(name, 'sd_bearish');
+                        } else {
+                            setStatus(name, 'sd_none');
+                        }
+                    } else if (name === 'accumulation') {
+                        const s = result.status;
+                        if (s === 'weekend') {
+                            setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
+                            stopCooldownTimer();
+                        } else if (s === 'cooldown') {
+                            startCooldownTimer(result.cooldown_until);
+                        } else if (s === 'confirmed') {
+                            setStatus(name, 'confirmed');
+                            stopCooldownTimer();
+                        } else if (s === 'active') {
+                            setStatus(name, 'active');
+                            stopCooldownTimer();
+                        } else if (s === 'found' || s === 'potential') {
+                            setStatus(name, s);
+                            stopCooldownTimer();
+                        } else if (s === 'out_of_session') {
+                            setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                            stopCooldownTimer();
+                        } else {
+                            setStatus(name, 'looking');
+                            stopCooldownTimer();
+                        }
+                    } else {
+                        setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
+                    }
+                } else {
+                    ensureStatusEl(name);
+                    if (name === 'supply_demand') {
+                        updateBiasBadge(null);
+                        setStatus(name, 'sd_none');
+                    } else {
+                        setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                    }
+                }
+            }
+        }
+
+        function startPolling() {
+            if (pollingInterval) return; // Already polling
+            console.log('[HTTP] Starting polling (every 15s)');
+            pollingInterval = setInterval(loadData, 15 * 1000);
+        }
+
+        // Initial load via HTTP, then try WebSocket
         loadData();
+        initWebSocket();
+
+        // Start polling as fallback (will be stopped if WebSocket connects)
+        startPolling();
 
         window.addEventListener('resize', () => chart.applyOptions({ width: container.clientWidth }));
     </script>

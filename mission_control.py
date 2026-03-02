@@ -1,7 +1,3 @@
-# Eventlet monkey-patching must be done BEFORE any other imports
-import eventlet
-eventlet.monkey_patch()
-
 """
 mission_control.py
 
@@ -26,6 +22,9 @@ WebSocket events:
   subscribe     → client subscribes to pair data updates
   unsubscribe   → client unsubscribes from pair updates
   chart_data    → server pushes new chart data to subscribed clients
+
+IMPORTANT: Use run_mission_control.py to start this app.
+  It ensures eventlet.monkey_patch() is called before any imports.
 """
 
 import os
@@ -59,14 +58,18 @@ loader = get_loader()
 
 
 def broadcast_chart_data(pair_id: str, interval: str, data: dict):
-    """Broadcast chart data to all clients subscribed to this pair."""
+    """Broadcast chart data to all clients subscribed to this pair.
+
+    This function is called from the DataLoader's background thread.
+    Using namespace='/' explicitly ensures proper context for background emits.
+    """
     room = f"pair:{pair_id.upper()}"
     socketio.emit("chart_data", {
         "pair_id": pair_id.upper(),
         "interval": interval,
         "candles": data.get("candles", []),
         "detectors": data.get("detectors", {}),
-    }, room=room)
+    }, room=room, namespace='/')
 
 
 # Register the broadcast callback
@@ -319,6 +322,14 @@ def api_news(pair_id):
 # ── Run ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # IMPORTANT: For production/PM2, use run_mission_control.py instead.
+    # It ensures eventlet.monkey_patch() is called before any imports.
+    print("[MissionControl] WARNING: Running directly. For production, use run_mission_control.py")
+
+    # Try to monkey_patch here, but it may be too late for some modules
+    import eventlet
+    eventlet.monkey_patch()
+
     port = int(os.environ.get("MISSION_CONTROL_PORT", 9000))
 
     # Start the background data loader
