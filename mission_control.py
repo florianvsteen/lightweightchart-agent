@@ -17,6 +17,7 @@ Central hub Flask app. Serves:
   /proxy/<pair>/debug/sd/bias    → proxies debug S&D bias endpoint
   /proxy/<pair>/debug/fvg        → proxies debug FVG endpoint
   /api/news/<pair>               → fetches live news via yfinance
+  /api/htf-candles/<pair>        → fetches daily and weekly candles for bias verification
 """
 
 import os
@@ -232,6 +233,47 @@ def api_news(pair_id):
     yf_ticker = cfg.get("yf_ticker") or cfg.get("ticker")
     articles = _get_news(pair_id, yf_ticker)
     return jsonify({"articles": articles, "cached": False})
+
+
+@app.route("/api/htf-candles/<pair_id>")
+def api_htf_candles(pair_id):
+    """Return 5 daily and 5 weekly candles for bias verification."""
+    pair_id = pair_id.upper()
+    if pair_id not in PAIRS:
+        return jsonify({"error": "unknown pair"}), 404
+
+    cfg = PAIRS[pair_id]
+    ticker = cfg.get("yf_ticker") or cfg.get("ticker")
+    if not ticker:
+        return jsonify({"error": "no ticker configured"}), 400
+
+    try:
+        from providers import get_bias_df as _provider_get_bias_df
+
+        # Fetch daily candles (get more than needed to ensure 5 complete)
+        df_d = _provider_get_bias_df(ticker, "10d", "1d").dropna()
+        # Fetch weekly candles
+        df_w = _provider_get_bias_df(ticker, "2mo", "1wk").dropna()
+
+        def df_to_candles(df, limit=5):
+            candles = []
+            for idx, row in df.tail(limit).iterrows():
+                candles.append({
+                    "time": int(idx.timestamp()),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
+                    "close": float(row["Close"]),
+                })
+            return candles
+
+        return jsonify({
+            "daily": df_to_candles(df_d, 5),
+            "weekly": df_to_candles(df_w, 5),
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Run ─────────────────────────────────────────────────────────────────
