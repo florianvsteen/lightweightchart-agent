@@ -435,6 +435,7 @@ def detect(
                 dw_broke_down = last_body_low  < dw_bottom
                 dw_broke_out  = dw_broke_up or dw_broke_down
                 dw_avg_body   = dw.get("avg_body", 0)
+                dw_avg_range = avg_range
                 dw_confirmed  = dw_broke_out and (bo_body_size > (dw_avg_range * impulse_multiplier))
                 dw["is_confirmed"] = dw_confirmed
                 dw["broke_out"]      = dw_broke_out
