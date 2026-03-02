@@ -1176,6 +1176,8 @@ class PairServer:
             detector_name = raw.replace("_", " ").title()
         print(f"[{self.pair_id}] Sending Discord alert for {detector_name}...")
 
+
+        tf = zone.get("timeframe_id", self.default_interval)
         try:
             if PLAYWRIGHT_AVAILABLE:
                 highlight_ts = zone.get("start", "")
@@ -1184,9 +1186,10 @@ class PairServer:
                     breakout_ts = zone["breakout_candle"].get("time", "")
                 center_ts = breakout_ts or highlight_ts
 
+                # UPDATE: Pass the interval into the URL
                 page_url = (
                     f"http://127.0.0.1:{self.port}"
-                    f"?highlight={highlight_ts}&center={center_ts}"
+                    f"?highlight={highlight_ts}&center={center_ts}&interval={tf}"
                 )
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
