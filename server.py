@@ -15,7 +15,7 @@ import time
 import threading
 import pandas as pd
 from flask import Flask, render_template, jsonify, request
-
+from tools.sessions import SESSIONS, FOREX, NYSE, CRYPTO
 from detectors import REGISTRY
 from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
 
