@@ -1202,8 +1202,9 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      loadData(); //
-      loadCvd(true);   // interval changed — force fresh fetch
+      loadData(); 
+      loadCvd(true);   
+      connectStream(); // <--- ADD THIS LINE HERE
     });
   });
 
@@ -1859,11 +1860,54 @@
   loadCvd();
   loadNews();
   loadDrawings();
-  setInterval(async () => {
-      // Await both or trigger both simultaneously in one block
-      await loadData();
-      await loadCvd(true);
-  }, 30 * 1000);
+  //setInterval(async () => {
+  //    // Await both or trigger both simultaneously in one block
+  //    await loadData();
+  //    await loadCvd(true);
+  //}, 30 * 1000);
+
+  // --- ADD THIS NEW BLOCK ---
+  let evtSource = null;
+
+  function connectStream() {
+    if (evtSource) evtSource.close();
+    
+    evtSource = new EventSource(`/proxy/${PAIR_ID}/api/stream?interval=${currentInterval}`);
+    
+    evtSource.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      
+      // 1. Update Price Candles
+      const shifted = (data.candles || []).map(c => ({...c, time: shiftTime(c.time)}));
+      if (shifted.length) {
+          candleSeries.setData(shifted);
+          _rawCandles = data.candles || [];
+          window._rawCandles = _rawCandles;
+      }
+      
+      // 2. Update Detectors and Bias
+      clearSeries();
+      const det = data.detectors || {};
+      if (det.accumulation)  activeSeries.accumulation  = renderAccumulation(det.accumulation);
+      if (det.supply_demand) activeSeries.supply_demand = renderSupplyDemand(det.supply_demand);
+      
+      updateBiasDisplay(data.bias);
+      updateDetectorStatus(det, data.bias);
+      
+      // 3. Trigger CVD update to match the new price data
+      loadCvd(true);
+    };
+
+    evtSource.onerror = function() {
+      console.log("Stream disconnected. Reconnecting in 5s...");
+      evtSource.close();
+      setTimeout(connectStream, 5000);
+    };
+  }
+
+  // Start the stream on page load
+  connectStream();
+  
   setInterval(loadBias, 24 * 60 * 60 * 1000);
 
   // ════════════════════════════════════════════════════════════════════
