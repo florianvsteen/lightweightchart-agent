@@ -18,6 +18,7 @@ from flask import Flask, render_template, jsonify, request
 
 from detectors import REGISTRY
 from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
+from tools.sessions import get_sessions_for_js
 
 try:
     from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -154,7 +155,8 @@ class PairServer:
 
         def _index():
             tz = os.environ.get("TZ", "UTC")
-            return render_template("agent-chart.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval, always_open=self.always_open)
+            sessions_js = get_sessions_for_js(self.market_timing)
+            return render_template("agent-chart.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval, always_open=self.always_open, sessions_js=json.dumps(sessions_js))
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
 

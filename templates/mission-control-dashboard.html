@@ -323,18 +323,16 @@
 <script>
 const PAIRS = {{ pairs_js | safe }};
 
-const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
-];
+// Session windows from sessions.py (passed via Python backend)
+const SESSION_WINDOWS = {{ sessions_js | safe }};
 
 function getCurrentSession() {
   const now = new Date();
   const dow  = now.getUTCDay();
   const hour = now.getUTCHours();
   if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 1)) return null;
-  return SESSION_WINDOWS.find(s => hour >= s.start && hour < s.end) || null;
+  const utcTime = hour + now.getUTCMinutes() / 60;
+  return SESSION_WINDOWS.find(s => utcTime >= s.start && utcTime < s.end) || null;
 }
 
 function isWeekendHalt() {
@@ -629,10 +627,12 @@ function updateClock() {
     badge.textContent = sess.label || sess.name;
     badge.className   = sess.name;
   } else {
-    const utcH = now.getUTCHours();
-    const next = SESSION_WINDOWS.find(s => s.start > utcH) || SESSION_WINDOWS[0];
+    const utcTime = now.getUTCHours() + now.getUTCMinutes() / 60;
+    const next = SESSION_WINDOWS.find(s => s.start > utcTime) || SESSION_WINDOWS[0];
     const target = new Date(now);
-    target.setUTCHours(next.start, 0, 0, 0);
+    const startHour = Math.floor(next.start);
+    const startMin = Math.round((next.start - startHour) * 60);
+    target.setUTCHours(startHour, startMin, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     const diff = target - now;
     const dh = Math.floor(diff / 3600000);

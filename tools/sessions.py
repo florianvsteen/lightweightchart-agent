@@ -138,3 +138,29 @@ def session_range_key(market_timing: str = FOREX) -> str | None:
 def is_always_open(market_timing: str) -> bool:
     """Return True if this market type never has a weekend halt."""
     return market_timing == CRYPTO
+
+
+def get_sessions_for_js(market_timing: str = FOREX) -> list[dict]:
+    """
+    Return sessions in a format suitable for JavaScript consumption.
+    Each session is a dict with: name, label, start (hour), end (hour).
+    Minutes are converted to fractional hours for simplicity.
+    """
+    windows = SESSIONS.get(market_timing, SESSIONS[FOREX])
+    labels = {
+        "asian": "Asian Session",
+        "london": "London Session",
+        "new_york": "New York Session",
+    }
+    result = []
+    for name, (sh, sm, eh, em) in windows.items():
+        # Convert to fractional hours for JS (e.g., 14:30 = 14.5)
+        start = sh + sm / 60
+        end = eh + em / 60
+        result.append({
+            "name": name,
+            "label": labels.get(name, name.replace("_", " ").title() + " Session"),
+            "start": start,
+            "end": end,
+        })
+    return result

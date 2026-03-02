@@ -867,6 +867,7 @@
   const TIMEZONE       = "{{ timezone }}";
   const DEFAULT_IV     = "{{ default_interval }}";
   const DETECTOR_TYPE  = "{{ detector_type }}";
+  const SESSION_WINDOWS = {{ sessions_js | safe }};
 
   // ── Timezone ────────────────────────────────────────────────────────
   function getTzOffset(tz) {
@@ -910,15 +911,12 @@
   updateWeekendOverlay();
 
   // ── Session badge ────────────────────────────────────────────────────
-  const SESSION_WINDOWS = [
-    { name:'asian',    label:'Asian Session',    start:1,  end:7  },
-    { name:'london',   label:'London Session',   start:8,  end:12 },
-    { name:'new_york', label:'New York Session', start:13, end:19 },
-  ];
+  // SESSION_WINDOWS is passed from Python via sessions.py (defined at top)
   function updateSessionBadge() {
-    const h = new Date().getUTCHours();
+    const now = new Date();
+    const utcTime = now.getUTCHours() + now.getUTCMinutes() / 60;
     const badge = document.getElementById('session-badge');
-    const sess  = SESSION_WINDOWS.find(s=>h>=s.start&&h<s.end);
+    const sess  = SESSION_WINDOWS.find(s=>utcTime>=s.start&&utcTime<s.end);
     if (sess) { badge.textContent=sess.label; badge.className=sess.name; }
     else { badge.textContent='Between Sessions'; badge.className=''; }
   }
