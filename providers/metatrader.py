@@ -47,6 +47,7 @@ _TF_MAP = {
     "1h":   60,
     "4h":   240,
     "1d":   1440,
+    "1w":   10080,
     "1wk":  10080,
 }
 
@@ -55,6 +56,7 @@ _PERIOD_MAP = {
     "1d":  timedelta(days=1),
     "5d":  timedelta(days=5),
     "30d": timedelta(days=30),
+    "60d": timedelta(days=60),
     "3mo": timedelta(days=90),
     "6mo": timedelta(days=180),
     "1y":  timedelta(days=365),
