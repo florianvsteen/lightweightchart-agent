@@ -546,10 +546,28 @@ class PairServer:
             while True:
                 if self._state_version > last_version:
                     last_version = self._state_version
+                    
                     with self._results_lock:
                         detector_results = dict(self._cached_detector_results)
                         candles = list(self._cached_candles.get(chart_interval, []))
                         
+                    # FIX: If the background thread hasn't cached this timeframe yet, fetch it!
+                    if not candles:
+                        try:
+                            df_chart = self._fetch_df(chart_interval)
+                            candles = [
+                                {
+                                    "time":  int(idx.timestamp()),
+                                    "open":  float(r["Open"]),
+                                    "high":  float(r["High"]),
+                                    "low":   float(r["Low"]),
+                                    "close": float(r["Close"]),
+                                }
+                                for idx, r in df_chart.iterrows()
+                            ]
+                        except Exception:
+                            candles = []
+
                     payload = {
                         "pair": self.pair_id,
                         "candles": candles,
@@ -557,12 +575,18 @@ class PairServer:
                         "bias": self._bias_cache
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                
                 time.sleep(0.5)
 
-        return Response(event_stream(), mimetype="text/event-stream")
-        
-        _api_stream.__name__ = f"api_stream_{pair_id}"
-        app.route("/api/stream")(_api_stream)
+        # FIX: Tell Flask and Nginx NOT to buffer this stream
+        return Response(
+            event_stream(), 
+            mimetype="text/event-stream", 
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
+        )
+    
+    _api_stream.__name__ = f"api_stream_{pair_id}"
+    app.route("/api/stream")(_api_stream)
 
     def _api_bias(self):
         """Return current bias for this pair."""
