@@ -434,6 +434,7 @@ def detect(
                 dw["broke_up"]       = dw_broke_up
                 dw["is_confirmed"]   = dw_confirmed
                 dw["impulse_ratio"]  = round(bo_body_size / dw_avg_body, 2) if dw_avg_body > 0 else None
+                dw["required_ratio"] = impulse_multiplier
                 # is_active: breakout candle body is still inside this window's box
                 if not dw_broke_out:
                     dw["is_active"] = True
