@@ -6,7 +6,6 @@
 <title>{{ pair_id }} — Chart View</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 <style>
   :root {
     --bg:      #0a0a0c;
@@ -711,8 +710,6 @@
     <button class="tf-btn" data-interval="15m">15m</button>
     <button class="tf-btn" data-interval="30m">30m</button>
     <button class="tf-btn" data-interval="1h">1h</button>
-    <button class="tf-btn" data-interval="1d">1D</button>
-    <button class="tf-btn" data-interval="1w">1W</button>
   </div>
   <div id="session-badge">--</div>
 
@@ -857,8 +854,6 @@
   const PAIR_ID        = "{{ pair_id }}";
   const PAIR_LABEL     = "{{ label }}";
   const ALWAYS_OPEN    = {{ 'true' if always_open else 'false' }};
-  const MARKET_TIMING  = "{{ market_timing }}";
-  const ALL_SESSIONS   = {{ sessions_js | safe }};
   const TIMEZONE       = "{{ timezone }}";
   const DEFAULT_IV     = "{{ default_interval }}";
   const DETECTOR_TYPE  = "{{ detector_type }}";
@@ -905,38 +900,17 @@
   updateWeekendOverlay();
 
   // ── Session badge ────────────────────────────────────────────────────
-  const SESSION_LABELS = {
-    asian: 'Asian Session',
-    london: 'London Session',
-    new_york: 'New York Session',
-  };
-
-  // Get session windows for this pair's market type
-  function getSessionWindows() {
-    const sessions = ALL_SESSIONS[MARKET_TIMING] || ALL_SESSIONS['FOREX'];
-    return Object.entries(sessions).map(([name, s]) => ({
-      name,
-      label: SESSION_LABELS[name] || name,
-      start: s.start,
-      startMin: s.startMin || 0,
-      end: s.end,
-      endMin: s.endMin || 0,
-    }));
-  }
-
-  const SESSION_WINDOWS = getSessionWindows();
-
+  const SESSION_WINDOWS = [
+    { name:'asian',    label:'Asian Session',    start:1,  end:7  },
+    { name:'london',   label:'London Session',   start:8,  end:12 },
+    { name:'new_york', label:'New York Session', start:13, end:19 },
+  ];
   function updateSessionBadge() {
-    const now = new Date();
-    const totalMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const h = new Date().getUTCHours();
     const badge = document.getElementById('session-badge');
-    const sess = SESSION_WINDOWS.find(s => {
-      const startMins = s.start * 60 + (s.startMin || 0);
-      const endMins = s.end * 60 + (s.endMin || 0);
-      return totalMins >= startMins && totalMins < endMins;
-    });
-    if (sess) { badge.textContent = sess.label; badge.className = sess.name; }
-    else { badge.textContent = 'Between Sessions'; badge.className = ''; }
+    const sess  = SESSION_WINDOWS.find(s=>h>=s.start&&h<s.end);
+    if (sess) { badge.textContent=sess.label; badge.className=sess.name; }
+    else { badge.textContent='Between Sessions'; badge.className=''; }
   }
   setInterval(updateSessionBadge, 5000);
   updateSessionBadge();
@@ -1219,9 +1193,8 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      loadData();
+      loadData(); //
       loadCvd(true);   // interval changed — force fresh fetch
-      resubscribeToWebSocket();  // re-subscribe with new interval
     });
   });
 
@@ -1485,9 +1458,8 @@
     if (DETECTOR_TYPE==='accumulation') {
       const z=det.accumulation;
       if (!z||z.status==='looking'||z.status==='out_of_session'||z.status==='weekend') {
-        const isOOS=z&&(z.status==='out_of_session'||z.status==='weekend');
         dot.className='det-dot looking';
-        text.textContent=isOOS?'Out of session':'Looking for accumulation';
+        text.textContent='Looking for accumulation';
       } else if (z.status==='cooldown') {
         const rem=Math.max(0,z.cooldown_until-Math.floor(Date.now()/1000));
         const pad=n=>String(n).padStart(2,'0');
@@ -1871,117 +1843,17 @@
 
   document.getElementById('news-refresh').addEventListener('click', loadNews);
 
-  // ── WebSocket Setup ──────────────────────────────────────────────────
-  let _socket = null;
-  let _wsConnected = false;
-  let _wsReconnectAttempts = 0;
-  const WS_MAX_RECONNECT = 5;
-
-  function initWebSocket() {
-    if (_socket) return;
-
-    try {
-      _socket = io({
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: WS_MAX_RECONNECT,
-        reconnectionDelay: 1000,
-      });
-
-      _socket.on('connect', () => {
-        console.log('[WS] Connected');
-        _wsConnected = true;
-        _wsReconnectAttempts = 0;
-        // Subscribe to this pair's updates
-        _socket.emit('subscribe', { pair_id: PAIR_ID, interval: currentInterval });
-      });
-
-      _socket.on('disconnect', () => {
-        console.log('[WS] Disconnected');
-        _wsConnected = false;
-      });
-
-      _socket.on('connect_error', (err) => {
-        console.log('[WS] Connection error:', err.message);
-        _wsReconnectAttempts++;
-        if (_wsReconnectAttempts >= WS_MAX_RECONNECT) {
-          console.log('[WS] Max reconnect attempts reached, falling back to polling');
-        }
-      });
-
-      _socket.on('chart_data', (data) => {
-        if (data.pair_id !== PAIR_ID) return;
-        console.log('[WS] Received chart data for', data.pair_id);
-        handleChartData(data);
-      });
-
-      _socket.on('error', (data) => {
-        console.error('[WS] Error:', data.message);
-      });
-
-    } catch (e) {
-      console.error('[WS] Failed to initialize:', e);
-    }
-  }
-
-  function handleChartData(data) {
-    if (isWeekend()) return;
-
-    const candles = data.candles || [];
-    const detectors = data.detectors || {};
-
-    if (!candles.length) return;
-
-    _rawCandles = candles;
-    window._rawCandles = _rawCandles;
-
-    _syncEnabled = false;
-    candleSeries.setData([]);
-    const shifted = _rawCandles.map(c => ({ ...c, time: shiftTime(c.time) }));
-    if (shifted.length) {
-      candleSeries.setData(shifted);
-      chart.timeScale().scrollToRealTime();
-      scheduleScaleSync();
-      requestAnimationFrame(renderAllDrawings);
-
-      const lastCandle = _rawCandles[_rawCandles.length - 1];
-      _lastPrice = lastCandle.close;
-      startCandleCountdownTimer();
-    }
-    setTimeout(() => { _syncEnabled = true; }, 100);
-
-    clearSeries();
-    if (detectors.accumulation) activeSeries.accumulation = renderAccumulation(detectors.accumulation);
-    if (detectors.supply_demand) activeSeries.supply_demand = renderSupplyDemand(detectors.supply_demand);
-
-    const biasInfo = _cachedBias;
-    updateBiasDisplay(biasInfo);
-    updateDetectorStatus(detectors, biasInfo);
-  }
-
-  function resubscribeToWebSocket() {
-    if (_socket && _wsConnected) {
-      _socket.emit('unsubscribe', { pair_id: PAIR_ID });
-      _socket.emit('subscribe', { pair_id: PAIR_ID, interval: currentInterval });
-    }
-  }
-
   // ── Init ─────────────────────────────────────────────────────────────
-  initWebSocket();
   loadData();
   loadBias();
   loadCvd();
   loadNews();
   loadDrawings();
-
-  // Polling fallback (15 seconds) - still useful when WebSocket is unavailable
   setInterval(async () => {
-      // Only poll if WebSocket is not connected or has failed
-      if (!_wsConnected) {
-        await loadData();
-      }
+      // Await both or trigger both simultaneously in one block
+      await loadData();
       await loadCvd(true);
-  }, 15 * 1000);
+  }, 30 * 1000);
   setInterval(loadBias, 24 * 60 * 60 * 1000);
 
   // ════════════════════════════════════════════════════════════════════
