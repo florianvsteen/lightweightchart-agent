@@ -472,7 +472,7 @@ class PairServer:
 
                     try:
                         from detectors.bias import get_bias
-                        if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 86400:
+                        if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 14400:
                             self._bias_cache = get_bias(self.ticker)
                             self._bias_cache_ts = time.time()
                     except Exception as be:
