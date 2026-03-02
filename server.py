@@ -44,7 +44,7 @@ PERIOD_MAP = {
     "1wk": "1y",
 }
 
-DETECTION_INTERVAL = 30
+DETECTION_INTERVAL = 15
 
 INTERVAL_SECONDS = {
     "1m":  60,
