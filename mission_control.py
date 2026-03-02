@@ -23,8 +23,7 @@ WebSocket events:
   unsubscribe   → client unsubscribes from pair updates
   chart_data    → server pushes new chart data to subscribed clients
 
-IMPORTANT: Use run_mission_control.py to start this app.
-  It ensures eventlet.monkey_patch() is called before any imports.
+NOTE: When using app.py as entry point, eventlet.monkey_patch() is called first.
 """
 
 import os
@@ -322,11 +321,7 @@ def api_news(pair_id):
 # ── Run ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # IMPORTANT: For production/PM2, use run_mission_control.py instead.
-    # It ensures eventlet.monkey_patch() is called before any imports.
-    print("[MissionControl] WARNING: Running directly. For production, use run_mission_control.py")
-
-    # Try to monkey_patch here, but it may be too late for some modules
+    # Monkey-patch eventlet when running standalone
     import eventlet
     eventlet.monkey_patch()
 
