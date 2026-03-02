@@ -126,6 +126,7 @@ class PairServer:
         self._cached_detector_results: dict = {}
         self._cached_candles: dict[str, list] = {}
         self._results_lock = threading.Lock()
+        self._state_version = 0
 
         self._bias_cache: dict = {}
         self._bias_cache_ts: float = 0.0
@@ -457,6 +458,7 @@ class PairServer:
                 with self._results_lock:
                     self._cached_detector_results = results
                     self._cached_candles.update(candles_by_interval)
+                    self._state_version += 1
 
                 try:
                     from detectors.bias import get_bias
@@ -533,6 +535,34 @@ class PairServer:
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    def _api_stream():
+        from flask import Response
+        import json, time
+        chart_interval = request.args.get("interval", self.interval)
+        
+        def event_stream():
+            last_version = -1
+            while True:
+                if self._state_version > last_version:
+                    last_version = self._state_version
+                    with self._results_lock:
+                        detector_results = dict(self._cached_detector_results)
+                        candles = list(self._cached_candles.get(chart_interval, []))
+                        
+                    payload = {
+                        "pair": self.pair_id,
+                        "candles": candles,
+                        "detectors": detector_results,
+                        "bias": self._bias_cache
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                time.sleep(0.5)
+
+        return Response(event_stream(), mimetype="text/event-stream")
+        
+        _api_stream.__name__ = f"api_stream_{pair_id}"
+        app.route("/api/stream")(_api_stream)
 
     def _api_bias(self):
         """Return current bias for this pair."""
