@@ -542,8 +542,9 @@ class PairServer:
             return jsonify({"error": str(e)}), 500
 
     def _api_stream(self):
-        from flask import Response
+        from flask import Response, request
         import json, time
+        
         chart_interval = request.args.get("interval", self.interval)
         
         def event_stream():
@@ -571,7 +572,7 @@ class PairServer:
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 time.sleep(0.5)
-    
+
         # Add headers to prevent Flask/Nginx from holding the data
         return Response(
             event_stream(), 
