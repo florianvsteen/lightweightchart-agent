@@ -767,6 +767,8 @@ function updatePairCard(pair, data) {
       dotEl.className      = 'status-dot looking';
       statusEl.textContent = isOOS ? 'Out of session' : 'Looking for accumulation';
       statusEl.className   = 'status-text dim';
+      extraEl.innerHTML    = '';
+      metaEl.textContent   = '';
     } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
       dotEl.className      = 'status-dot found';
       statusEl.textContent = z.status === 'confirmed' ? 'Aggressor candle confirmed ✓' : 'Accumulation found';
@@ -775,10 +777,22 @@ function updatePairCard(pair, data) {
         <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
         <br>Since ${formatUTC(z.start)}
       </div>`;
+      metaEl.textContent   = '';
     } else if (z.status === 'active' && z.is_active) {
       dotEl.className      = 'status-dot potential';
       statusEl.textContent = 'Accumulation forming';
       statusEl.className   = 'status-text';
+      extraEl.innerHTML    = `<div class="accum-box potential">
+        <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+        <br>Since ${formatUTC(z.start)}
+      </div>`;
+      metaEl.textContent   = '● FORMING';
+    } else {
+      dotEl.className      = 'status-dot looking';
+      statusEl.textContent = 'Looking for accumulation';
+      statusEl.className   = 'status-text dim';
+      extraEl.innerHTML    = '';
+      metaEl.textContent   = '';
     }
   }
 
