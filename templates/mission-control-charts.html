@@ -694,6 +694,13 @@
   #weekend-overlay .wk-title { font-family: 'Syne', sans-serif; font-size: 1.2rem; font-weight: 800; color: #e0e0e0; letter-spacing: 0.08em; }
   #weekend-overlay .wk-countdown { font-size: 2rem; font-weight: 700; color: #3a3a5a; font-variant-numeric: tabular-nums; }
   #weekend-overlay .wk-hint { font-size: 0.65rem; color: #333; letter-spacing: 0.1em; }
+
+  {% if detector_type != 'accumulation' %}
+  #cvd-resize-handle, #cvd-panel {
+    display: none !important;
+  }
+  {% endif %}
+  
 </style>
 </head>
 <body>
@@ -1773,6 +1780,7 @@
   let _cvdCacheKey  = null;   // "PAIR:interval" — invalidate on pair/TF change
 
   async function loadCvd(forceRefresh = false) {
+    if (DETECTOR_TYPE !== 'accumulation') return;
     if (isWeekend()) return;
     const cacheKey = `${PAIR_ID}:${currentInterval}`;
 
