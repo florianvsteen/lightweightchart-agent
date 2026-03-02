@@ -244,6 +244,14 @@
         const _urlInterval = _urlParams.get('interval');
         let currentInterval = _urlInterval || "{{ default_interval }}";
 
+        // Helper to keep buttons in sync with logic
+        function updateIntervalButtons(activeIv) {
+            document.querySelectorAll('.tf-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.interval === activeIv);
+            });
+        }
+        updateIntervalButtons(currentInterval);
+
         // ── Timezone offset ───────────────────────────────────────────
         function getTzOffsetSeconds(tz) {
             try {
@@ -819,36 +827,25 @@
         function loadData() {
             if (isWeekendHalt()) { showClosedOverlay('weekend'); return; }
             fetch(`/api/data?interval=${currentInterval}`)
-                .then(res => res.text())
-                .then(raw => {
-                    let data;
-                    try { data = JSON.parse(raw); } catch(e) {
-                        console.error('[loadData] Server returned non-JSON:', raw.substring(0, 300));
-                        return;
-                    }
+                .then(res => res.json())
+                .then(data => {
                     if (!data.candles || data.candles.length === 0) {
                         showClosedOverlay('no_data');
                         return;
                     }
                     hideClosedOverlay();
 
-                    // Store raw candles for Playwright centering
                     window._rawCandles = data.candles;
+                    candleSeries.setData(data.candles.map(c => ({ ...c, time: shiftTime(c.time) })));
 
-                    candleSeries.setData([]);
-                    const shifted = data.candles.map(c => ({ ...c, time: shiftTime(c.time) }));
-                    candleSeries.setData(shifted);
-
-                    // Update last price for countdown and start countdown timer
                     if (data.candles.length > 0) {
-                        const lastCandle = data.candles[data.candles.length - 1];
-                        _lastPrice = lastCandle.close;
+                        _lastPrice = data.candles[data.candles.length - 1].close;
                         startCandleCountdownTimer();
                     }
 
-                    // Center on screenshot target candle (Playwright mode)
                     maybeCenterOnScreenshot(data.candles);
 
+                    // Clear old drawings
                     for (const [name, seriesList] of Object.entries(activeSeries)) {
                         (seriesList || []).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
                         delete activeSeries[name];
@@ -857,65 +854,49 @@
                     const detectors = data.detectors || {};
                     for (const [name, result] of Object.entries(detectors)) {
                         const renderer = detectorRenderers[name];
-                        if (result && renderer) {
-                            activeSeries[name] = renderer(chart, result);
+                        if (!result || !renderer) continue;
 
-                            if (name === 'supply_demand') {
-                                const bias  = result.bias  || {};
-                                const zones = result.zones || [];
-                                updateBiasBadge(bias);
-                                const hasMisaligned = bias.bias === 'misaligned';
-                                if (hasMisaligned && zones.length > 0) {
-                                    setStatus(name, 'sd_misaligned_found');
-                                } else if (hasMisaligned) {
-                                    setStatus(name, 'sd_misaligned');
-                                } else if (zones.length > 0) {
-                                    setStatus(name, 'sd_found');
-                                } else if (bias.bias === 'strong_bullish') {
-                                    setStatus(name, 'sd_strong_bullish');
-                                } else if (bias.bias === 'bullish') {
-                                    setStatus(name, 'sd_bullish');
-                                } else if (bias.bias === 'strong_bearish') {
-                                    setStatus(name, 'sd_strong_bearish');
-                                } else if (bias.bias === 'bearish') {
-                                    setStatus(name, 'sd_bearish');
-                                } else {
-                                    setStatus(name, 'sd_none');
-                                }
-                            } else if (name === 'accumulation') {
-                                const s = result.status;
-                                if (s === 'weekend') {
-                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'weekend_closed');
-                                    stopCooldownTimer();
-                                } else if (s === 'cooldown') {
-                                    startCooldownTimer(result.cooldown_until);
-                                } else if (s === 'confirmed') {
-                                    setStatus(name, 'confirmed');
-                                    stopCooldownTimer();
-                                } else if (s === 'active') {
-                                    setStatus(name, 'active');
-                                    stopCooldownTimer();
-                                } else if (s === 'found' || s === 'potential') {
-                                    setStatus(name, s);
-                                    stopCooldownTimer();
-                                } else if (s === 'out_of_session') {
-                                    setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
-                                    stopCooldownTimer();
-                                } else {
-                                    setStatus(name, 'looking');
-                                    stopCooldownTimer();
-                                }
+                        if (name === 'accumulation') {
+                            // Handle both Single-TF (object) and Multi-TF (nested dictionary)
+                            let zonesToRender = [];
+                            let primaryStatus = 'looking';
+
+                            if (result.status) {
+                                zonesToRender = [result];
+                                primaryStatus = result.status;
                             } else {
-                                setStatus(name, result.status || (result.is_active ? 'found' : 'looking'));
+                                // Multi-timeframe result: {"1m": {...}, "3m": {...}}
+                                const tfs = Object.values(result);
+                                zonesToRender = tfs.filter(z => z);
+                                
+                                // Prioritize the most urgent status for the badge
+                                if (tfs.some(z => z?.status === 'confirmed')) primaryStatus = 'confirmed';
+                                else if (tfs.some(z => z?.status === 'found')) primaryStatus = 'found';
+                                else if (tfs.some(z => z?.status === 'active')) primaryStatus = 'active';
+                                else if (tfs.some(z => z?.status === 'cooldown')) primaryStatus = 'cooldown';
                             }
-                        } else {
-                            ensureStatusEl(name);
-                            if (name === 'supply_demand') {
-                                updateBiasBadge(null);
-                                setStatus(name, 'sd_none');
+
+                            // Render all boxes from all timeframes
+                            zonesToRender.forEach(z => {
+                                const series = renderer(chart, z);
+                                activeSeries[name] = (activeSeries[name] || []).concat(series);
+                            });
+
+                            setStatus(name, primaryStatus);
+                            if (primaryStatus === 'cooldown') {
+                                // Find the latest cooldown timestamp among all TFs
+                                const maxCD = Math.max(...zonesToRender.map(z => z.cooldown_until || 0));
+                                startCooldownTimer(maxCD);
                             } else {
-                                setStatus(name, ALWAYS_OPEN ? 'open_not_in_session' : 'out_of_session');
+                                stopCooldownTimer();
                             }
+
+                        } else if (name === 'supply_demand') {
+                            // ... existing supply_demand logic ...
+                            activeSeries[name] = renderer(chart, result);
+                            const bias = result.bias || {};
+                            updateBiasBadge(bias);
+                            setStatus(name, result.zones?.length > 0 ? 'sd_found' : 'sd_none');
                         }
                     }
                 })
