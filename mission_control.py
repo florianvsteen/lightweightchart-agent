@@ -23,7 +23,7 @@ import os
 import json
 import requests
 
-from flask import Flask, render_template, jsonify, redirect, request
+from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
 
 # ── Config ─────────────────────────────────────────────────────────────
@@ -233,6 +233,31 @@ def api_news(pair_id):
     articles = _get_news(pair_id, yf_ticker)
     return jsonify({"articles": articles, "cached": False})
 
+
+@app.route("/proxy/<pair_id>/api/stream")
+def proxy_api_stream(pair_id):
+    cfg = PAIRS.get(pair_id.upper())
+    if not cfg:
+        return jsonify({"error": f"Unknown pair: {pair_id}"}), 404
+        
+    qs = request.query_string.decode()
+    url = f"http://127.0.0.1:{cfg['port']}/api/stream"
+    if qs:
+        url += "?" + qs
+
+    def stream_generator():
+        import requests
+        try:
+            # stream=True is critical here! It keeps the connection open.
+            with requests.get(url, stream=True, timeout=86400) as r:
+                for line in r.iter_lines():
+                    if line:
+                        # Yield the exact SSE format back to the browser
+                        yield f"{line.decode('utf-8')}\n\n"
+        except Exception as e:
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+
+    return Response(stream_generator(), mimetype="text/event-stream")
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
