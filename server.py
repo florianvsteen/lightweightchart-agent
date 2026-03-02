@@ -18,6 +18,7 @@ from flask import Flask, render_template, jsonify, request
 
 from detectors import REGISTRY
 from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
+from tools.sessions import SESSIONS
 
 try:
     from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -148,9 +149,33 @@ class PairServer:
         app = self.app
         pair_id = self.pair_id
 
+        def _sessions_js():
+            """Convert SESSIONS dict to a JSON-serializable format for frontend use."""
+            result = {}
+            for market_type, sessions in SESSIONS.items():
+                result[market_type] = {}
+                for session_name, (sh, sm, eh, em) in sessions.items():
+                    result[market_type][session_name] = {
+                        "start": sh,
+                        "startMin": sm,
+                        "end": eh,
+                        "endMin": em,
+                    }
+            return result
+
         def _index():
             tz = os.environ.get("TZ", "UTC")
-            return render_template("agent-chart.html", pair_id=pair_id, label=self.label, port=self.port, timezone=tz, default_interval=self.default_interval, always_open=self.always_open)
+            return render_template(
+                "agent-chart.html",
+                pair_id=pair_id,
+                label=self.label,
+                port=self.port,
+                timezone=tz,
+                default_interval=self.default_interval,
+                always_open=self.always_open,
+                market_timing=self.market_timing,
+                sessions_js=json.dumps(_sessions_js()),
+            )
         _index.__name__ = f"index_{pair_id}"
         app.route("/")(_index)
 
