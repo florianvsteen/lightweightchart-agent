@@ -1497,7 +1497,12 @@
       else if (bias.bias==='strong_bearish'||bias.bias==='bearish') dot.className='det-dot bearish';
       else dot.className='det-dot looking';
       if (active.length>0) text.textContent=`${active.length} active zone${active.length>1?'s':''}`;
-      else if (bias.bias==='misaligned') text.textContent='Bias misaligned — scanning';
+      else if (bias.bias==='misaligned') {
+        const weeklyBias = (bias.weekly_bias || '').toLowerCase();
+        const seeking = weeklyBias.includes('bull') ? 'demand zones' : 
+                        weeklyBias.includes('bear') ? 'supply zones' : 'weekly direction';
+        text.textContent=`Bias misaligned — seeking ${seeking}`;
+      }
       else text.textContent=bias.bias&&bias.bias.includes('bullish')?'Seeking demand zones':'Seeking supply zones';
     }
   }
