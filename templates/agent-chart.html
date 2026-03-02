@@ -237,6 +237,8 @@
     <script>
         const PAIR_ID = "{{ pair_id }}";
         const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
+        const MARKET_TIMING = "{{ market_timing }}";
+        const ALL_SESSIONS = {{ sessions_js | safe }};
         const TIMEZONE = "{{ timezone }}";
 
         // ── URL params (used for Playwright screenshot mode) ──────────
@@ -327,27 +329,39 @@
 
         // ── Session clock ─────────────────────────────────────────────
         const SESSION_LABELS = { asian: 'Asian', london: 'London', new_york: 'New York' };
-        const SESSION_WINDOWS_UTC = [
-            { name: 'asian',    start: 1,  end: 7  },
-            { name: 'london',   start: 8,  end: 12 },
-            { name: 'new_york', start: 13, end: 19 },
-        ];
+
+        // Get session windows for this pair's market type
+        function getSessionWindows() {
+            const sessions = ALL_SESSIONS[MARKET_TIMING] || ALL_SESSIONS['FOREX'];
+            return Object.entries(sessions).map(([name, s]) => ({
+                name,
+                start: s.start,
+                startMin: s.startMin || 0,
+                end: s.end,
+                endMin: s.endMin || 0,
+            }));
+        }
+
+        const SESSION_WINDOWS_UTC = getSessionWindows();
 
         function getCurrentSession() {
-            const hour = new Date().getUTCHours();
+            const now = new Date();
+            const totalMins = now.getUTCHours() * 60 + now.getUTCMinutes();
             for (const s of SESSION_WINDOWS_UTC) {
-                if (hour >= s.start && hour < s.end) return s.name;
+                const startMins = s.start * 60 + (s.startMin || 0);
+                const endMins = s.end * 60 + (s.endMin || 0);
+                if (totalMins >= startMins && totalMins < endMins) return s.name;
             }
             return null;
         }
 
         function getNextSession() {
-            const now     = new Date();
-            const utcHour = now.getUTCHours();
-            let next = SESSION_WINDOWS_UTC.find(s => s.start > utcHour);
+            const now = new Date();
+            const totalMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+            let next = SESSION_WINDOWS_UTC.find(s => (s.start * 60 + (s.startMin || 0)) > totalMins);
             if (!next) next = SESSION_WINDOWS_UTC[0];
             const target = new Date(now);
-            target.setUTCHours(next.start, 0, 0, 0);
+            target.setUTCHours(next.start, next.startMin || 0, 0, 0);
             if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
             const diffMs = target - now;
             const diffH  = Math.floor(diffMs / 3600000);

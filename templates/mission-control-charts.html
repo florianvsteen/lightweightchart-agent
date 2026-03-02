@@ -857,6 +857,8 @@
   const PAIR_ID        = "{{ pair_id }}";
   const PAIR_LABEL     = "{{ label }}";
   const ALWAYS_OPEN    = {{ 'true' if always_open else 'false' }};
+  const MARKET_TIMING  = "{{ market_timing }}";
+  const ALL_SESSIONS   = {{ sessions_js | safe }};
   const TIMEZONE       = "{{ timezone }}";
   const DEFAULT_IV     = "{{ default_interval }}";
   const DETECTOR_TYPE  = "{{ detector_type }}";
@@ -903,17 +905,38 @@
   updateWeekendOverlay();
 
   // ── Session badge ────────────────────────────────────────────────────
-  const SESSION_WINDOWS = [
-    { name:'asian',    label:'Asian Session',    start:1,  end:7  },
-    { name:'london',   label:'London Session',   start:8,  end:12 },
-    { name:'new_york', label:'New York Session', start:13, end:19 },
-  ];
+  const SESSION_LABELS = {
+    asian: 'Asian Session',
+    london: 'London Session',
+    new_york: 'New York Session',
+  };
+
+  // Get session windows for this pair's market type
+  function getSessionWindows() {
+    const sessions = ALL_SESSIONS[MARKET_TIMING] || ALL_SESSIONS['FOREX'];
+    return Object.entries(sessions).map(([name, s]) => ({
+      name,
+      label: SESSION_LABELS[name] || name,
+      start: s.start,
+      startMin: s.startMin || 0,
+      end: s.end,
+      endMin: s.endMin || 0,
+    }));
+  }
+
+  const SESSION_WINDOWS = getSessionWindows();
+
   function updateSessionBadge() {
-    const h = new Date().getUTCHours();
+    const now = new Date();
+    const totalMins = now.getUTCHours() * 60 + now.getUTCMinutes();
     const badge = document.getElementById('session-badge');
-    const sess  = SESSION_WINDOWS.find(s=>h>=s.start&&h<s.end);
-    if (sess) { badge.textContent=sess.label; badge.className=sess.name; }
-    else { badge.textContent='Between Sessions'; badge.className=''; }
+    const sess = SESSION_WINDOWS.find(s => {
+      const startMins = s.start * 60 + (s.startMin || 0);
+      const endMins = s.end * 60 + (s.endMin || 0);
+      return totalMins >= startMins && totalMins < endMins;
+    });
+    if (sess) { badge.textContent = sess.label; badge.className = sess.name; }
+    else { badge.textContent = 'Between Sessions'; badge.className = ''; }
   }
   setInterval(updateSessionBadge, 5000);
   updateSessionBadge();

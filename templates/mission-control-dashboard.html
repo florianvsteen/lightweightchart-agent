@@ -323,19 +323,49 @@
 
 <script>
 const PAIRS = {{ pairs_js | safe }};
+const ALL_SESSIONS = {{ sessions_js | safe }};
 
-const SESSION_WINDOWS = [
-  { name: 'asian',    label: 'Asian Session',    start: 1,  end: 7  },
-  { name: 'london',   label: 'London Session',   start: 8,  end: 12 },
-  { name: 'new_york', label: 'New York Session', start: 13, end: 19 },
-];
+// Session labels for display
+const SESSION_LABELS = {
+  asian: 'Asian Session',
+  london: 'London Session',
+  new_york: 'New York Session',
+};
 
-function getCurrentSession() {
+// Get session windows for a specific market type (defaults to FOREX)
+function getSessionWindows(marketTiming) {
+  const sessions = ALL_SESSIONS[marketTiming] || ALL_SESSIONS['FOREX'];
+  return Object.entries(sessions).map(([name, s]) => ({
+    name,
+    label: SESSION_LABELS[name] || name,
+    start: s.start,
+    startMin: s.startMin || 0,
+    end: s.end,
+    endMin: s.endMin || 0,
+  }));
+}
+
+// Default to FOREX sessions for global session badge
+const SESSION_WINDOWS = getSessionWindows('FOREX');
+
+function getCurrentSession(marketTiming) {
   const now = new Date();
   const dow  = now.getUTCDay();
   const hour = now.getUTCHours();
-  if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 1)) return null;
-  return SESSION_WINDOWS.find(s => hour >= s.start && hour < s.end) || null;
+  const mins = now.getUTCMinutes();
+  const totalMins = hour * 60 + mins;
+
+  // Check weekend halt (CRYPTO never halts)
+  if (marketTiming !== 'CRYPTO') {
+    if ((dow === 5 && hour >= 23) || dow === 6 || (dow === 0 && hour < 22)) return null;
+  }
+
+  const windows = marketTiming ? getSessionWindows(marketTiming) : SESSION_WINDOWS;
+  return windows.find(s => {
+    const startMins = s.start * 60 + (s.startMin || 0);
+    const endMins = s.end * 60 + (s.endMin || 0);
+    return totalMins >= startMins && totalMins < endMins;
+  }) || null;
 }
 
 function isWeekendHalt() {
@@ -611,10 +641,10 @@ function updateClock() {
     badge.textContent = sess.label || sess.name;
     badge.className   = sess.name;
   } else {
-    const utcH = now.getUTCHours();
-    const next = SESSION_WINDOWS.find(s => s.start > utcH) || SESSION_WINDOWS[0];
+    const totalMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const next = SESSION_WINDOWS.find(s => (s.start * 60 + (s.startMin || 0)) > totalMins) || SESSION_WINDOWS[0];
     const target = new Date(now);
-    target.setUTCHours(next.start, 0, 0, 0);
+    target.setUTCHours(next.start, next.startMin || 0, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     const diff = target - now;
     const dh = Math.floor(diff / 3600000);

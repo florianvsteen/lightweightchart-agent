@@ -35,6 +35,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from tools.news import get_news as _get_news
 from tools.loaddata import get_loader
+from tools.sessions import SESSIONS, FOREX
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -80,14 +81,33 @@ loader.set_broadcast_callback(broadcast_chart_data)
 def _pairs_js():
     return [
         {
-            "id":          pair_id,
-            "label":       cfg.get("label", pair_id),
-            "port":        cfg.get("port", 0),
-            "type":        "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
-            "always_open": cfg.get("market_timing") == "CRYPTO",
+            "id":            pair_id,
+            "label":         cfg.get("label", pair_id),
+            "port":          cfg.get("port", 0),
+            "type":          "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation",
+            "always_open":   cfg.get("market_timing") == "CRYPTO",
+            "market_timing": cfg.get("market_timing", FOREX),
         }
         for pair_id, cfg in PAIRS.items()
     ]
+
+
+def _sessions_js():
+    """Convert SESSIONS dict to a JSON-serializable format for frontend use.
+
+    Format: { "FOREX": { "asian": { start: 1, startMin: 0, end: 7, endMin: 0 }, ... }, ... }
+    """
+    result = {}
+    for market_type, sessions in SESSIONS.items():
+        result[market_type] = {}
+        for session_name, (sh, sm, eh, em) in sessions.items():
+            result[market_type][session_name] = {
+                "start": sh,
+                "startMin": sm,
+                "end": eh,
+                "endMin": em,
+            }
+    return result
 
 
 def _pairs_list():
@@ -166,6 +186,7 @@ def dashboard():
     return render_template(
         "mission-control-dashboard.html",
         pairs_js=json.dumps(_pairs_js()),
+        sessions_js=json.dumps(_sessions_js()),
     )
 
 
@@ -179,12 +200,15 @@ def chart_view(pair_id):
     tz = os.environ.get("TZ", "UTC")
     detector_type = "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation"
     default_interval = cfg.get("default_interval", cfg.get("interval", "1m"))
+    market_timing = cfg.get("market_timing", FOREX)
 
     return render_template(
         "mission-control-charts.html",
         pair_id=pair_id,
         label=cfg["label"],
-        always_open=cfg.get("market_timing") == "CRYPTO",
+        always_open=market_timing == "CRYPTO",
+        market_timing=market_timing,
+        sessions_js=json.dumps(_sessions_js()),
         timezone=tz,
         default_interval=default_interval,
         detector_type=detector_type,
