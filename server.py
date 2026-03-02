@@ -1168,6 +1168,9 @@ class PairServer:
             print(f"[{self.pair_id}] discord-webhook package not installed.")
             return
 
+        # NEW: Extract the timeframe from the zone metadata
+        tf = zone.get("timeframe_id", "unknown")
+
         screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
         raw = zone.get("detector", "unknown")
         if raw in ("demand", "supply"):
@@ -1205,9 +1208,9 @@ class PairServer:
 
             if zone.get("detector") in ("demand", "supply"):
                 emoji = "📈" if zone.get("detector") == "demand" else "📉"
-                content = f"{emoji} **{self.pair_id} — {detector_name} Found**"
+                content = f"{emoji} **{self.pair_id} ({tf}) — {detector_name} Found**"
             else:
-                content = f"🚀 **{self.pair_id} — Aggressor Candle Confirmed**"
+                content = f"🚀 **{self.pair_id} ({tf}) — Aggressor Candle Confirmed**"
             webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=content)
 
             if PLAYWRIGHT_AVAILABLE and os.path.exists(screenshot_path):
