@@ -435,10 +435,10 @@ def detect(
                 dw_broke_down = last_body_low  < dw_bottom
                 dw_broke_out  = dw_broke_up or dw_broke_down
                 dw_avg_body   = dw.get("avg_body", 0)
-                dw_confirmed  = dw_broke_out and (bo_body_size > (dw_avg_body * impulse_multiplier))
+                dw_confirmed  = dw_broke_out and (bo_body_size > (dw_avg_range * impulse_multiplier))
+                dw["is_confirmed"] = dw_confirmed
                 dw["broke_out"]      = dw_broke_out
                 dw["broke_up"]       = dw_broke_up
-                dw["is_confirmed"]   = dw_confirmed
                 dw["impulse_ratio"]  = round(bo_body_size / dw_avg_body, 2) if dw_avg_body > 0 else None
                 dw["required_ratio"] = impulse_multiplier
                 # is_active: breakout candle body is still inside this window's box
@@ -516,6 +516,8 @@ def detect(
         #Only bodies for the accumulation agressor calculation
         #is_impulsive = bo_body_size > (avg_body * impulse_multiplier)
         #Bodies and candles for the accumulation agressor calculation
+  
+        avg_range = candidate["avg_range"]
         is_impulsive = bo_body_size > (avg_range * impulse_multiplier)
 
         if not is_impulsive:
