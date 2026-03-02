@@ -1202,8 +1202,8 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      loadData(); 
-      loadCvd(true);   
+      //loadData(); 
+      //loadCvd(true);   
       connectStream(); // <--- ADD THIS LINE HERE
     });
   });
@@ -1855,9 +1855,9 @@
   document.getElementById('news-refresh').addEventListener('click', loadNews);
 
   // ── Init ─────────────────────────────────────────────────────────────
-  loadData();
+  //loadData();
   loadBias();
-  loadCvd();
+  //loadCvd();
   loadNews();
   loadDrawings();
   //setInterval(async () => {
@@ -1880,9 +1880,23 @@
       // 1. Update Price Candles
       const shifted = (data.candles || []).map(c => ({...c, time: shiftTime(c.time)}));
       if (shifted.length) {
+          // If this is the first load, we want it to snap to the newest candle
+          const isInitialLoad = _rawCandles.length === 0;
+          
           candleSeries.setData(shifted);
           _rawCandles = data.candles || [];
           window._rawCandles = _rawCandles;
+
+          // --- FORMERLY IN loadData() ---
+          _lastPrice = _rawCandles[_rawCandles.length - 1].close;
+          startCandleCountdownTimer();
+          
+          if (isInitialLoad) {
+              chart.timeScale().scrollToRealTime();
+              scheduleScaleSync();
+              requestAnimationFrame(renderAllDrawings);
+          }
+          // ------------------------------
       }
       
       // 2. Update Detectors and Bias
@@ -1894,8 +1908,10 @@
       updateBiasDisplay(data.bias);
       updateDetectorStatus(det, data.bias);
       
-      // 3. Trigger CVD update to match the new price data
-      loadCvd(true);
+      // 3. Render CVD
+      if (data.cvd_data && DETECTOR_TYPE === 'accumulation') {
+          renderCvd(data.cvd_data);
+      }
     };
 
     evtSource.onerror = function() {
