@@ -238,9 +238,11 @@
         const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
         const TIMEZONE = "{{ timezone }}";
 
-        // ── URL params (used for Playwright screenshot mode) ──────────
         const _urlParams = new URLSearchParams(window.location.search);
         const _screenshotCenterTs = _urlParams.get('center') ? parseInt(_urlParams.get('center')) : null;
+
+        const _urlInterval = _urlParams.get('interval');
+        let currentInterval = _urlInterval || "{{ default_interval }}";
 
         // ── Timezone offset ───────────────────────────────────────────
         function getTzOffsetSeconds(tz) {
