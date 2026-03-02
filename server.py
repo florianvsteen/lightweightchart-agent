@@ -415,37 +415,27 @@ class PairServer:
             time.sleep(self._stagger_seconds)
 
         min_interval = self._min_poll_interval()
-        print(
-            f"[{self.pair_id}] Background detector started "
-            f"(poll interval: {int(min_interval)}s)"
-        )
+        chart_update_interval = 15.0  # Force chart candles to update every 15s
+        
+        print(f"[{self.pair_id}] Background started. Charts: {int(chart_update_interval)}s | Detectors: {int(min_interval)}s")
+
+        last_chart_update = 0.0
 
         while True:
             now = time.time()
-            elapsed = now - self._last_detection_time
 
-            if elapsed < min_interval:
-                sleep_for = min(DETECTION_INTERVAL, min_interval - elapsed)
-                time.sleep(sleep_for)
-                continue
+            # ── 1. FAST LOOP: Update Chart Candles (Every 15s) ──────────────
+            if now - last_chart_update >= chart_update_interval:
+                try:
+                    intervals_to_cache = set()
+                    for name in self.detector_names:
+                        tf = self.detector_params.get(name, {}).get("timeframe", self.interval)
+                        intervals_to_cache.add(tf)
+                    intervals_to_cache.add(self.default_interval)
+                    intervals_to_cache.add(self.interval)
 
-            try:
-                with self._detection_lock:
-                    cache = {}
-                    results = self._run_detectors(cache)
-                    self._process_alerts(results)
-                self._last_detection_time = time.time()
-
-                intervals_to_cache = set()
-                for name in self.detector_names:
-                    tf = self.detector_params.get(name, {}).get("timeframe", self.interval)
-                    intervals_to_cache.add(tf)
-                intervals_to_cache.add(self.default_interval)
-                intervals_to_cache.add(self.interval)
-
-                candles_by_interval = {}
-                for iv in intervals_to_cache:
-                    try:
+                    candles_by_interval = {}
+                    for iv in intervals_to_cache:
                         df_iv = self._fetch_df(iv)
                         candles_by_interval[iv] = [
                             {
@@ -457,27 +447,42 @@ class PairServer:
                             }
                             for idx, r in df_iv.iterrows()
                         ]
-                    except Exception as ce:
-                        print(f"[{self.pair_id}] Candle cache error ({iv}): {ce}")
 
-                with self._results_lock:
-                    self._cached_detector_results = results
-                    self._cached_candles.update(candles_by_interval)
-                    self._state_version += 1
+                    with self._results_lock:
+                        self._cached_candles.update(candles_by_interval)
+                        self._state_version += 1  # Trigger the stream!
 
+                    last_chart_update = time.time()
+                except Exception as e:
+                    print(f"[{self.pair_id}] Chart cache error: {e}")
+
+            # ── 2. SLOW LOOP: Run Detectors (Every min_interval) ────────────
+            if now - self._last_detection_time >= min_interval:
                 try:
-                    from detectors.bias import get_bias
-                    if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 86400:
-                        self._bias_cache = get_bias(self.ticker)
-                        self._bias_cache_ts = time.time()
-                except Exception as be:
-                    print(f"[{self.pair_id}] Bias cache refresh error: {be}")
+                    with self._detection_lock:
+                        cache = {}
+                        results = self._run_detectors(cache)
+                        self._process_alerts(results)
+                        
+                    self._last_detection_time = time.time()
 
-                print(f"[{self.pair_id}] Detection cycle complete: {list(results.keys())}")
-            except Exception as e:
-                print(f"[{self.pair_id}] Detection loop error: {e}")
+                    with self._results_lock:
+                        self._cached_detector_results = results
+                        self._state_version += 1  # Trigger the stream!
 
-            time.sleep(DETECTION_INTERVAL)
+                    try:
+                        from detectors.bias import get_bias
+                        if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 86400:
+                            self._bias_cache = get_bias(self.ticker)
+                            self._bias_cache_ts = time.time()
+                    except Exception as be:
+                        print(f"[{self.pair_id}] Bias refresh error: {be}")
+
+                except Exception as e:
+                    print(f"[{self.pair_id}] Detection loop error: {e}")
+
+            # Sleep 1 second so the while loop doesn't burn CPU
+            time.sleep(1)
 
     # ------------------------------------------------------------------ #
     # Flask API
