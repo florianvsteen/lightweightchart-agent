@@ -1,3 +1,7 @@
+# Eventlet monkey-patching must be done BEFORE any other imports
+import eventlet
+eventlet.monkey_patch()
+
 """
 mission_control.py
 
@@ -47,8 +51,8 @@ app = Flask(
     static_folder=os.path.join(ROOT, "static") if os.path.exists(os.path.join(ROOT, "static")) else None,
 )
 
-# Configure SocketIO with async_mode for better performance
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+# Configure SocketIO with eventlet for proper WebSocket support
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # ── DataLoader Setup ───────────────────────────────────────────────────
 loader = get_loader()
