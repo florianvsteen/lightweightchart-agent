@@ -391,7 +391,7 @@ function renderBiasRow(biasInfo) {
   if (!biasInfo) return '';
   const bias  = biasInfo.bias || 'misaligned';
   const warn  = bias === 'misaligned'
-    ? ' <span style="font-size:9px;color:#c8a84b;margin-left:4px">lower confidence</span>'
+    ? ' <span style="font-size:9px;color:#c8a84b;margin-left:4px">Lower your risk!</span>'
     : '';
   return `<div class="bias-row"><span class="bias-pill ${bias}">${biasLabelText(bias)}</span>${warn}</div>`;
 }
