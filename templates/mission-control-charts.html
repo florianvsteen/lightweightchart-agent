@@ -1466,9 +1466,15 @@
 
     if (DETECTOR_TYPE==='accumulation') {
       const z=det.accumulation;
-      if (!z||z.status==='looking'||z.status==='out_of_session'||z.status==='weekend') {
+      if (!z||z.status==='looking') {
         dot.className='det-dot looking';
         text.textContent='Looking for accumulation';
+      } else if (z.status==='out_of_session') {
+        dot.className='det-dot looking';
+        text.textContent='Not looking for accumulation — out of session';
+      } else if (z.status==='weekend') {
+        dot.className='det-dot looking';
+        text.textContent='Not looking for accumulation — weekend';
       } else if (z.status==='cooldown') {
         const rem=Math.max(0,z.cooldown_until-Math.floor(Date.now()/1000));
         const pad=n=>String(n).padStart(2,'0');
