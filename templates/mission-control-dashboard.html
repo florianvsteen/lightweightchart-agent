@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mission Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 <style>
   :root {
     --bg:        #0a0a0c;
@@ -603,7 +604,7 @@ function updateClock() {
   }
   document.getElementById('weekend-banner').style.display = 'none';
   const lbl = document.getElementById('refresh-label');
-  if (lbl) lbl.textContent = 'LIVE · 60s';
+  if (lbl && !_wsConnected) lbl.textContent = 'LIVE · 15s';
 
   const sess = getCurrentSession();
   if (sess) {
@@ -657,11 +658,160 @@ function applyWeekendStandby() {
   document.getElementById('last-update').textContent = 'Polling suspended for weekend';
 }
 
+// ── WebSocket support ─────────────────────────────────────────────────
+let _socket = null;
+let _wsConnected = false;
+let _wsReconnectAttempts = 0;
+const WS_MAX_RECONNECTS = 5;
+
+function initWebSocket() {
+  if (_socket) return;
+
+  try {
+    _socket = io({
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: WS_MAX_RECONNECTS,
+    });
+
+    _socket.on('connect', () => {
+      console.log('[WS] Dashboard connected');
+      _wsConnected = true;
+      _wsReconnectAttempts = 0;
+
+      // Subscribe to all pairs
+      PAIRS.forEach(pair => {
+        _socket.emit('subscribe', { pair_id: pair.id, interval: '1m' });
+      });
+
+      // Update refresh label
+      const lbl = document.getElementById('refresh-label');
+      if (lbl && !isWeekendHalt()) lbl.textContent = 'LIVE · WS';
+    });
+
+    _socket.on('disconnect', () => {
+      console.log('[WS] Dashboard disconnected');
+      _wsConnected = false;
+      const lbl = document.getElementById('refresh-label');
+      if (lbl && !isWeekendHalt()) lbl.textContent = 'LIVE · 15s';
+    });
+
+    _socket.on('connect_error', (err) => {
+      _wsReconnectAttempts++;
+      console.warn('[WS] Connection error:', err.message);
+      if (_wsReconnectAttempts >= WS_MAX_RECONNECTS) {
+        console.log('[WS] Max reconnect attempts reached, using polling only');
+        const lbl = document.getElementById('refresh-label');
+        if (lbl && !isWeekendHalt()) lbl.textContent = 'LIVE · 15s';
+      }
+    });
+
+    _socket.on('chart_data', (data) => {
+      // Update the pair card with new data
+      const pairId = data.pair_id;
+      const pair = PAIRS.find(p => p.id === pairId);
+      if (!pair) return;
+
+      updatePairCard(pair, {
+        candles: data.candles || [],
+        detectors: data.detectors || {},
+      });
+
+      // Flash the refresh dot
+      const dot = document.getElementById('refresh-dot');
+      dot.classList.add('active');
+      setTimeout(() => dot.classList.remove('active'), 300);
+    });
+
+  } catch (e) {
+    console.error('[WS] Init error:', e);
+  }
+}
+
+function updatePairCard(pair, data) {
+  const candles = data.candles || [];
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  const price = last?.close;
+  const det = data.detectors || {};
+
+  const dotEl    = document.getElementById(`dot-${pair.id}`);
+  const statusEl = document.getElementById(`status-${pair.id}`);
+  const extraEl  = document.getElementById(`extra-${pair.id}`);
+  const metaEl   = document.getElementById(`meta-${pair.id}`);
+
+  if (!dotEl) return;
+
+  if (!last) {
+    dotEl.className      = 'status-dot standby';
+    statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed';
+    statusEl.className   = 'status-text dim';
+    extraEl.innerHTML    = pair.always_open ? '' : '<div class="weekend-card-badge">OPERATIONS HALTED</div>';
+    metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
+    return;
+  }
+
+  document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
+
+  if (prev?.close && price) {
+    const chg = ((price - prev.close) / prev.close) * 100;
+    const el = document.getElementById(`change-${pair.id}`);
+    el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
+    el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
+  }
+
+  // Update detector status (simplified - full update via REST still needed for bias)
+  if (pair.type === 'accumulation') {
+    const z = det.accumulation;
+    if (!z || z.status === 'looking' || z.status === 'weekend' || z.status === 'out_of_session') {
+      dotEl.className      = 'status-dot looking';
+      statusEl.textContent = 'Looking for accumulation';
+      statusEl.className   = 'status-text dim';
+    } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
+      dotEl.className      = 'status-dot found';
+      statusEl.textContent = z.status === 'confirmed' ? 'Aggressor candle confirmed ✓' : 'Accumulation found';
+      statusEl.className   = 'status-text';
+      extraEl.innerHTML    = `<div class="accum-box found">
+        <span class="accum-range">${formatPrice(z.bottom, pair.id)} – ${formatPrice(z.top, pair.id)}</span>
+        <br>Since ${formatUTC(z.start)}
+      </div>`;
+    } else if (z.status === 'active' && z.is_active) {
+      dotEl.className      = 'status-dot potential';
+      statusEl.textContent = 'Accumulation forming';
+      statusEl.className   = 'status-text';
+    }
+  }
+
+  if (pair.type === 'supply_demand') {
+    const result = det.supply_demand;
+    const bias = result?.bias || {};
+    const zones = (result?.zones || []).filter(z => z.is_active);
+
+    if      (bias.bias === 'strong_bullish' || bias.bias === 'bullish')  dotEl.className = 'status-dot bullish';
+    else if (bias.bias === 'strong_bearish' || bias.bias === 'bearish')  dotEl.className = 'status-dot bearish';
+    else                                                                   dotEl.className = 'status-dot misaligned';
+
+    if (zones.length > 0) {
+      statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} active`;
+      statusEl.className   = 'status-text';
+    }
+  }
+
+  // Update timestamp
+  const now = new Date();
+  document.getElementById('last-update').textContent =
+    'Last update: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
 buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
+
+// Initialize WebSocket
+initWebSocket();
+
+// Initial poll and fallback polling (15s instead of 60s)
 pollAll();
-setInterval(pollAll, 60000);
+setInterval(pollAll, 15000);
 </script>
 </body>
 </html>
