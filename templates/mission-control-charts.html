@@ -710,6 +710,8 @@
     <button class="tf-btn" data-interval="15m">15m</button>
     <button class="tf-btn" data-interval="30m">30m</button>
     <button class="tf-btn" data-interval="1h">1h</button>
+    <button class="tf-btn" data-interval="1d">1D</button>
+    <button class="tf-btn" data-interval="1wk">1W</button>
   </div>
   <div id="session-badge">--</div>
 
@@ -939,14 +941,14 @@
 
   // ── Candle countdown timer ─────────────────────────────────────────────
   function intervalToSeconds(interval) {
-    const match = interval.match(/^(\d+)(m|h|d|w)$/);
+    const match = interval.match(/^(\d+)(m|h|d|wk?)$/);
     if (!match) return 60;
     const val = parseInt(match[1], 10);
     const unit = match[2];
     if (unit === 'm') return val * 60;
     if (unit === 'h') return val * 3600;
     if (unit === 'd') return val * 86400;
-    if (unit === 'w') return val * 604800;
+    if (unit === 'w' || unit === 'wk') return val * 604800;
     return 60;
   }
 

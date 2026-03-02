@@ -40,6 +40,8 @@ PERIOD_MAP = {
     "15m": "5d",
     "30m": "5d",
     "1h":  "30d",
+    "1d":  "60d",
+    "1wk": "1y",
 }
 
 DETECTION_INTERVAL = 30
