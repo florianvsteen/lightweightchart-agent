@@ -489,7 +489,7 @@ async function fetchPair(pair) {
 
     // ── Accumulation ──────────────────────────────────────────────────
     if (pair.type === 'accumulation') {
-      const z = det.accumulation;
+      let z = det.accumulation;
       const biasHtml = renderBiasRow(biasInfo);
 
       // --- NEW MTF Logic: Pick the best timeframe to show ---
