@@ -100,7 +100,14 @@ def detect(
         if not is_misaligned:
             look_for = "demand" if is_bullish(bias_info) else "supply"
         else:
-            look_for = None   # misaligned → scan both directions
+            # Misaligned -> force direction based on the weekly bias
+            weekly_bias = bias_info.get("weekly_bias", "").lower()
+            if "bull" in weekly_bias:
+                look_for = "demand"
+            elif "bear" in weekly_bias:
+                look_for = "supply"
+            else:
+                look_for = None  # Fallback just in case weekly_bias is missing
 
         if len(df) < 10:
             return result
