@@ -238,6 +238,7 @@
         const PAIR_ID = "{{ pair_id }}";
         const ALWAYS_OPEN = {{ 'true' if always_open else 'false' }};
         const TIMEZONE = "{{ timezone }}";
+        const SESSION_WINDOWS_UTC = {{ sessions_js | safe }};
 
         const _urlParams = new URLSearchParams(window.location.search);
         const _screenshotCenterTs = _urlParams.get('center') ? parseInt(_urlParams.get('center')) : null;
@@ -335,48 +336,47 @@
         }
 
         // ── Session clock ─────────────────────────────────────────────
-        const SESSION_LABELS = { asian: 'Asian', london: 'London', new_york: 'New York' };
-        const SESSION_WINDOWS_UTC = [
-            { name: 'asian',    start: 1,  end: 7  },
-            { name: 'london',   start: 8,  end: 12 },
-            { name: 'new_york', start: 13, end: 19 },
-        ];
+        // SESSION_WINDOWS_UTC is passed from Python via sessions.py
+        // Format: [{ name: 'asian', label: 'Asian Session', start: 1, end: 7 }, ...]
 
         function getCurrentSession() {
-            const hour = new Date().getUTCHours();
+            const now = new Date();
+            const utcTime = now.getUTCHours() + now.getUTCMinutes() / 60;
             for (const s of SESSION_WINDOWS_UTC) {
-                if (hour >= s.start && hour < s.end) return s.name;
+                if (utcTime >= s.start && utcTime < s.end) return s;
             }
             return null;
         }
 
         function getNextSession() {
-            const now     = new Date();
-            const utcHour = now.getUTCHours();
-            let next = SESSION_WINDOWS_UTC.find(s => s.start > utcHour);
+            const now = new Date();
+            const utcTime = now.getUTCHours() + now.getUTCMinutes() / 60;
+            let next = SESSION_WINDOWS_UTC.find(s => s.start > utcTime);
             if (!next) next = SESSION_WINDOWS_UTC[0];
             const target = new Date(now);
-            target.setUTCHours(next.start, 0, 0, 0);
+            const startHour = Math.floor(next.start);
+            const startMin = Math.round((next.start - startHour) * 60);
+            target.setUTCHours(startHour, startMin, 0, 0);
             if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
             const diffMs = target - now;
             const diffH  = Math.floor(diffMs / 3600000);
             const diffM  = Math.floor((diffMs % 3600000) / 60000);
             const diffS  = Math.floor((diffMs % 60000) / 1000);
             const pad    = n => String(n).padStart(2, '0');
-            return { name: next.name, countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}` };
+            return { ...next, countdown: `${pad(diffH)}:${pad(diffM)}:${pad(diffS)}` };
         }
 
         function updateSessionBadge() {
             const session = getCurrentSession();
             const badge   = document.getElementById('session-badge');
             if (session) {
-                badge.className = session;
-                document.getElementById('session-label').textContent = SESSION_LABELS[session] + ' Session';
+                badge.className = session.name;
+                document.getElementById('session-label').textContent = session.label;
             } else {
                 const next = getNextSession();
                 badge.className = 'inactive';
                 document.getElementById('session-label').textContent =
-                    SESSION_LABELS[next.name] + ' opens in ' + next.countdown;
+                    next.label.replace(' Session', '') + ' opens in ' + next.countdown;
             }
         }
 

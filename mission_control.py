@@ -25,6 +25,7 @@ import requests
 
 from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
+from tools.sessions import get_sessions_for_js, FOREX
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -82,6 +83,7 @@ def dashboard():
     return render_template(
         "mission-control-dashboard.html",
         pairs_js=json.dumps(_pairs_js()),
+        sessions_js=json.dumps(get_sessions_for_js(FOREX)),
     )
 
 
@@ -95,6 +97,7 @@ def chart_view(pair_id):
     tz = os.environ.get("TZ", "UTC")
     detector_type = "supply_demand" if "supply_demand" in cfg.get("detectors", []) else "accumulation"
     default_interval = cfg.get("default_interval", cfg.get("interval", "1m"))
+    market_timing = cfg.get("market_timing", FOREX)
 
     return render_template(
         "mission-control-charts.html",
@@ -105,6 +108,7 @@ def chart_view(pair_id):
         default_interval=default_interval,
         detector_type=detector_type,
         pairs=_pairs_list(),
+        sessions_js=json.dumps(get_sessions_for_js(market_timing)),
     )
 
 
