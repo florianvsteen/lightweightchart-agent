@@ -763,8 +763,9 @@ function updatePairCard(pair, data) {
   if (pair.type === 'accumulation') {
     const z = det.accumulation;
     if (!z || z.status === 'looking' || z.status === 'weekend' || z.status === 'out_of_session') {
+      const isOOS = z && (z.status === 'weekend' || z.status === 'out_of_session');
       dotEl.className      = 'status-dot looking';
-      statusEl.textContent = 'Looking for accumulation';
+      statusEl.textContent = isOOS ? 'Out of session' : 'Looking for accumulation';
       statusEl.className   = 'status-text dim';
     } else if ((z.status === 'found' || z.status === 'confirmed') && z.is_active) {
       dotEl.className      = 'status-dot found';
