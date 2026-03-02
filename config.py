@@ -33,7 +33,8 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
-                "timeframe": ["1m", "3m"],
+                #"timeframe": ["1m", "3m"],
+                "timeframe": "1m",
                 "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 20,
@@ -56,7 +57,8 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
-                "timeframe": ["1m", "3m"],
+                #"timeframe": ["1m", "3m"],
+                "timeframe": "1m", 
                 "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 20,
@@ -79,7 +81,8 @@ PAIRS = {
         "detectors": ["accumulation"],
         "detector_params": {
             "accumulation": {
-                "timeframe": ["1m", "3m"],
+                #"timeframe": ["1m", "3m"],
+                "timeframe": "1m",
                 "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 20,
