@@ -1860,18 +1860,6 @@
   document.getElementById('news-refresh').addEventListener('click', loadNews);
 
   // ── Init ─────────────────────────────────────────────────────────────
-  //loadData();
-  loadBias();
-  //loadCvd();
-  loadNews();
-  loadDrawings();
-  //setInterval(async () => {
-  //    // Await both or trigger both simultaneously in one block
-  //    await loadData();
-  //    await loadCvd(true);
-  //}, 30 * 1000);
-
-  // --- ADD THIS NEW BLOCK ---
   let evtSource = null;
 
   function connectStream() {
@@ -1928,6 +1916,9 @@
 
   // Start the stream on page load
   connectStream();
+  loadBias();
+  loadNews();
+  loadDrawings();
   
   setInterval(loadBias, 24 * 60 * 60 * 1000);
 
