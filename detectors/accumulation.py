@@ -489,6 +489,7 @@ def detect(
         if candidate["is_active"]:
             candidate.pop("_window_start_idx", None)
             candidate["status"] = "active"
+            candidate["avg_range"] = round(avg_range, 6)
             if secondary_zone:
                 secondary_zone.pop("_window_start_idx", None)
             candidate["secondary_zone"] = secondary_zone
@@ -665,21 +666,26 @@ def explain_candle(
     if status == "confirmed":
         dir_      = result.get("breakout_dir", "?")
         ratio     = result.get("impulse_ratio")
+        # Get the range benchmark from the result
+        avg_range = result.get("avg_range", 0)
+        
         lines.append(f"✓ Valid aggressor — broke {dir_} out of zone.")
         lines.append(
-            f"  Body {body:.5f} > zone avg body {avg_body:.5f} "
-            f"({ratio}× — impulsive)."
+            f"  Body {body:.5f} > range-threshold {avg_range * impulse_multiplier:.5f} "
+            f"({ratio}× vs {impulse_multiplier}× required)."
         )
         return lines
 
+    # For the "not impulsive enough" case:
+    avg_range = result.get("avg_range", 0)
     lines.append(
         f"Broke out of zone ({bot:.5f}–{top:.5f}) but not impulsive enough."
     )
     lines.append(
-        f"  Body {body:.5f}  ·  zone avg body {avg_body:.5f}  ·  "
-        f"need > {impulse_multiplier}× ({avg_body * impulse_multiplier:.5f})."
+        f"  Body {body:.5f} < range-threshold {avg_range * impulse_multiplier:.5f} "
+        f"({impulse_multiplier}x avg range {avg_range:.5f})."
     )
     lines.append(
-        "A valid aggressor must have a body larger than the average candle in the zone."
+        f"A valid aggressor must be at least {impulse_multiplier}x the average TOTAL RANGE in the zone."
     )
     return lines
