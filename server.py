@@ -472,14 +472,18 @@ class PairServer:
 
                     try:
                         from detectors.bias import get_bias
-                        if not self._bias_cache or (time.time() - self._bias_cache_ts) >= 14400:
+                        from datetime import datetime, timezone
+                        
+                        now_utc = datetime.now(timezone.utc)
+                        current_date = now_utc.strftime("%Y-%m-%d")
+                        
+                        # Update if cache is empty OR (it is 1 AM UTC or later AND we haven't updated today)
+                        if not self._bias_cache or (now_utc.hour >= 1 and getattr(self, '_bias_last_date', None) != current_date):
                             self._bias_cache = get_bias(self.ticker)
-                            self._bias_cache_ts = time.time()
+                            self._bias_last_date = current_date
+                            print(f"[{self.pair_id}] Daily/Weekly bias updated for {current_date}")
                     except Exception as be:
                         print(f"[{self.pair_id}] Bias refresh error: {be}")
-
-                except Exception as e:
-                    print(f"[{self.pair_id}] Detection loop error: {e}")
 
             # Sleep 1 second so the while loop doesn't burn CPU
             time.sleep(1)
