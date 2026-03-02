@@ -6,6 +6,7 @@
 <title>{{ pair_id }} — Chart View</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 <style>
   :root {
     --bg:      #0a0a0c;
@@ -1193,8 +1194,9 @@
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       currentInterval = btn.dataset.interval;
-      loadData(); //
+      loadData();
       loadCvd(true);   // interval changed — force fresh fetch
+      resubscribeToWebSocket();  // re-subscribe with new interval
     });
   });
 
@@ -1843,17 +1845,117 @@
 
   document.getElementById('news-refresh').addEventListener('click', loadNews);
 
+  // ── WebSocket Setup ──────────────────────────────────────────────────
+  let _socket = null;
+  let _wsConnected = false;
+  let _wsReconnectAttempts = 0;
+  const WS_MAX_RECONNECT = 5;
+
+  function initWebSocket() {
+    if (_socket) return;
+
+    try {
+      _socket = io({
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: WS_MAX_RECONNECT,
+        reconnectionDelay: 1000,
+      });
+
+      _socket.on('connect', () => {
+        console.log('[WS] Connected');
+        _wsConnected = true;
+        _wsReconnectAttempts = 0;
+        // Subscribe to this pair's updates
+        _socket.emit('subscribe', { pair_id: PAIR_ID, interval: currentInterval });
+      });
+
+      _socket.on('disconnect', () => {
+        console.log('[WS] Disconnected');
+        _wsConnected = false;
+      });
+
+      _socket.on('connect_error', (err) => {
+        console.log('[WS] Connection error:', err.message);
+        _wsReconnectAttempts++;
+        if (_wsReconnectAttempts >= WS_MAX_RECONNECT) {
+          console.log('[WS] Max reconnect attempts reached, falling back to polling');
+        }
+      });
+
+      _socket.on('chart_data', (data) => {
+        if (data.pair_id !== PAIR_ID) return;
+        console.log('[WS] Received chart data for', data.pair_id);
+        handleChartData(data);
+      });
+
+      _socket.on('error', (data) => {
+        console.error('[WS] Error:', data.message);
+      });
+
+    } catch (e) {
+      console.error('[WS] Failed to initialize:', e);
+    }
+  }
+
+  function handleChartData(data) {
+    if (isWeekend()) return;
+
+    const candles = data.candles || [];
+    const detectors = data.detectors || {};
+
+    if (!candles.length) return;
+
+    _rawCandles = candles;
+    window._rawCandles = _rawCandles;
+
+    _syncEnabled = false;
+    candleSeries.setData([]);
+    const shifted = _rawCandles.map(c => ({ ...c, time: shiftTime(c.time) }));
+    if (shifted.length) {
+      candleSeries.setData(shifted);
+      chart.timeScale().scrollToRealTime();
+      scheduleScaleSync();
+      requestAnimationFrame(renderAllDrawings);
+
+      const lastCandle = _rawCandles[_rawCandles.length - 1];
+      _lastPrice = lastCandle.close;
+      startCandleCountdownTimer();
+    }
+    setTimeout(() => { _syncEnabled = true; }, 100);
+
+    clearSeries();
+    if (detectors.accumulation) activeSeries.accumulation = renderAccumulation(detectors.accumulation);
+    if (detectors.supply_demand) activeSeries.supply_demand = renderSupplyDemand(detectors.supply_demand);
+
+    const biasInfo = _cachedBias;
+    updateBiasDisplay(biasInfo);
+    updateDetectorStatus(detectors, biasInfo);
+  }
+
+  function resubscribeToWebSocket() {
+    if (_socket && _wsConnected) {
+      _socket.emit('unsubscribe', { pair_id: PAIR_ID });
+      _socket.emit('subscribe', { pair_id: PAIR_ID, interval: currentInterval });
+    }
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────
+  initWebSocket();
   loadData();
   loadBias();
   loadCvd();
   loadNews();
   loadDrawings();
+
+  // Polling fallback (15 seconds) - still useful when WebSocket is unavailable
   setInterval(async () => {
-      // Await both or trigger both simultaneously in one block
-      await loadData();
+      // Only poll if WebSocket is not connected or has failed
+      if (!_wsConnected) {
+        await loadData();
+      }
       await loadCvd(true);
-  }, 30 * 1000);
+  }, 15 * 1000);
   setInterval(loadBias, 24 * 60 * 60 * 1000);
 
   // ════════════════════════════════════════════════════════════════════
