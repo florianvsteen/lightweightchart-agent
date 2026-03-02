@@ -494,6 +494,21 @@ async function fetchPair(pair) {
       const z = det.accumulation;
       const biasHtml = renderBiasRow(biasInfo);
 
+      // --- NEW MTF Logic: Pick the best timeframe to show ---
+      let tfLabel = '';
+      if (z && !z.status && typeof z === 'object') {
+          // It's a dictionary like {"1m": {...}, "3m": {...}}
+          const tfs = Object.keys(z);
+          // Priority: confirmed > found > active > cooldown
+          const bestTf = tfs.find(t => z[t]?.status === 'confirmed') || 
+                         tfs.find(t => z[t]?.status === 'found') || 
+                         tfs.find(t => z[t]?.status === 'active') || 
+                         tfs.find(t => z[t]?.status === 'cooldown') ||
+                         tfs[0];
+          tfLabel = `[${bestTf}] `;
+          z = z[bestTf];
+      }
+
       if (!z || z.status === 'looking' || z.status === 'weekend' || z.status === 'out_of_session') {
         const isOOS = !z || z.status === 'weekend' || z.status === 'out_of_session';
         dotEl.className      = 'status-dot looking';
