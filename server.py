@@ -485,6 +485,9 @@ class PairServer:
                     except Exception as be:
                         print(f"[{self.pair_id}] Bias refresh error: {be}")
 
+                except Exception as e:
+                    print(f"[{self.pair_id}] Detection loop error: {e}")
+
             # Sleep 1 second so the while loop doesn't burn CPU
             time.sleep(1)
 
