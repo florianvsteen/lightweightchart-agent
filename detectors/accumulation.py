@@ -336,8 +336,12 @@ def detect(
             chop    = _choppiness(closes)
             end_i   = i + window_size - 1
             is_active = (last_body_low >= l_min) and (last_body_high <= h_max)
+            #Only bodies for the accumulation agressor calculation
             bodies    = np.abs(closes - opens)
             avg_body  = float(bodies.mean()) if len(bodies) > 0 else 0.0
+            #Bodies and candles for the accumulation agressor calculation
+            ranges    = highs - lows
+            avg_range = float(ranges.mean()) if len(ranges) > 0 else 0.0
             touchpoints = _count_touchpoints(highs, lows, h_max, l_min)
             touch_ts    = [
                 {"time": int(df.index[i + tidx].timestamp()), "side": side}
@@ -367,6 +371,7 @@ def detect(
                     "adx":             round(adx_val, 2) if adx_val is not None else None,
                     "adx_limit":       adx_threshold,
                     "avg_body":        round(avg_body, 6),
+                    "avg_range":       round(avg_range, 6),
                     "touchpoints":     touchpoints,
                     "touch_ts":        touch_ts,
                     "min_touchpoints": min_touchpoints,
@@ -390,6 +395,7 @@ def detect(
                 "slope":       round(slope, 8),
                 "adx":         round(adx_val, 2) if adx_val is not None else None,
                 "avg_body":    round(avg_body, 6),
+                "avg_range":   round(avg_range, 6),
                 "touchpoints": touchpoints,
                 "touch_ts":    touch_ts,
                 "_window_start_idx": i,
@@ -507,8 +513,10 @@ def detect(
             return _with_debug(candidate)
 
         # Check impulse: body must be bigger than avg window body
-        #is_impulsive = bo_body_size > avg_body
-        is_impulsive = bo_body_size > (avg_body * impulse_multiplier)
+        #Only bodies for the accumulation agressor calculation
+        #is_impulsive = bo_body_size > (avg_body * impulse_multiplier)
+        #Bodies and candles for the accumulation agressor calculation
+        is_impulsive = bo_body_size > (avg_range * impulse_multiplier)
 
         if not is_impulsive:
             return _with_debug({"detector": "accumulation", "status": "looking", "is_active": False, "best_zone": None, "secondary_zone": None})
@@ -520,6 +528,7 @@ def detect(
         candidate["breakout_dir"]   = "up" if broke_up else "down"
         candidate["breakout_body"]  = round(bo_body_size, 6)
         candidate["impulse_ratio"]  = round(bo_body_size / avg_body, 2) if avg_body > 0 else None
+        candidate["avg_range"]      = round(avg_range, 6)
         candidate["breakout_candle"] = {
             "time":  int(df.index[breakout_idx].timestamp()),
             "open":  round(bo_open_raw, 5), "high": round(bo_high_raw, 5),
