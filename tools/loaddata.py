@@ -32,7 +32,7 @@ except ImportError:
     USING_EVENTLET = False
 
 from config import PAIRS
-from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df, LOCK as _YF_LOCK
+from providers import get_df as _provider_get_df, get_bias_df as _provider_get_bias_df
 from detectors import REGISTRY
 
 FETCH_INTERVAL = 15  # seconds between fetches
@@ -140,9 +140,8 @@ class DataLoader:
         default_interval = config.get("default_interval", config.get("interval", "1m"))
         period = PERIOD_MAP.get(default_interval, config.get("period", "1d"))
 
-        # Fetch the data
-        with _YF_LOCK:
-            df = _provider_get_df(ticker, default_interval, period)
+        # Fetch the data (provider handles locking internally)
+        df = _provider_get_df(ticker, default_interval, period)
 
         if df is None or df.empty:
             return
