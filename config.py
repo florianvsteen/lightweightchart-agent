@@ -35,7 +35,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
@@ -58,7 +58,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.003,
                 "valid_sessions":     ["london", "new_york"],
@@ -81,7 +81,7 @@ PAIRS = {
             "accumulation": {
                 "timeframe": "1m",
                 "lookback": 40,
-                "min_candles": 20,
+                "min_candles": 15,
                 "adx_threshold": 20,
                 "threshold_pct": 0.002,
                 "valid_sessions":     ["london", "new_york"],
