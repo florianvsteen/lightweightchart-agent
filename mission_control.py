@@ -236,9 +236,6 @@ def api_news(pair_id):
 
 @app.route("/proxy/<pair_id>/api/stream")
 def proxy_api_stream(pair_id):
-    from flask import Response
-    import requests
-    
     cfg = PAIRS.get(pair_id.upper())
     if not cfg:
         return jsonify({"error": f"Unknown pair: {pair_id}"}), 404
@@ -249,24 +246,18 @@ def proxy_api_stream(pair_id):
         url += "?" + qs
 
     def stream_generator():
+        import requests
         try:
+            # stream=True is critical here! It keeps the connection open.
             with requests.get(url, stream=True, timeout=86400) as r:
                 for line in r.iter_lines():
                     if line:
+                        # Yield the exact SSE format back to the browser
                         yield f"{line.decode('utf-8')}\n\n"
         except Exception as e:
             yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
 
-    # FIX: Anti-buffering headers for the proxy hub too
-    return Response(
-        stream_generator(), 
-        mimetype="text/event-stream", 
-        headers={
-            "X-Accel-Buffering": "no", 
-            "Cache-Control": "no-cache", 
-            "Connection": "keep-alive"
-        }
-    )
+    return Response(stream_generator(), mimetype="text/event-stream")
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
