@@ -561,21 +561,51 @@ class PairServer:
                         detector_results = dict(self._cached_detector_results)
                         candles = list(self._cached_candles.get(chart_interval, []))
                         
-                    # Fallback if cache is empty for this specific interval
                     if not candles:
                         try:
                             df_chart = self._fetch_df(chart_interval)
                             candles = [{"time": int(idx.timestamp()), "open": float(r["Open"]), "high": float(r["High"]), "low": float(r["Low"]), "close": float(r["Close"])} for idx, r in df_chart.iterrows()]
                         except Exception:
                             candles = []
-    
+
                     payload = {
                         "pair": self.pair_id,
                         "candles": candles,
                         "detectors": detector_results,
                         "bias": self._bias_cache
                     }
+
+                    # --- NEW CVD STREAMING LOGIC ---
+                    # Only calculate CVD if this pair uses the accumulation detector
+                    if "accumulation" in self.detector_names:
+                        try:
+                            from tools.cvd import get_cvd_data, INTRABAR_MAP
+                            df_cvd = self._fetch_df(chart_interval)
+                            intrabar_df = None
+                            intrabar_interval = INTRABAR_MAP.get(chart_interval)
+                            
+                            if intrabar_interval:
+                                try:
+                                    intrabar_df = self._fetch_df(intrabar_interval)
+                                    if intrabar_df is not None and len(intrabar_df) < 10:
+                                        intrabar_df = None
+                                except Exception:
+                                    intrabar_df = None
+
+                            cvd_result = get_cvd_data(
+                                df_cvd, 
+                                intrabar_df=intrabar_df, 
+                                left_pivot=3, 
+                                detect_divs=True
+                            )
+                            payload["cvd_data"] = cvd_result
+                        except Exception as e:
+                            print(f"[{self.pair_id}] Stream CVD error: {e}")
+                            payload["cvd_data"] = {"cvd": [], "divergences": [], "stats": {}, "has_volume": False}
+                    # -------------------------------
+
                     yield f"data: {json.dumps(payload)}\n\n"
+                
                 time.sleep(0.5)
 
         # Add headers to prevent Flask/Nginx from holding the data
