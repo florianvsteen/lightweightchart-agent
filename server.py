@@ -254,22 +254,32 @@ class PairServer:
         results = {}
         for name in self.detector_names:
             params = dict(self.detector_params.get(name, {}))
-            detector_interval = params.pop("timeframe", "1m")
-            df = self._get_df(detector_interval, cache)
+            tf_setting = params.pop("timeframe", "1m")
+            
+            # Convert single string to list for uniform processing
+            tf_list = tf_setting if isinstance(tf_setting, list) else [tf_setting]
+            
             fn = REGISTRY.get(name)
             if fn is None:
-                print(f"[WARN] Detector '{name}' not found in registry.")
-                results[name] = None
-            else:
+                continue
+
+            tf_results = {}
+            for tf in tf_list:
                 try:
-                    if name == "supply_demand":
-                        params["ticker"] = self.ticker
-                    if name in ("accumulation", "supply_demand"):
-                        params["market_timing"] = self.market_timing
-                    results[name] = fn(df, **params)
+                    df = self._get_df(tf, cache)
+                    p = dict(params) 
+                    if name == "supply_demand": p["ticker"] = self.ticker
+                    p["market_timing"] = self.market_timing
+                    
+                    res = fn(df, **p)
+                    if res:
+                        res["timeframe_id"] = tf # Tag which TF found the zone
+                    tf_results[tf] = res
                 except Exception as e:
-                    print(f"[ERROR] Detector '{name}' failed: {e}")
-                    results[name] = None
+                    print(f"[{self.pair_id}] {name} ({tf}) failed: {e}")
+            
+            # If multiple TFs, return dict. If one, return flat for UI compat.
+            results[name] = tf_results if len(tf_list) > 1 else tf_results[tf_list[0]]
         return results
 
     def _process_alerts(self, detector_results: dict):
@@ -403,13 +413,13 @@ class PairServer:
     # ------------------------------------------------------------------ #
 
     def _min_poll_interval(self) -> float:
-        max_seconds = DETECTION_INTERVAL
+        fastest = 60.0
         for name in self.detector_names:
-            tf = self.detector_params.get(name, {}).get("timeframe", "1m")
-            tf_secs = INTERVAL_SECONDS.get(tf, DETECTION_INTERVAL)
-            if tf_secs > max_seconds:
-                max_seconds = tf_secs
-        return float(max_seconds)
+            tf_setting = self.detector_params.get(name, {}).get("timeframe", "1m")
+            tf_list = tf_setting if isinstance(tf_setting, list) else [tf_setting]
+            for tf in tf_list:
+                fastest = min(fastest, float(INTERVAL_SECONDS.get(tf, 60)))
+        return fastest
 
     def _detection_loop(self):
         if self._stagger_seconds:
