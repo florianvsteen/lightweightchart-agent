@@ -63,18 +63,6 @@ def _choppiness(closes: np.ndarray) -> float:
     sign_changes = np.sum(np.sign(diffs[1:]) != np.sign(diffs[:-1]))
     return sign_changes / (len(diffs) - 1)
 
-
-def _is_v_shape(closes: np.ndarray) -> bool:
-    n = len(closes)
-    if n < 6:
-        return False
-    peak_i   = int(np.argmax(closes))
-    trough_i = int(np.argmin(closes))
-    lo = int(n * 0.40)
-    hi = int(n * 0.60)
-    return (lo <= peak_i <= hi) or (lo <= trough_i <= hi)
-
-
 def _count_touchpoints(
     highs: np.ndarray,
     lows: np.ndarray,
@@ -210,6 +198,7 @@ def detect(
     always_open: bool = False,   # deprecated — use market_timing instead
     alert_cooldown_minutes: int = 15,
     min_touchpoints: int = 0,
+    impulse_multiplier: float = 1.5,
     debug: bool = False,
     end_idx: int = None,   # kept for backward-compat; prefer replay=True
     replay: bool = False,  # NEW: set True when df is pre-sliced to the replay position
@@ -517,7 +506,8 @@ def detect(
             return _with_debug(candidate)
 
         # Check impulse: body must be bigger than avg window body
-        is_impulsive = bo_body_size > avg_body
+        #is_impulsive = bo_body_size > avg_body
+        is_impulsive = bo_body_size > (avg_body * impulse_multiplier)
 
         if not is_impulsive:
             return _with_debug({"detector": "accumulation", "status": "looking", "is_active": False, "best_zone": None, "secondary_zone": None})
@@ -673,7 +663,8 @@ def explain_candle(
         f"Broke out of zone ({bot:.5f}–{top:.5f}) but not impulsive enough."
     )
     lines.append(
-        f"  Body {body:.5f}  ·  zone avg body {avg_body:.5f}  ·  need > 1.0×."
+        f"  Body {body:.5f}  ·  zone avg body {avg_body:.5f}  ·  "
+        f"need > {impulse_multiplier}× ({avg_body * impulse_multiplier:.5f})."
     )
     lines.append(
         "A valid aggressor must have a body larger than the average candle in the zone."
