@@ -51,7 +51,6 @@ from tools.sessions import (
     is_weekend_halt, get_current_session, FOREX
 )
 
-
 def _slope_pct(closes: np.ndarray, avg_p: float) -> float:
     x = np.arange(len(closes), dtype=float)
     return abs(np.polyfit(x, closes, 1)[0]) / avg_p
