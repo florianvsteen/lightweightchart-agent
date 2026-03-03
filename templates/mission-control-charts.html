@@ -1167,18 +1167,17 @@
   });
 
   // ── Resize + price-scale alignment ──────────────────────────────────
+  // Both charts must have identical right-scale widths so candles line up pixel-perfect.
+  // LW exposes the rendered scale width via timeScale().width() vs container width.
   function syncPriceScaleWidth() {
     try {
-      // Find the actual rendered width of both right-side scales
-      const w1 = priceContainer.clientWidth - chart.timeScale().width();
-      const w2 = cvdContainer.clientWidth - cvdChart.timeScale().width();
-      
-      // Calculate the max width needed by either chart (minimum 70px)
-      const maxW = Math.max(w1, w2, 70);
-      
-      // Apply identical minimum widths to lock them into perfect alignment
-      chart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
-      cvdChart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
+      // Read how wide the price chart's right scale actually rendered
+      const totalW     = priceContainer.clientWidth;
+      const plotW      = chart.timeScale().width();          // plot area only
+      const scaleW     = totalW - plotW;                     // actual right-scale width
+      if (scaleW > 0) {
+        cvdChart.applyOptions({ rightPriceScale: { minimumWidth: scaleW } });
+      }
     } catch(e) {}
   }
 
@@ -1633,60 +1632,83 @@
         _lastCrosshairTime = data.time;
       }
     }
-  });
 
+    // 2. Sync crosshair to CVD chart using logical index lookup
+    if (_xhairSyncing || !cvdCandleSeries || !_cvdCandles.length) return;
 
-  // ── Crosshair sync: price <-> CVD ──────────────────────────────────
-  let _crosshairX = { price: null, cvd: null };
-
-  chart.subscribeCrosshairMove((param) => {
-    // 1. Tooltip logic
-    const tooltip = document.getElementById('candle-tooltip');
-    let displayTime = param.time;
-    if (!displayTime && param.point) displayTime = chart.timeScale().coordinateToTime(param.point.x);
-
-    if (!displayTime || !param.seriesData || !param.seriesData.get(candleSeries)) {
-      if (displayTime) {
-        tooltip.style.display = '';
-        tooltip.innerHTML = `
-          <div class="ct-pair">${PAIR_ID} · ${fmtTime(displayTime - TZ_OFFSET)}</div>
-          <div style="font-size:0.6rem;color:var(--muted);margin-top:4px;">No candle data</div>`;
-      } else {
-        tooltip.style.display = 'none';
+    _xhairSyncing = true;
+    try {
+      // Get logical index from cursor position
+      let logicalIndex = null;
+      if (param.point) {
+        logicalIndex = chart.timeScale().coordinateToLogical(param.point.x);
       }
-    } else {
-      const data = param.seriesData.get(candleSeries);
-      const isBull = data.close >= data.open;
-      const change = data.open > 0 ? ((data.close - data.open) / data.open * 100) : 0;
-      tooltip.style.display = '';
-      tooltip.innerHTML = `
-        <div class="ct-pair">${PAIR_ID} · ${fmtTime(data.time - TZ_OFFSET)}</div>
-        <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open)}</span></div>
-        <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high)}</span></div>
-        <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
-        <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull ? 'up' : 'down'}">${fmtPrice(data.close)}</span></div>
-        <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull ? 'up' : 'down'}">${isBull ? '+' : ''}${change.toFixed(3)}%</span></div>`;
-    }
 
-    // 2. Save X position for custom canvas crosshair
-    _crosshairX.price = param.point ? param.point.x : null;
-    requestAnimationFrame(renderAllDrawings);
+      if (logicalIndex != null) {
+        const idx = Math.round(logicalIndex);
+        // Within data range - use actual CVD candle data
+        if (idx >= 0 && idx < _cvdCandles.length) {
+          const cvdCandle = _cvdCandles[idx];
+          const cvdPrice = cvdCandle.close;
+          cvdChart.setCrosshairPosition(cvdPrice, cvdCandle.time, cvdCandleSeries);
+        } else if (idx >= _cvdCandles.length && _cvdCandles.length > 0) {
+          // Past last candle - use last candle's price with projected time
+          const lastCvdCandle = _cvdCandles[_cvdCandles.length - 1];
+          let intervalSecs = 60;
+          if (_cvdCandles.length >= 2) {
+            intervalSecs = _cvdCandles[1].time - _cvdCandles[0].time;
+          }
+          const offset = idx - (_cvdCandles.length - 1);
+          const projectedTime = lastCvdCandle.time + (offset * intervalSecs);
+          cvdChart.setCrosshairPosition(lastCvdCandle.close, projectedTime, cvdCandleSeries);
+        }
+      }
+    } catch(e) { console.error('Crosshair sync error (price->CVD):', e); }
+    _xhairSyncing = false;
   });
 
+  // When hovering CVD, push crosshair back to price chart using logical index lookup
   cvdChart.subscribeCrosshairMove((param) => {
-    _crosshairX.cvd = param.point ? param.point.x : null;
-    requestAnimationFrame(renderAllDrawings);
+    if (_xhairSyncing || !candleSeries || !_rawCandles.length) return;
+
+    _xhairSyncing = true;
+    try {
+      // Get logical index from cursor position
+      let logicalIndex = null;
+      if (param.point) {
+        logicalIndex = cvdChart.timeScale().coordinateToLogical(param.point.x);
+      }
+
+      if (logicalIndex != null) {
+        const idx = Math.round(logicalIndex);
+        // Within data range - use actual price candle data (shifted)
+        if (idx >= 0 && idx < _rawCandles.length) {
+          const priceCandle = _rawCandles[idx];
+          const priceTime = priceCandle.time + TZ_OFFSET;
+          chart.setCrosshairPosition(priceCandle.close, priceTime, candleSeries);
+        } else if (idx >= _rawCandles.length && _rawCandles.length > 0) {
+          // Past last candle - use last candle's price with projected time
+          const lastPriceCandle = _rawCandles[_rawCandles.length - 1];
+          let intervalSecs = 60;
+          if (_rawCandles.length >= 2) {
+            intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
+          }
+          const offset = idx - (_rawCandles.length - 1);
+          const projectedTime = (lastPriceCandle.time + TZ_OFFSET) + (offset * intervalSecs);
+          chart.setCrosshairPosition(lastPriceCandle.close, projectedTime, candleSeries);
+        }
+      }
+    } catch(e) { console.error('Crosshair sync error (CVD->price):', e); }
+    _xhairSyncing = false;
   });
 
+  // Clear both crosshairs when mouse leaves either panel
   priceContainer.addEventListener('mouseleave', () => {
+    try { cvdChart.clearCrosshairPosition(); } catch(e) {}
     document.getElementById('candle-tooltip').style.display = 'none';
-    _crosshairX.price = null;
-    requestAnimationFrame(renderAllDrawings);
   });
-
   cvdContainer.addEventListener('mouseleave', () => {
-    _crosshairX.cvd = null;
-    requestAnimationFrame(renderAllDrawings);
+    try { chart.clearCrosshairPosition(); } catch(e) {}
   });
 
   // Click to show candle detail - only trigger when clicking on actual candle body/wicks
@@ -2220,26 +2242,6 @@
       // Draw in-progress preview
       if (_drawInProgress && _drawInProgress.chart === panelId) {
         renderDrawing(ctx, _drawInProgress, panelId, false, true);
-      }
-
-      // ── Custom Crosshair Sync Engine ──
-      // If the OTHER chart has an active crosshair, draw a mimicking vertical line on THIS chart
-      const otherPanelId = panelId === 'price' ? 'cvd' : 'price';
-      const syncedX = _crosshairX[otherPanelId];
-      
-      if (syncedX !== null && _crosshairX[panelId] === null) {
-        // Prevent drawing over the right-hand price scale
-        const scaleWidth = panelId === 'price' ? chart.timeScale().width() : cvdChart.timeScale().width();
-        if (syncedX <= scaleWidth) {
-          ctx.beginPath();
-          ctx.moveTo(syncedX, 0);
-          ctx.lineTo(syncedX, cvs.height);
-          ctx.strokeStyle = '#4a4a60'; // Matches your var(--muted) color
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 4]);     // Dashed native look
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
       }
     });
   }
