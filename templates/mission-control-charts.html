@@ -1167,17 +1167,16 @@
   });
 
   // ── Resize + price-scale alignment ──────────────────────────────────
-  // Both charts must have identical right-scale widths so candles line up pixel-perfect.
-  // LW exposes the rendered scale width via timeScale().width() vs container width.
   function syncPriceScaleWidth() {
     try {
+      // Find the actual rendered width of both right-side scales
       const w1 = priceContainer.clientWidth - chart.timeScale().width();
       const w2 = cvdContainer.clientWidth - cvdChart.timeScale().width();
       
-      // Get the max width needed by either chart's labels (minimum 70px)
+      // Calculate the max width needed by either chart (minimum 70px)
       const maxW = Math.max(w1, w2, 70);
       
-      // Apply the exact same width to both charts to lock alignment perfectly
+      // Apply identical minimum widths to lock them into perfect alignment
       chart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
       cvdChart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
     } catch(e) {}
@@ -1637,66 +1636,58 @@
   });
 
 
-  // ── Native Crosshair Mouse Syncing (Supports Blank/Future Space) ──
-  let _isSyncingPointer = false;
+  // ── Crosshair sync: price <-> CVD ──────────────────────────────────
+  let _crosshairX = { price: null, cvd: null };
 
-  function syncPointerEvent(e, targetContainer, sourceContainer) {
-    if (_isSyncingPointer || !e.isPrimary) return; // Prevent infinite loops and multi-touch ghosts
-    
-    const targetRect = targetContainer.getBoundingClientRect();
-    const sourceRect = sourceContainer.getBoundingClientRect();
-    
-    // Match the exact horizontal position relative to the container
-    const relX = e.clientX - sourceRect.left;
-    const targetX = targetRect.left + relX;
-    
-    // Lock the phantom mouse to the vertical center of the target chart
-    const targetY = targetRect.top + (targetRect.height / 2);
+  chart.subscribeCrosshairMove((param) => {
+    // 1. Tooltip logic
+    const tooltip = document.getElementById('candle-tooltip');
+    let displayTime = param.time;
+    if (!displayTime && param.point) displayTime = chart.timeScale().coordinateToTime(param.point.x);
 
-    // Find the exact element the browser would target at this position
-    let targetNode = document.elementFromPoint(targetX, targetY);
-    
-    // If leaving the container, or elementFromPoint fails, fallback to the inner canvas
-    if (e.type === 'pointerleave' || !targetNode) {
-      targetNode = targetContainer.querySelector('canvas, table') || targetContainer.firstElementChild;
+    if (!displayTime || !param.seriesData || !param.seriesData.get(candleSeries)) {
+      if (displayTime) {
+        tooltip.style.display = '';
+        tooltip.innerHTML = `
+          <div class="ct-pair">${PAIR_ID} · ${fmtTime(displayTime - TZ_OFFSET)}</div>
+          <div style="font-size:0.6rem;color:var(--muted);margin-top:4px;">No candle data</div>`;
+      } else {
+        tooltip.style.display = 'none';
+      }
+    } else {
+      const data = param.seriesData.get(candleSeries);
+      const isBull = data.close >= data.open;
+      const change = data.open > 0 ? ((data.close - data.open) / data.open * 100) : 0;
+      tooltip.style.display = '';
+      tooltip.innerHTML = `
+        <div class="ct-pair">${PAIR_ID} · ${fmtTime(data.time - TZ_OFFSET)}</div>
+        <div class="ct-row"><span class="ct-label">O</span><span class="ct-val">${fmtPrice(data.open)}</span></div>
+        <div class="ct-row"><span class="ct-label">H</span><span class="ct-val">${fmtPrice(data.high)}</span></div>
+        <div class="ct-row"><span class="ct-label">L</span><span class="ct-val">${fmtPrice(data.low)}</span></div>
+        <div class="ct-row"><span class="ct-label">C</span><span class="ct-val ${isBull ? 'up' : 'down'}">${fmtPrice(data.close)}</span></div>
+        <div class="ct-row"><span class="ct-label">Δ</span><span class="ct-val ${isBull ? 'up' : 'down'}">${isBull ? '+' : ''}${change.toFixed(3)}%</span></div>`;
     }
 
-    // Only dispatch if the element is actually inside the target chart
-    if (!targetNode || !targetContainer.contains(targetNode)) return;
-
-    _isSyncingPointer = true;
-
-    // Create a perfectly cloned PointerEvent
-    const fakeEvent = new PointerEvent(e.type, {
-      clientX: targetX,
-      clientY: targetY,
-      movementX: e.movementX,
-      movementY: e.movementY,
-      pointerId: e.pointerId || 1,
-      pointerType: e.pointerType || 'mouse',
-      isPrimary: true,
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      buttons: e.buttons
-    });
-
-    // Fire it!
-    targetNode.dispatchEvent(fakeEvent);
-
-    _isSyncingPointer = false;
-  }
-
-  // Bind using { capture: true } so Lightweight Charts can't block our listener!
-  ['pointermove', 'pointerdown', 'pointerup', 'pointerleave', 'pointerenter'].forEach(eventType => {
-    priceContainer.addEventListener(eventType, (e) => syncPointerEvent(e, cvdContainer, priceContainer), { capture: true });
-    cvdContainer.addEventListener(eventType, (e) => syncPointerEvent(e, priceContainer, cvdContainer), { capture: true });
+    // 2. Save X position for custom canvas crosshair
+    _crosshairX.price = param.point ? param.point.x : null;
+    requestAnimationFrame(renderAllDrawings);
   });
 
-  // Clear custom HTML tooltip when mouse leaves the price panel
-  priceContainer.addEventListener('pointerleave', () => {
+  cvdChart.subscribeCrosshairMove((param) => {
+    _crosshairX.cvd = param.point ? param.point.x : null;
+    requestAnimationFrame(renderAllDrawings);
+  });
+
+  priceContainer.addEventListener('mouseleave', () => {
     document.getElementById('candle-tooltip').style.display = 'none';
-  }, { capture: true });
+    _crosshairX.price = null;
+    requestAnimationFrame(renderAllDrawings);
+  });
+
+  cvdContainer.addEventListener('mouseleave', () => {
+    _crosshairX.cvd = null;
+    requestAnimationFrame(renderAllDrawings);
+  });
 
   // Click to show candle detail - only trigger when clicking on actual candle body/wicks
   priceContainer.addEventListener('click', (e) => {
@@ -2229,6 +2220,26 @@
       // Draw in-progress preview
       if (_drawInProgress && _drawInProgress.chart === panelId) {
         renderDrawing(ctx, _drawInProgress, panelId, false, true);
+      }
+
+      // ── Custom Crosshair Sync Engine ──
+      // If the OTHER chart has an active crosshair, draw a mimicking vertical line on THIS chart
+      const otherPanelId = panelId === 'price' ? 'cvd' : 'price';
+      const syncedX = _crosshairX[otherPanelId];
+      
+      if (syncedX !== null && _crosshairX[panelId] === null) {
+        // Prevent drawing over the right-hand price scale
+        const scaleWidth = panelId === 'price' ? chart.timeScale().width() : cvdChart.timeScale().width();
+        if (syncedX <= scaleWidth) {
+          ctx.beginPath();
+          ctx.moveTo(syncedX, 0);
+          ctx.lineTo(syncedX, cvs.height);
+          ctx.strokeStyle = '#4a4a60'; // Matches your var(--muted) color
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);     // Dashed native look
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
     });
   }
