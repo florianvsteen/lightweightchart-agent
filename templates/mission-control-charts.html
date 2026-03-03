@@ -1171,13 +1171,15 @@
   // LW exposes the rendered scale width via timeScale().width() vs container width.
   function syncPriceScaleWidth() {
     try {
-      // Read how wide the price chart's right scale actually rendered
-      const totalW     = priceContainer.clientWidth;
-      const plotW      = chart.timeScale().width();          // plot area only
-      const scaleW     = totalW - plotW;                     // actual right-scale width
-      if (scaleW > 0) {
-        cvdChart.applyOptions({ rightPriceScale: { minimumWidth: scaleW } });
-      }
+      const w1 = priceContainer.clientWidth - chart.timeScale().width();
+      const w2 = cvdContainer.clientWidth - cvdChart.timeScale().width();
+      
+      // Get the max width needed by either chart's labels (minimum 70px)
+      const maxW = Math.max(w1, w2, 70);
+      
+      // Apply the exact same width to both charts to lock alignment perfectly
+      chart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
+      cvdChart.applyOptions({ rightPriceScale: { minimumWidth: maxW } });
     } catch(e) {}
   }
 
@@ -1633,78 +1635,52 @@
       }
     }
 
-    // 2. Sync crosshair to CVD chart using logical index lookup
-    if (_xhairSyncing || !cvdCandleSeries || !_cvdCandles.length) return;
 
-    _xhairSyncing = true;
-    try {
-      // Get logical index from cursor position
-      let logicalIndex = null;
-      if (param.point) {
-        logicalIndex = chart.timeScale().coordinateToLogical(param.point.x);
-      }
+  // ── Native Crosshair Mouse Syncing (Supports Blank/Future Space) ──
+  let _isFakingMouse = false;
 
-      if (logicalIndex != null) {
-        const idx = Math.round(logicalIndex);
-        // Within data range - use actual CVD candle data
-        if (idx >= 0 && idx < _cvdCandles.length) {
-          const cvdCandle = _cvdCandles[idx];
-          const cvdPrice = cvdCandle.close;
-          cvdChart.setCrosshairPosition(cvdPrice, cvdCandle.time, cvdCandleSeries);
-        } else if (idx >= _cvdCandles.length && _cvdCandles.length > 0) {
-          // Past last candle - use last candle's price with projected time
-          const lastCvdCandle = _cvdCandles[_cvdCandles.length - 1];
-          let intervalSecs = 60;
-          if (_cvdCandles.length >= 2) {
-            intervalSecs = _cvdCandles[1].time - _cvdCandles[0].time;
-          }
-          const offset = idx - (_cvdCandles.length - 1);
-          const projectedTime = lastCvdCandle.time + (offset * intervalSecs);
-          cvdChart.setCrosshairPosition(lastCvdCandle.close, projectedTime, cvdCandleSeries);
-        }
-      }
-    } catch(e) { console.error('Crosshair sync error (price->CVD):', e); }
-    _xhairSyncing = false;
-  });
+  function getEventTarget(container) {
+    // Target the inner canvas wrapper that lightweight charts creates
+    return container.querySelector('.tv-lightweight-charts') || container.firstElementChild || container;
+  }
 
-  // When hovering CVD, push crosshair back to price chart using logical index lookup
-  cvdChart.subscribeCrosshairMove((param) => {
-    if (_xhairSyncing || !candleSeries || !_rawCandles.length) return;
+  function syncCrosshairMouse(e, targetContainer, sourceContainer) {
+    if (_isFakingMouse) return; // Prevent infinite event loops
+    
+    const rectTarget = targetContainer.getBoundingClientRect();
+    const rectSource = sourceContainer.getBoundingClientRect();
+    
+    // Match the exact horizontal position relative to the container
+    const relX = e.clientX - rectSource.left;
+    const targetX = rectTarget.left + relX;
+    
+    // Lock the phantom mouse to the vertical center of the target chart
+    const targetY = rectTarget.top + (rectTarget.height / 2);
 
-    _xhairSyncing = true;
-    try {
-      // Get logical index from cursor position
-      let logicalIndex = null;
-      if (param.point) {
-        logicalIndex = cvdChart.timeScale().coordinateToLogical(param.point.x);
-      }
+    const target = getEventTarget(targetContainer);
+    if (!target) return;
 
-      if (logicalIndex != null) {
-        const idx = Math.round(logicalIndex);
-        // Within data range - use actual price candle data (shifted)
-        if (idx >= 0 && idx < _rawCandles.length) {
-          const priceCandle = _rawCandles[idx];
-          const priceTime = priceCandle.time + TZ_OFFSET;
-          chart.setCrosshairPosition(priceCandle.close, priceTime, candleSeries);
-        } else if (idx >= _rawCandles.length && _rawCandles.length > 0) {
-          // Past last candle - use last candle's price with projected time
-          const lastPriceCandle = _rawCandles[_rawCandles.length - 1];
-          let intervalSecs = 60;
-          if (_rawCandles.length >= 2) {
-            intervalSecs = _rawCandles[1].time - _rawCandles[0].time;
-          }
-          const offset = idx - (_rawCandles.length - 1);
-          const projectedTime = (lastPriceCandle.time + TZ_OFFSET) + (offset * intervalSecs);
-          chart.setCrosshairPosition(lastPriceCandle.close, projectedTime, candleSeries);
-        }
-      }
-    } catch(e) { console.error('Crosshair sync error (CVD->price):', e); }
-    _xhairSyncing = false;
+    _isFakingMouse = true;
+    // Dispatch identical mouse event to the other chart
+    target.dispatchEvent(new MouseEvent(e.type, {
+      clientX: targetX,
+      clientY: targetY,
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      buttons: e.buttons
+    }));
+    _isFakingMouse = false;
+  }
+
+  // Bind the phantom mouse logic to both charts
+  ['mousemove', 'mouseleave', 'mouseenter'].forEach(eventType => {
+    priceContainer.addEventListener(eventType, (e) => syncCrosshairMouse(e, cvdContainer, priceContainer));
+    cvdContainer.addEventListener(eventType, (e) => syncCrosshairMouse(e, priceContainer, cvdContainer));
   });
 
   // Clear both crosshairs when mouse leaves either panel
   priceContainer.addEventListener('mouseleave', () => {
-    try { cvdChart.clearCrosshairPosition(); } catch(e) {}
     document.getElementById('candle-tooltip').style.display = 'none';
   });
   cvdContainer.addEventListener('mouseleave', () => {
