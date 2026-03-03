@@ -86,7 +86,7 @@ PAIRS = {
                 "lookback": 40,
                 "min_candles": 15,
                 "adx_threshold": 25,
-                "threshold_pct": 0.003,
+                "threshold_pct": 0.005,
                 "valid_sessions":     ["london", "new_york"],
                 "alert_cooldown_minutes": 15,
                 "min_touchpoints": 5,
