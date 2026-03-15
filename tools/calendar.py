@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 # Switch AI provider: "gemini" (default, free) or "openai"
-AI_PROVIDER  = os.environ.get("CALENDAR_AI_PROVIDER", "gemini").lower()
+AI_PROVIDER  = os.environ.get("AI_PROVIDER", "gemini").lower()
 
 # Gemini — free tier, set GEMINI_API_KEY (aistudio.google.com)
 GEMINI_URL   = (
