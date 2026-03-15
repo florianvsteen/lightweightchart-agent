@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ pair_id }} — Macro Desk</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+<style>
+#main-content { overflow-y: auto; }
+
+/* ── Header ── */
+#dd-header {
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+#dd-back-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 5px 12px;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 6px;
+  text-decoration: none;
+}
+#dd-back-btn:hover { color: var(--accent); border-color: rgba(90,240,196,0.4); }
+
+#dd-pair-name {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800; font-size: 1.6rem; color: #fff; line-height: 1;
+}
+#dd-pair-label { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.12em; margin-top: 2px; }
+
+#dd-price-block { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+#dd-price { font-size: 1.2rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+#dd-chg { font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-sm); }
+#dd-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.1); }
+#dd-chg.down { color: var(--accent2); background: rgba(240,90,126,0.1); }
+#dd-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
+
+#dd-sentiment {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 20px; border: 1px solid;
+}
+#dd-sentiment.Bullish { border-color: rgba(90,240,196,0.4);  color: var(--accent); }
+#dd-sentiment.Bearish { border-color: rgba(240,90,126,0.4);  color: var(--accent2); }
+#dd-sentiment.Neutral { border-color: var(--border2); color: var(--muted); }
+
+/* ── Body ── */
+#dd-body {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1px;
+  background: var(--border);
+  flex: 1;
+}
+#dd-main    { background: var(--bg); display: flex; flex-direction: column; }
+#dd-sidebar { background: var(--bg); display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow-y: auto; }
+
+/* ── Chart ── */
+#dd-chart-panel { padding: 18px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.period-row { display: flex; gap: 4px; margin-bottom: 12px; }
+.chart-period-btn {
+  background: none; border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  color: var(--muted); cursor: pointer; font-family: 'Space Mono', monospace;
+  font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em; padding: 3px 10px; transition: all 0.15s;
+}
+.chart-period-btn:hover { color: #ccc; border-color: #555; }
+.chart-period-btn.active { color: var(--accent); border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
+#dd-chart-wrap { height: 260px; position: relative; }
+#dd-chart-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+
+/* ── AI section ── */
+#dd-ai-section { padding: 18px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.section-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.section-label svg { color: var(--accent); }
+#dd-ai-text { font-size: 0.7rem; color: var(--text); line-height: 1.7; opacity: 0.88; }
+
+/* ── Macro context section ── */
+#dd-macro-section { padding: 18px 24px; flex-shrink: 0; }
+#dd-macro-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 6px; }
+.macro-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.macro-stat-label { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+.macro-stat-val { font-size: 0.9rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.macro-stat-chg { font-size: 0.62rem; font-weight: 700; margin-top: 2px; }
+.macro-stat-chg.up   { color: var(--accent); }
+.macro-stat-chg.down { color: var(--accent2); }
+
+/* ── News sidebar ── */
+#dd-news-title {
+  padding: 14px 18px 10px; border-bottom: 1px solid var(--border);
+  font-family: 'Syne', sans-serif; font-size: 0.78rem; font-weight: 800; color: #fff;
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.dd-news-item {
+  padding: 10px 18px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px;
+}
+.dd-news-item:hover { background: rgba(255,255,255,0.03); }
+.dd-news-meta { display: flex; align-items: center; gap: 6px; }
+.dd-news-source { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.06em; }
+.dd-news-age    { font-size: 0.46rem; color: #333; margin-left: auto; }
+.dd-news-sentiment {
+  font-size: 0.46rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 10px; border: 1px solid;
+}
+.dd-news-sentiment.bullish { border-color: rgba(90,240,196,0.4); color: var(--accent); }
+.dd-news-sentiment.bearish { border-color: rgba(240,90,126,0.4); color: var(--accent2); }
+.dd-news-sentiment.neutral { border-color: var(--border2); color: var(--muted); }
+.dd-news-headline { font-size: 0.66rem; font-weight: 700; color: var(--text); line-height: 1.4; }
+
+/* Skeleton */
+.skel { background: linear-gradient(90deg, var(--border) 0%, var(--border2) 50%, var(--border) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; display: block; }
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Side Nav -->
+  <nav id="side-nav">
+    <div id="side-nav-logo">
+      <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+        <rect x="1" y="1" width="26" height="26" rx="6" stroke="var(--accent)" stroke-width="1.5"/>
+        <rect x="6"  y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.9"/>
+        <rect x="15" y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="6"  y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="15" y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.15"/>
+      </svg>
+      <span id="side-nav-logo-text">Inner Flows</span>
+    </div>
+    <div class="nav-divider"></div>
+    <ul id="side-nav-links">
+      <li><a href="/" class="nav-item" data-label="Dashboard">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
+        <span class="nav-label">Dashboard</span>
+      </a></li>
+      <li><a href="/macro" class="nav-item" data-label="Macro Desk">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
+        <span class="nav-label">Macro Desk</span>
+      </a></li>
+      <li><a href="/calendar-page" class="nav-item" data-label="Calendar">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+        <span class="nav-label">Calendar</span>
+      </a></li>
+    </ul>
+    <div id="side-nav-bottom">
+      <div class="nav-divider"></div>
+      <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
+        <span class="nav-label">Bloomberg TV</span>
+      </a>
+    </div>
+    <button id="nav-collapse-btn" aria-label="Toggle nav">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+  </nav>
+  <div id="nav-tooltip"></div>
+
+  <div id="main-content">
+
+    <div id="dd-header">
+      <a id="dd-back-btn" href="/macro">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Macro Desk
+      </a>
+      <div>
+        <div id="dd-pair-name">{{ pair_id }}</div>
+        <div id="dd-pair-label">Loading…</div>
+      </div>
+      <div id="dd-price-block">
+        <span id="dd-price">—</span>
+        <span id="dd-chg" class="flat">—</span>
+        <span id="dd-sentiment" class="Neutral">—</span>
+      </div>
+    </div>
+
+    <div id="dd-body">
+
+      <!-- Main content -->
+      <div id="dd-main">
+
+        <div id="dd-chart-panel">
+          <div class="period-row">
+            <button class="chart-period-btn active" data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
+            <button class="chart-period-btn"        data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
+            <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
+          </div>
+          <div id="dd-chart-wrap"><canvas id="dd-chart-canvas"></canvas></div>
+        </div>
+
+        <div id="dd-ai-section">
+          <div class="section-label">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+            AI Analysis
+          </div>
+          <div id="dd-ai-text"><span class="skel" style="width:100%;height:13px;display:block;margin-bottom:5px"></span><span class="skel" style="width:80%;height:13px;display:block;margin-bottom:5px"></span><span class="skel" style="width:60%;height:13px;display:block"></span></div>
+        </div>
+
+        <div id="dd-macro-section">
+          <div class="section-label">Market Context</div>
+          <div id="dd-macro-grid"></div>
+        </div>
+
+      </div>
+
+      <!-- News sidebar -->
+      <div id="dd-sidebar">
+        <div id="dd-news-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          News
+        </div>
+        <div id="dd-news-list">
+          <div style="padding:16px 18px;font-size:0.58rem;color:var(--muted);display:flex;gap:8px;align-items:center">
+            <div class="cal-spinner"></div> Loading news…
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const PAIR_ID  = '{{ pair_id }}';
+let _chartInst = null;
+let _period    = '1d';
+let _interval  = '5m';
+
+function fmtPrice(v, k) {
+  if (v == null) return '—';
+  const fx4 = ['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'];
+  const fx3 = ['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'];
+  if (fx4.includes(k)) return v.toFixed(4);
+  if (fx3.includes(k)) return v.toFixed(3);
+  if (['US10Y','VIX'].includes(k)) return v.toFixed(2);
+  if (v > 1000) return v.toFixed(2);
+  return v.toFixed(2);
+}
+
+function setPeriod(btn) {
+  document.querySelectorAll('.chart-period-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _period = btn.dataset.p; _interval = btn.dataset.i;
+  loadChart();
+}
+
+async function loadChart() {
+  try {
+    const r = await fetch(`/api/macro/chart/${PAIR_ID}?period=${_period}&interval=${_interval}`);
+    const d = await r.json();
+    if (!d.ok || !d.candles?.length) return;
+    renderChart(d.candles);
+  } catch(e) { console.error('chart', e); }
+}
+
+function renderChart(candles) {
+  const chgEl = document.getElementById('dd-chg');
+  const chgV  = parseFloat(chgEl.dataset.chg || 0);
+  const color = chgV >= 0 ? '#5af0c4' : '#f05a7e';
+  const labels = candles.map(c => { const dt = new Date(c.time*1000); return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}); });
+  const prices = candles.map(c => c.close);
+  const ctx = document.getElementById('dd-chart-canvas').getContext('2d');
+  if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
+  _chartInst = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ data: prices, borderColor: color, backgroundColor: color+'14', borderWidth: 1.8, pointRadius: 0, tension: 0.3, fill: true }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(17,17,22,0.95)', borderColor: '#2a2a38', borderWidth: 1, titleColor: '#4a4a60', bodyColor: '#c8c8d8', titleFont: {family:'Space Mono',size:9}, bodyFont: {family:'Space Mono',size:11}, callbacks: { label: c => ` ${c.parsed.y.toFixed(4)}` } } },
+      scales: {
+        x: { grid: {color:'rgba(255,255,255,0.03)',drawTicks:false}, border:{display:false}, ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:8,maxRotation:0} },
+        y: { position:'right', grid:{color:'rgba(255,255,255,0.03)',drawTicks:false}, border:{display:false}, ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:6} }
+      }
+    }
+  });
+}
+
+async function loadSnapshot() {
+  try {
+    const r = await fetch('/api/macro/snapshot'); const d = await r.json();
+    if (!d.ok) return;
+    const snap = d.data[PAIR_ID];
+    if (!snap || snap.last == null) return;
+    document.getElementById('dd-pair-label').textContent = snap.label || '';
+    document.getElementById('dd-price').textContent      = fmtPrice(snap.last, PAIR_ID);
+    const chg = snap.change_p || 0;
+    const chgEl = document.getElementById('dd-chg');
+    chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+    chgEl.className   = `${chg >= 0 ? 'up' : 'down'}`;
+    chgEl.dataset.chg = chg;
+
+    // Market context stats — show related instruments
+    const grid = document.getElementById('dd-macro-grid');
+    const related = Object.entries(d.data).filter(([k,v]) => k !== 'fetched_at' && k !== PAIR_ID && v.last != null).slice(0,6);
+    grid.innerHTML = related.map(([k,v]) => {
+      const c = v.change_p||0; const cs = c>=0?'up':'down'; const s=c>=0?'+':'';
+      return `<div class="macro-stat">
+        <div class="macro-stat-label">${v.label||k}</div>
+        <div class="macro-stat-val">${fmtPrice(v.last,k)}</div>
+        <div class="macro-stat-chg ${cs}">${s}${c.toFixed(2)}%</div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+async function loadAnalysis() {
+  try {
+    const r = await fetch(`/api/macro/pair/${PAIR_ID}`); const d = await r.json();
+    if (!d.ok) return;
+    const data = d.data;
+    document.getElementById('dd-ai-text').textContent = data.text || 'Analysis unavailable.';
+    const sent = (data.sentiment || 'Neutral');
+    const sentC = sent.charAt(0).toUpperCase() + sent.slice(1).toLowerCase();
+    const sentEl = document.getElementById('dd-sentiment');
+    sentEl.textContent = sentC;
+    sentEl.className   = sentC;
+  } catch(e) {}
+}
+
+async function loadNews() {
+  try {
+    const r = await fetch(`/api/news/${PAIR_ID}`); const d = await r.json();
+    const list = document.getElementById('dd-news-list');
+    const items = d.articles || [];
+    if (!items.length) { list.innerHTML = '<div style="padding:16px 18px;font-size:0.58rem;color:var(--muted)">No news available</div>'; return; }
+    list.innerHTML = items.map(n => `
+      <div class="dd-news-item" onclick="window.open('${n.link||'#'}','_blank')">
+        <div class="dd-news-meta">
+          <span class="dd-news-source">${n.source||''}</span>
+          <span class="dd-news-age">${n.age||''}</span>
+          ${n.sentiment?`<span class="dd-news-sentiment ${n.sentiment}">${n.sentiment}</span>`:''}
+        </div>
+        <div class="dd-news-headline">${n.headline||''}</div>
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('dd-news-list').innerHTML = '<div style="padding:16px 18px;font-size:0.58rem;color:var(--muted)">Could not load news</div>';
+  }
+}
+
+// ── Side nav ──
+{ const nav=document.getElementById('side-nav'),tip=document.getElementById('nav-tooltip'),btn=document.getElementById('nav-collapse-btn');
+  if(localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
+  btn.addEventListener('click',()=>{ nav.classList.toggle('collapsed'); localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0'); });
+  document.querySelectorAll('.nav-item').forEach(i=>{ i.addEventListener('mouseenter',e=>{ if(!nav.classList.contains('collapsed')) return; tip.textContent=i.dataset.label||''; tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px'; tip.classList.add('visible'); }); i.addEventListener('mouseleave',()=>tip.classList.remove('visible')); });
+  document.querySelectorAll('.nav-item').forEach(i=>{ const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/'; i.classList.toggle('active',h==='/macro'); }); }
+
+// ── Init ──
+(async () => {
+  await loadSnapshot();
+  await Promise.all([loadChart(), loadAnalysis(), loadNews()]);
+})();
+setInterval(loadSnapshot, 5*60*1000);
+</script>
+</body>
+</html>
