@@ -1,31 +1,24 @@
 """
 providers/metatrader.py
 
-MetaTrader 5 data provider via the mt5rest HTTP API.
-Assumes the mt5rest server is already configured with MT5 account credentials.
-This provider just obtains a session token and uses it to fetch OHLCV data.
+MetaTrader 5 data provider via the openclaw MT5 Flask API.
+Calls the Wine-hosted Flask app running inside the MT5 Docker container.
 
 Required env vars:
-  MT5_API_URL       Base URL of the mt5rest API (e.g. https://mt5.flownet.be)
-  MT5_API_USER      MT5 account number
-  MT5_API_PASSWORD  MT5 account password (special characters are safe — URL-encoded automatically)
-  MT5_API_SERVER    MT5 server name (e.g. FusionMarkets-Live)
+  MT5_API_URL   Base URL of the MT5 Flask API (e.g. http://mt5.flownet.be:6868)
 
 Exposes:
   get_df(ticker, interval, period)       → pd.DataFrame  (OHLCV, DatetimeIndex, UTC)
   get_bias_df(ticker, period, interval)  → pd.DataFrame
   LOCK  — threading.Lock (shared across all calls)
 
-Interval → timeframe in minutes:
-  "1m"  →  1    "5m"  →  5    "15m" → 15    "30m" → 30
-  "1h"  → 60    "4h"  → 240   "1d"  → 1440  "1wk" → 10080
+Interval → MT5 timeframe string:
+  "1m"  → M1    "5m"  → M5    "15m" → M15   "30m" → M30
+  "1h"  → H1    "4h"  → H4    "1d"  → D1    "1wk" → W1
 
-Period string → lookback window:
-  "1d" → 1 day   "5d" → 5 days   "30d" → 30 days
-  "3mo" → 90 days   "6mo" → 180 days
-
-mt5rest Bar schema (/PriceHistory response):
-  { time, openPrice, highPrice, lowPrice, closePrice, tickVolume, volume }
+Period string → number of bars to fetch:
+  "1d"  → 1440   "5d"  → 7200   "30d" → 43200
+  "3mo" → 129600  "6mo" → 259200
 """
 
 import os
@@ -34,248 +27,147 @@ import requests
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 
-# ── Provider lock (API-compatible with yahoo.py) ─────────────────────────────
+# ── Provider lock ─────────────────────────────────────────────────────────────
 LOCK = threading.Lock()
 
-# ── Interval string → timeframe in minutes ────────────────────────────────────
+# ── Interval string → MT5 timeframe string ────────────────────────────────────
 _TF_MAP = {
-    "1m":   1,
-    "2m":   2,
-    "3m":   3,
-    "5m":   5,
-    "15m":  15,
-    "30m":  30,
-    "1h":   60,
-    "4h":   240,
-    "1d":   1440,
-    "1w":   10080,
-    "1wk":  10080,
+    "1m":   "M1",
+    "2m":   "M2",
+    "3m":   "M3",
+    "5m":   "M5",
+    "15m":  "M15",
+    "30m":  "M30",
+    "1h":   "H1",
+    "4h":   "H4",
+    "1d":   "D1",
+    "1w":   "W1",
+    "1wk":  "W1",
 }
 
-# ── yfinance-style period string → timedelta ──────────────────────────────────
-_PERIOD_MAP = {
-    "1d":  timedelta(days=1),
-    "5d":  timedelta(days=5),
-    "30d": timedelta(days=30),
-    "60d": timedelta(days=60),
-    "3mo": timedelta(days=90),
-    "6mo": timedelta(days=180),
-    "1y":  timedelta(days=365),
+# ── Interval → bars needed for a given period ─────────────────────────────────
+# bars = period_minutes / interval_minutes
+_INTERVAL_MINUTES = {
+    "1m": 1, "2m": 2, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "4h": 240, "1d": 1440, "1w": 10080, "1wk": 10080,
 }
 
-# ── mt5rest datetime format ───────────────────────────────────────────────────
-_DT_FMT = "%Y-%m-%dT%H:%M:%S"
-
-# Most MT5 brokers run on UTC+2 (EET) or UTC+3 (EEST in summer).
-# mt5rest returns bar timestamps in broker LOCAL time with no timezone info.
-# Override with: export MT5_BROKER_UTC_OFFSET=3
-import os as _os
-_BROKER_UTC_OFFSET = int(_os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
-
-# ── Module-level session token — established once, reused across all calls ────
-_token: str | None = None
-_token_lock = threading.Lock()
+_PERIOD_MINUTES = {
+    "1d":  1440,
+    "5d":  7200,
+    "30d": 43200,
+    "60d": 86400,
+    "3mo": 129600,
+    "6mo": 259200,
+    "1y":  525600,
+}
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def _num_bars(interval: str, period: str) -> int:
+    iv = _INTERVAL_MINUTES.get(interval, 1)
+    pm = _PERIOD_MINUTES.get(period, 1440)
+    return max(1, pm // iv)
+
 
 def _base_url() -> str:
     url = os.environ.get("MT5_API_URL", "").rstrip("/")
     if not url:
         raise RuntimeError(
             "MT5_API_URL is not set. "
-            "Example: export MT5_API_URL=http://192.168.1.10:5000"
+            "Example: export MT5_API_URL=http://mt5.flownet.be:6868"
         )
     return url
-
-
-def _connect() -> str:
-    """
-    Obtain a session token from the mt5rest API via /ConnectEx.
-    Credentials are read from env vars. Password is URL-encoded to handle special characters.
-    """
-    user     = os.environ.get("MT5_API_USER", "")
-    password = os.environ.get("MT5_API_PASSWORD", "")
-    server   = os.environ.get("MT5_API_SERVER", "")
-
-    missing = [k for k, v in {
-        "MT5_API_USER": user, "MT5_API_PASSWORD": password, "MT5_API_SERVER": server
-    }.items() if not v]
-    if missing:
-        raise RuntimeError(
-            f"Missing env vars for MT5 connection: {', '.join(missing)}. "
-            "Required: MT5_API_USER, MT5_API_PASSWORD, MT5_API_SERVER"
-        )
-
-    # URL-encode the password to safely handle special characters
-    from urllib.parse import urlencode
-    query = urlencode({
-        "user":                              user,
-        "password":                          password,
-        "server":                            server,
-        "connectTimeoutSeconds":             60,
-        "connectTimeoutClusterMemberSeconds": 20,
-    })
-
-    resp = requests.get(f"{_base_url()}/ConnectEx?{query}", timeout=70)
-
-    if resp.status_code != 200:
-        try:
-            err = resp.json()
-            detail = f"{err.get('code', '')} — {err.get('message', '')}"
-        except Exception:
-            detail = resp.text[:200]
-        raise RuntimeError(f"[metatrader] /ConnectEx failed: HTTP {resp.status_code} — {detail}")
-
-    token = resp.text.strip().strip('"')
-    print(f"[metatrader] Connected via /ConnectEx — token: {token[:8]}…")
-    return token
-
-
-def _get_token() -> str:
-    """Return cached session token, connecting on first call."""
-    global _token
-    if _token:
-        return _token
-    with _token_lock:
-        if not _token:
-            _token = _connect()
-    return _token
-
-
-def _reconnect():
-    """Force a reconnect — called when the API reports a session error."""
-    global _token
-    print("[metatrader] Session expired or lost — reconnecting…")
-    with _token_lock:
-        _token = None
-        _token = _connect()
-
-
-def _bars_to_df(bars: list) -> pd.DataFrame:
-    """Convert mt5rest Bar list to a standard OHLCV DataFrame with UTC DatetimeIndex."""
-    if not bars:
-        return pd.DataFrame()
-
-    df = pd.DataFrame([{
-        "time":   b["time"],
-        "Open":   b["openPrice"],
-        "High":   b["highPrice"],
-        "Low":    b["lowPrice"],
-        "Close":  b["closePrice"],
-        # mt5rest Bar schema: tickVolume = number of ticks (preferred), volume = real volume
-        "Volume": b.get("tickVolume") or b.get("volume", 0),
-    } for b in bars])
-
-    df["time"] = pd.to_datetime(df["time"], format=_DT_FMT, utc=False)
-    df["time"] = df["time"] - pd.Timedelta(hours=_BROKER_UTC_OFFSET)
-    df["time"] = df["time"].dt.tz_localize("UTC")
-    df = df.set_index("time")
-    return df.dropna()
 
 
 # ── Core fetch ────────────────────────────────────────────────────────────────
 
 def _fetch(ticker: str, interval: str, period: str) -> pd.DataFrame:
-    """
-    Call /PriceHistory and return a DataFrame.
-    On session error (HTTP 201 with token-related code), reconnects once and retries.
-    """
     tf = _TF_MAP.get(interval)
     if tf is None:
         print(f"[metatrader] Unsupported interval: {interval!r}")
         return pd.DataFrame()
 
-    delta         = _PERIOD_MAP.get(period, timedelta(days=1))
-    now           = datetime.now(timezone.utc)
-    broker_offset = timedelta(hours=_BROKER_UTC_OFFSET)
-    # Broker expects from/to in its LOCAL time, not UTC — shift the window forward
-    date_from     = (now - delta) + broker_offset
-    date_to       = now + broker_offset
+    num_bars = _num_bars(interval, period)
 
-    params = {
-        "id":        _get_token(),
-        "symbol":    ticker,
-        "from":      date_from.strftime(_DT_FMT),
-        "to":        date_to.strftime(_DT_FMT),
-        "timeFrame": tf,
-    }
+    try:
+        resp = requests.get(
+            f"{_base_url()}/fetch_data_pos",
+            params={
+                "symbol":    ticker,
+                "timeframe": tf,
+                "num_bars":  num_bars,
+            },
+            timeout=30,
+        )
 
-    # Retry once on session/connection errors
-    for attempt in range(2):
-        try:
-            resp = requests.get(
-                f"{_base_url()}/PriceHistory",
-                params=params,
-                timeout=30,
-            )
-
-            if resp.status_code == 200:
-                bars = resp.json()
-                if not isinstance(bars, list):
-                    print(f"[metatrader] Unexpected /PriceHistory response for {ticker}: {bars}")
-                    return pd.DataFrame()
-                df = _bars_to_df(bars)
-                if df.empty:
-                    print(f"[metatrader] No bars returned for {ticker} {interval} ({period})")
-                return df
-
-            # HTTP 201 = mt5rest exception (token expired, invalid symbol, etc.)
-            if resp.status_code == 201:
-                try:
-                    err  = resp.json()
-                    code = err.get("code", "UNKNOWN")
-                    msg  = err.get("message", "")
-                except Exception:
-                    code, msg = "UNKNOWN", resp.text[:100]
-
-                # Token / connection errors → reconnect and retry
-                TOKEN_ERRORS = {"INVALID_TOKEN", "NO_CONNECTION", "CONNECT_ERROR", "TIMEOUT"}
-                if attempt == 0 and code in TOKEN_ERRORS:
-                    print(f"[metatrader] Session error ({code}) for {ticker} — {msg}")
-                    _reconnect()
-                    params["id"] = _get_token()
-                    continue
-
-                # Symbol not found or other hard errors — don't retry
-                print(f"[metatrader] API error for {ticker}: {code} — {msg}")
+        if resp.status_code == 200:
+            bars = resp.json()
+            if not bars:
+                print(f"[metatrader] No bars returned for {ticker} {interval} ({period})")
                 return pd.DataFrame()
+            return _bars_to_df(bars)
 
-            print(f"[metatrader] HTTP {resp.status_code} for {ticker}: {resp.text[:200]}")
+        if resp.status_code == 404:
+            print(f"[metatrader] Symbol not found or no data: {ticker}")
             return pd.DataFrame()
 
-        except requests.Timeout:
-            print(f"[metatrader] Request timed out for {ticker} (attempt {attempt + 1})")
-            if attempt == 0:
-                continue
-        except requests.RequestException as e:
-            print(f"[metatrader] Request error for {ticker}: {e}")
-            if attempt == 0:
-                _reconnect()
-                params["id"] = _get_token()
-                continue
+        print(f"[metatrader] HTTP {resp.status_code} for {ticker}: {resp.text[:200]}")
+        return pd.DataFrame()
 
-    return pd.DataFrame()
+    except requests.Timeout:
+        print(f"[metatrader] Request timed out for {ticker}")
+        return pd.DataFrame()
+    except requests.RequestException as e:
+        print(f"[metatrader] Request error for {ticker}: {e}")
+        return pd.DataFrame()
+
+
+def _bars_to_df(bars: list) -> pd.DataFrame:
+    """Convert /fetch_data_pos response to standard OHLCV DataFrame with UTC DatetimeIndex."""
+    df = pd.DataFrame(bars)
+
+    if df.empty:
+        return df
+
+    # Rename columns to standard names
+    df = df.rename(columns={
+        "time":        "time",
+        "open":        "Open",
+        "high":        "High",
+        "low":         "Low",
+        "close":       "Close",
+        "tick_volume": "Volume",
+    })
+
+    # Keep only needed columns
+    cols = [c for c in ["time", "Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+    df = df[cols]
+
+    # Parse time — API returns ISO datetime strings
+    df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
+    df = df.dropna(subset=["time"])
+    df = df.set_index("time")
+
+    return df
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
 def get_df(ticker: str, interval: str, period: str = None) -> pd.DataFrame:
     """
-    Download OHLCV data from MetaTrader 5 via the mt5rest HTTP API.
+    Download OHLCV data from MetaTrader 5 via the openclaw MT5 Flask API.
 
     Args:
-        ticker:   MT5 symbol name (e.g. "EURUSD", "US30Cash", "XAUUSD")
-        interval: candle interval ("1m", "5m", "15m", "30m", "1h")
-        period:   lookback period ("1d", "5d", "30d" …). Derived from interval if None.
+        ticker:   MT5 symbol name (e.g. "EURUSD", "XAUUSD", "US30Cash")
+        interval: candle interval ("1m", "5m", "15m", "30m", "1h", "4h", "1d")
+        period:   lookback period ("1d", "5d", "30d", "3mo", "6mo"). Derived from interval if None.
 
     Returns:
         pd.DataFrame with Open, High, Low, Close, Volume columns and UTC DatetimeIndex.
         Returns an empty DataFrame on failure.
     """
     if period is None:
-        from providers.yahoo import PERIOD_MAP
-        period = PERIOD_MAP.get(interval, "1d")
+        period = _default_period(interval)
 
     with LOCK:
         return _fetch(ticker, interval, period)
@@ -283,7 +175,53 @@ def get_df(ticker: str, interval: str, period: str = None) -> pd.DataFrame:
 
 def get_bias_df(ticker: str, period: str, interval: str) -> pd.DataFrame:
     """
-    Download data for bias calculation (daily / weekly candles).
+    Download data for bias calculation.
     API-compatible with providers/yahoo.py.
     """
     return get_df(ticker, interval, period)
+
+
+def get_symbol_info(ticker: str) -> dict | None:
+    """
+    Fetch symbol metadata (spread, digits, volume_min etc.) from the API.
+    Returns None on failure.
+    """
+    try:
+        resp = requests.get(
+            f"{_base_url()}/symbol_info/{ticker}",
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+    except requests.RequestException as e:
+        print(f"[metatrader] symbol_info error for {ticker}: {e}")
+        return None
+
+
+def get_tick(ticker: str) -> dict | None:
+    """
+    Fetch latest bid/ask tick for a symbol.
+    Returns None on failure.
+    """
+    try:
+        resp = requests.get(
+            f"{_base_url()}/symbol_info_tick/{ticker}",
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+    except requests.RequestException as e:
+        print(f"[metatrader] tick error for {ticker}: {e}")
+        return None
+
+
+def _default_period(interval: str) -> str:
+    """Sensible default period for a given interval."""
+    defaults = {
+        "1m": "1d", "2m": "1d", "3m": "1d", "5m": "5d",
+        "15m": "5d", "30m": "30d", "1h": "30d",
+        "4h": "3mo", "1d": "1y", "1w": "1y", "1wk": "1y",
+    }
+    return defaults.get(interval, "1d")
