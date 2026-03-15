@@ -557,27 +557,36 @@ function setPairIcon(pairId) {
   icon.textContent = short;
 }
 
+function applyAnalysis(data) {
+  const sent  = (data.sentiment || 'Neutral');
+  const sentC = sent.charAt(0).toUpperCase() + sent.slice(1).toLowerCase();
+  const conf  = data.confidence || 70;
+  const colors = {Bullish:'var(--accent)', Bearish:'var(--accent2)', Neutral:'var(--muted)'};
+
+  const biasEl = document.getElementById('dd-bias');
+  biasEl.textContent = sentC;
+  biasEl.className   = `dd-stat-box-val ${sent.toLowerCase()}`;
+  biasEl.style.color = colors[sentC] || 'var(--muted)';
+
+  const techEl = document.getElementById('dd-technical');
+  techEl.textContent = sentC === 'Bullish' ? 'Buy' : sentC === 'Bearish' ? 'Sell' : 'Neutral';
+  techEl.className   = `dd-stat-box-val ${sentC === 'Bullish' ? 'buy' : sentC === 'Bearish' ? 'sell' : 'neutral'}`;
+
+  document.getElementById('dd-confidence').textContent = `${conf}%`;
+  document.getElementById('dd-overview-text').textContent = data.text || 'Analysis unavailable.';
+}
+
 async function loadAnalysis() {
   try {
-    const r=await fetch(`/api/macro/pair/${PAIR_ID}`);
-    if(!r.ok){ console.error('analysis HTTP', r.status); return; }
-    const d=await r.json();
-    if(!d.ok){ console.error('analysis API error', d.error); return; }
-    const data=d.data;
-    const sent=(data.sentiment||'Neutral');
-    const sentC=sent.charAt(0).toUpperCase()+sent.slice(1).toLowerCase();
-    const conf=data.confidence||70;
-
-    // Stat boxes
-    const biasEl=document.getElementById('dd-bias');
-    biasEl.textContent=sentC; biasEl.className=`dd-stat-box-val ${sent.toLowerCase()}`;
-    document.getElementById('dd-technical').textContent=sent==='Bullish'?'Buy':sent==='Bearish'?'Sell':'Neutral';
-    document.getElementById('dd-technical').className=`dd-stat-box-val ${sent==='Bullish'?'buy':sent==='Bearish'?'sell':'neutral'}`;
-    document.getElementById('dd-confidence').textContent=`${conf}%`;
-
-    // AI overview text
-    document.getElementById('dd-overview-text').textContent=data.text||'Analysis unavailable.';
-  } catch(e){}
+    const r = await fetch(`/api/macro/pair/${PAIR_ID}`);
+    if (!r.ok) { console.error('[loadAnalysis] HTTP', r.status); return; }
+    const d = await r.json();
+    if (!d.ok) { console.error('[loadAnalysis] API error', d.error); return; }
+    applyAnalysis(d.data);
+  } catch(e) {
+    console.error('[loadAnalysis]', e);
+    document.getElementById('dd-overview-text').textContent = 'Analysis unavailable — check console.';
+  }
 }
 
 // ── Macro modules ──
@@ -593,7 +602,7 @@ async function loadModules() {
     if(m.flow)    renderFlow(m.flow);
     if(m.bearing) renderBearing(m.bearing);
     if(m.pulse)   renderPulse(m.pulse);
-  } catch(e){ console.error('modules error', e); }
+  } catch(e){ console.error('[loadModules]', e); }
 }
 
 // ── Segmented gauge (matches screenshot exactly) ──
