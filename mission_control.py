@@ -429,11 +429,17 @@ def api_currency_strength():
 def macro_page():
     import json
     from tools.market import INSTRUMENTS
+    # Pass instrument keys to the template so the JS ticker strip
+    # and chart selector are always in sync with config.PAIRS
     instruments_js = json.dumps(list(INSTRUMENTS.keys()))
     return render_template("macro.html", instruments_js=instruments_js)
-
+ 
+ 
+ 
+ 
 @app.route("/macro/<pair_id>")
 def macro_detail_page(pair_id):
+    """Detail page for a specific pair — no pair selector bar."""
     from tools.market import INSTRUMENTS
     pair_id = pair_id.upper()
     if pair_id not in INSTRUMENTS:
@@ -600,6 +606,22 @@ def api_pair_news(pair_id):
     meta    = INSTRUMENTS.get(pair_id, {})
     articles = get_news(pair_id, yf_ticker=meta.get("sym"))
     return jsonify({"ok": True, "pair": pair_id, "articles": articles})
+ 
+ 
+@app.route("/api/macro/pair/<pair_id>/modules")
+def api_macro_pair_modules(pair_id):
+    """
+    All macro modules (mood, policy, flow, bearing, pulse) focused
+    entirely on the specific pair — no cross-pair contamination.
+    """
+    from tools.macro import get_pair_all_modules
+    pair_id = pair_id.upper()
+    force   = request.args.get("refresh") == "1"
+    try:
+        data = get_pair_all_modules(pair_id, force=force)
+        return jsonify({"ok": True, "pair": pair_id, "modules": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ── Run ─────────────────────────────────────────────────────────────────
