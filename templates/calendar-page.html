@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/static/dashboard.css">
 <style>
 /* ══════════════════════════════════════════════════════════════
-   CALENDAR PAGE — overrides + page-specific styles
+   CALENDAR PAGE
    ══════════════════════════════════════════════════════════════ */
 
 /* Page header */
@@ -21,7 +21,6 @@
   gap: 20px;
   flex-wrap: wrap;
 }
-
 #cal-page-title {
   font-family: 'Syne', sans-serif;
   font-weight: 800;
@@ -30,7 +29,6 @@
   letter-spacing: -0.01em;
   line-height: 1;
 }
-
 #cal-page-sub {
   font-size: 0.65rem;
   color: var(--muted);
@@ -38,7 +36,6 @@
   text-transform: uppercase;
   margin-top: 6px;
 }
-
 #cal-tz-badge {
   font-family: 'Space Mono', monospace;
   font-size: 0.62rem;
@@ -50,6 +47,16 @@
   border-radius: var(--radius-sm);
   background: rgba(90,240,196,0.04);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#cal-tz-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 /* ── Filter bar ── */
@@ -57,35 +64,22 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 36px;
+  padding: 14px 36px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+.filter-group { display: flex; align-items: center; gap: 6px; }
 .filter-group-label {
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   color: var(--muted);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   margin-right: 2px;
   white-space: nowrap;
 }
+.filter-sep { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; }
 
-.filter-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--border2);
-  flex-shrink: 0;
-}
-
-/* Date buttons */
 .date-btn {
   background: none;
   border: 1px solid var(--border2);
@@ -93,7 +87,7 @@
   color: var(--muted);
   cursor: pointer;
   font-family: 'Space Mono', monospace;
-  font-size: 0.65rem;
+  font-size: 0.63rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 5px 14px;
@@ -101,13 +95,8 @@
   white-space: nowrap;
 }
 .date-btn:hover { border-color: #888; color: #ccc; }
-.date-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(90,240,196,0.08);
-}
+.date-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.08); }
 
-/* Custom date input */
 #custom-date-input {
   background: var(--surface);
   border: 1px solid var(--border2);
@@ -123,7 +112,6 @@
 #custom-date-input:focus { border-color: var(--accent); }
 #custom-date-input.visible { display: block; }
 
-/* Currency / Impact pills */
 .pill-btn {
   background: none;
   border: 1px solid var(--border2);
@@ -144,22 +132,79 @@
 .pill-btn.active-imp-medium { border-color: rgba(240,160,40,0.6); color: #f0a028; background: rgba(240,160,40,0.07); }
 .pill-btn.active-imp-low    { border-color: rgba(140,140,140,0.5);color: #aaa;    background: rgba(140,140,140,0.05); }
 
-/* ── Timeline ruler ── */
-#timeline-ruler {
-  padding: 12px 36px 0;
+/* ── Date tabs (one per date in range) ── */
+#date-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 36px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#date-tabs::-webkit-scrollbar { display: none; }
+
+.date-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 10px 20px 8px;
+  white-space: nowrap;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.date-tab:hover { color: #ccc; }
+.date-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.date-tab-count {
+  font-size: 0.52rem;
+  background: var(--border2);
+  padding: 1px 6px;
+  border-radius: 20px;
+  color: var(--muted);
+}
+.date-tab.active .date-tab-count {
+  background: rgba(90,240,196,0.15);
+  color: var(--accent);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HORIZONTAL TIMELINE
+   ══════════════════════════════════════════════════════════════ */
+
+#timeline-outer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Ruler row — sticky at top, scrolls horizontally with canvas */
+#timeline-ruler-wrap {
+  flex-shrink: 0;
+  overflow: hidden;           /* clips ruler to viewport width */
   position: relative;
   height: 36px;
-  flex-shrink: 0;
-  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
-#timeline-track {
-  position: relative;
-  width: 100%;
+#timeline-ruler {
   height: 100%;
+  position: relative;
+  /* width set by JS */
 }
 
-.timeline-tick {
+.ruler-tick {
   position: absolute;
   top: 0;
   display: flex;
@@ -168,104 +213,110 @@
   gap: 3px;
   transform: translateX(-50%);
 }
-
-.timeline-tick-line {
-  width: 1px;
-  height: 8px;
-  background: var(--border2);
-}
-
-.timeline-tick-label {
-  font-size: 0.58rem;
+.ruler-tick-line { width: 1px; height: 8px; background: var(--border2); }
+.ruler-tick-label {
+  font-size: 0.55rem;
   color: var(--muted);
   letter-spacing: 0.06em;
   white-space: nowrap;
+  font-family: 'Space Mono', monospace;
 }
 
-/* Now indicator */
-#now-line {
+/* NOW marker */
+#now-marker {
   position: absolute;
   top: 0;
-  bottom: -9999px;
+  bottom: 0;
   width: 1px;
-  background: rgba(90,240,196,0.5);
+  background: var(--accent);
+  opacity: 0.6;
   pointer-events: none;
-  z-index: 10;
+  z-index: 5;
 }
-
 #now-label {
   position: absolute;
-  top: 0;
+  top: 2px;
   font-family: 'Space Mono', monospace;
-  font-size: 0.52rem;
+  font-size: 0.5rem;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 0.08em;
   background: var(--bg);
   padding: 1px 4px;
   border-radius: 3px;
   transform: translateX(-50%);
   white-space: nowrap;
-}
-
-/* ── Events area ── */
-#cal-events-area {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 20px 36px 40px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
-  position: relative;
-}
-#cal-events-area::-webkit-scrollbar { width: 4px; }
-#cal-events-area::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-
-/* Timeline columns layout */
-#timeline-columns {
-  position: relative;
-  width: 100%;
-}
-
-/* Date section */
-.cal-section {
-  margin-bottom: 32px;
-}
-
-.cal-section-header {
-  font-size: 0.6rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.cal-section-date {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 0.75rem;
-  color: #fff;
   letter-spacing: 0.1em;
 }
 
-.cal-section-count {
-  font-size: 0.55rem;
-  color: var(--muted);
-  border: 1px solid var(--border2);
-  padding: 1px 7px;
-  border-radius: 20px;
+/* Scrollable canvas */
+#timeline-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+  cursor: grab;
+  user-select: none;
+}
+#timeline-scroll:active { cursor: grabbing; }
+#timeline-scroll::-webkit-scrollbar { height: 6px; width: 4px; }
+#timeline-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* The canvas — wide enough to hold 24h */
+#timeline-canvas {
+  position: relative;
+  min-height: 100%;
+  /* width + min-height set by JS */
 }
 
-/* Events grid — columns by time */
-.cal-events-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 12px;
+/* Vertical hour grid lines on canvas */
+.canvas-vline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.canvas-vline.major { background: var(--border2); }
+
+/* NOW line on canvas (extends full height) */
+#canvas-now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Time column — groups of cards at a specific hour position */
+.time-col {
+  position: absolute;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* left set by JS based on time */
+  transform: translateX(-50%);
+  width: 300px;
+  z-index: 2;
+}
+
+/* Connecting dot from ruler to first card */
+.time-col::before {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border2);
+  border: 1px solid var(--border2);
 }
 
 /* ── Event card ── */
@@ -273,17 +324,20 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: border-color 0.15s, transform 0.1s;
+  gap: 9px;
   position: relative;
   overflow: hidden;
+  transition: border-color 0.15s, transform 0.1s;
+  animation: fadeUp 0.2s ease both;
 }
 .cal-card:hover { border-color: var(--border2); transform: translateY(-1px); }
 
-/* Left accent line by impact */
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+/* Left accent bar */
 .cal-card::before {
   content: '';
   position: absolute;
@@ -295,32 +349,28 @@
 .cal-card.impact-Medium::before { background: #f0a028; }
 .cal-card.impact-Low::before    { background: #3a3a50; }
 
-/* Card top row */
 .cal-card-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
 }
 
 .cal-card-time {
   font-family: 'Space Mono', monospace;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: var(--muted);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
+  gap: 4px;
 }
 
-.cal-card-time svg { opacity: 0.5; }
-
 .cal-card-cur {
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
@@ -335,9 +385,9 @@
 .cal-card-cur.NZD { background: rgba(40,180,240,0.10); color: #28b4f0; border: 1px solid rgba(40,180,240,0.25); }
 
 .cal-card-impact {
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 2px 7px;
   border-radius: 20px;
@@ -348,77 +398,62 @@
 .cal-card-impact.Medium { border-color: rgba(240,160,40,0.5); color: #f0a028; background: rgba(240,160,40,0.07); }
 .cal-card-impact.Low    { border-color: rgba(100,100,120,0.4);color: #666680; background: none; }
 
-/* Sparkline icon */
-.cal-card-spark {
-  margin-left: auto;
-  opacity: 0.3;
-  flex-shrink: 0;
-}
-
-/* Countdown badge */
 .cal-card-countdown {
+  margin-left: auto;
   font-family: 'Space Mono', monospace;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
   border: 1px solid rgba(90,240,196,0.3);
   color: var(--accent);
   background: rgba(90,240,196,0.05);
-  flex-shrink: 0;
 }
 .cal-card-countdown.past { border-color: var(--border2); color: var(--muted); background: none; }
 .cal-card-countdown.soon { border-color: rgba(240,160,40,0.5); color: #f0a028; background: rgba(240,160,40,0.06); animation: pulse 1.2s ease-in-out infinite; }
 
-/* Event name */
 .cal-card-name {
   font-family: 'Syne', sans-serif;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: #fff;
   letter-spacing: 0.02em;
   line-height: 1.25;
 }
 
-/* AI analysis box */
 .cal-card-ai {
   background: rgba(90,240,196,0.03);
   border: 1px solid rgba(90,240,196,0.1);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 9px 11px;
 }
 .cal-card-ai-label {
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   display: flex;
   align-items: center;
   gap: 5px;
 }
 .cal-card-ai-text {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   color: var(--text);
   line-height: 1.65;
   opacity: 0.85;
 }
 
-/* Data row: Previous / Forecast / Actual */
-.cal-card-data {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
+.cal-card-data { display: flex; gap: 18px; flex-wrap: wrap; }
 .cal-card-data-item { display: flex; flex-direction: column; gap: 2px; }
-.cal-card-data-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
-.cal-card-data-val   { font-size: 0.8rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.cal-card-data-label { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
+.cal-card-data-val   { font-size: 0.78rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .cal-card-data-val.actual { color: var(--accent); }
 
-/* Loading / empty states */
+/* Empty / loading */
 #cal-loading {
   display: flex;
   align-items: center;
@@ -436,7 +471,6 @@
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
-
 #cal-empty {
   display: none;
   text-align: center;
@@ -446,15 +480,34 @@
   letter-spacing: 0.1em;
 }
 
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.cal-card { animation: fadeIn 0.25s ease both; }
+/* Scroll hint arrows */
+#scroll-hint-left, #scroll-hint-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(90deg, var(--bg) 60%, transparent);
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.2s;
+  font-size: 1rem;
+}
+#scroll-hint-right { right: 0; background: linear-gradient(270deg, var(--bg) 60%, transparent); }
+#scroll-hint-left  { left: 0; }
+#scroll-hint-left.visible, #scroll-hint-right.visible { opacity: 1; }
 </style>
 </head>
 <body>
 
 <div id="app">
 
-  <!-- Side Nav (same as dashboard) -->
+  <!-- Side Nav -->
   <nav id="side-nav">
     <div id="side-nav-logo">
       <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
@@ -472,9 +525,7 @@
         <a href="/" class="nav-item" data-label="Dashboard">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-              <polyline points="2 17 12 22 22 17"/>
-              <polyline points="2 12 12 17 22 12"/>
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
             </svg>
           </span>
           <span class="nav-label">Dashboard</span>
@@ -484,8 +535,7 @@
         <a href="/macro" class="nav-item" data-label="Macro Desk">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-              <polyline points="17 6 23 6 23 12"/>
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
             </svg>
           </span>
           <span class="nav-label">Macro Desk</span>
@@ -496,9 +546,8 @@
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8"  y1="2" x2="8"  y2="6"/>
-              <line x1="3"  y1="10" x2="21" y2="10"/>
+              <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
             </svg>
           </span>
           <span class="nav-label">Calendar</span>
@@ -510,8 +559,7 @@
       <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
         <span class="nav-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="23 7 16 12 23 17 23 7"/>
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
           </svg>
         </span>
         <span class="nav-label">Bloomberg TV</span>
@@ -523,35 +571,29 @@
       </svg>
     </button>
   </nav>
-
   <div id="nav-tooltip"></div>
 
-  <!-- Main content -->
+  <!-- Main -->
   <div id="main-content">
 
-    <!-- Page header -->
     <div id="cal-page-header">
       <div>
         <div id="cal-page-title">Calendar</div>
         <div id="cal-page-sub">Market-moving events and AI analysis</div>
       </div>
-      <div id="cal-tz-badge">🕐 Timezone (<span id="tz-name">UTC</span>)</div>
+      <div id="cal-tz-badge">Timezone (<span id="tz-name">UTC</span>)</div>
     </div>
 
     <!-- Filter bar -->
     <div id="cal-filter-row">
-      <!-- Date -->
       <div class="filter-group">
-        <button class="date-btn" id="btn-today" onclick="setDate('today')">Today</button>
-        <button class="date-btn active" id="btn-tomorrow" onclick="setDate('tomorrow')">Tomorrow</button>
-        <button class="date-btn" id="btn-week" onclick="setDate('week')">This Week</button>
-        <button class="date-btn" id="btn-custom" onclick="toggleCustomDate()">Custom Date</button>
+        <button class="date-btn" id="btn-today"    onclick="setDate('today')">Today</button>
+        <button class="date-btn" id="btn-tomorrow" onclick="setDate('tomorrow')">Tomorrow</button>
+        <button class="date-btn active" id="btn-week" onclick="setDate('week')">This Week</button>
+        <button class="date-btn" id="btn-custom"   onclick="toggleCustomDate()">Custom Date</button>
         <input type="date" id="custom-date-input" onchange="setCustomDate(this.value)">
       </div>
-
       <div class="filter-sep"></div>
-
-      <!-- Currency -->
       <div class="filter-group">
         <span class="filter-group-label">Currency</span>
         <button class="pill-btn active-cur" data-cur="EUR" onclick="toggleCur(this)">EUR</button>
@@ -563,102 +605,96 @@
         <button class="pill-btn" data-cur="CHF" onclick="toggleCur(this)">CHF</button>
         <button class="pill-btn" data-cur="CNY" onclick="toggleCur(this)">CNY</button>
       </div>
-
       <div class="filter-sep"></div>
-
-      <!-- Impact -->
       <div class="filter-group">
         <span class="filter-group-label">Impact</span>
         <button class="pill-btn active-imp-high"   data-imp="High"   onclick="toggleImp(this)">High</button>
         <button class="pill-btn active-imp-medium" data-imp="Medium" onclick="toggleImp(this)">Medium</button>
-        <button class="pill-btn" data-imp="Low" onclick="toggleImp(this)">Low</button>
+        <button class="pill-btn"                   data-imp="Low"    onclick="toggleImp(this)">Low</button>
       </div>
     </div>
 
-    <!-- Timeline ruler -->
-    <div id="timeline-ruler">
-      <div id="timeline-track"></div>
-    </div>
+    <!-- Date tabs -->
+    <div id="date-tabs"></div>
 
-    <!-- Events -->
-    <div id="cal-events-area">
-      <div id="cal-loading">
-        <div class="cal-load-spinner"></div>
-        <span>Loading calendar events…</span>
+    <!-- Timeline -->
+    <div id="timeline-outer">
+      <div id="scroll-hint-left">‹</div>
+      <div id="scroll-hint-right">›</div>
+
+      <!-- Ruler (synced scroll via JS) -->
+      <div id="timeline-ruler-wrap">
+        <div id="timeline-ruler"></div>
       </div>
-      <div id="cal-empty">No events match the selected filters.</div>
-      <div id="cal-sections"></div>
+
+      <!-- Scrollable canvas -->
+      <div id="timeline-scroll">
+        <div id="cal-loading">
+          <div class="cal-load-spinner"></div>
+          <span>Loading calendar events…</span>
+        </div>
+        <div id="cal-empty">No events match the selected filters.</div>
+        <div id="timeline-canvas"></div>
+      </div>
     </div>
 
   </div><!-- /#main-content -->
 </div><!-- /#app -->
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let _allEvents  = [];
-let _dateMode   = 'tomorrow';   // today | tomorrow | week | custom
-let _customDate = '';
-let _activeCurs = new Set(['EUR','USD','GBP','JPY']);
-let _activeImps = new Set(['High','Medium']);
-
-// ── Timezone ──────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════════
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 document.getElementById('tz-name').textContent = TZ;
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
+let _allEvents  = [];
+let _dateMode   = 'week';
+let _customDate = '';
+let _activeDay  = null;   // currently selected date tab (YYYY-MM-DD)
+let _activeCurs = new Set(['EUR','USD','GBP','JPY']);
+let _activeImps = new Set(['High','Medium']);
+
+// Layout constants
+const PX_PER_HOUR = 180;   // pixels per hour — wider = more spread out
+const DAY_START   = 0;     // 00:00 UTC
+const DAY_END     = 24;    // end
+const CARD_WIDTH  = 300;
+const CARD_GAP    = 10;
+const TOP_PAD     = 20;
+
+// ════════════════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════════════════
 function todayUTC()    { return new Date().toISOString().slice(0,10); }
 function tomorrowUTC() { return new Date(Date.now()+86400000).toISOString().slice(0,10); }
 
 function getTargetDates() {
-  const t = todayUTC(), tom = tomorrowUTC();
-  if (_dateMode === 'today')    return [t];
-  if (_dateMode === 'tomorrow') return [tom];
+  if (_dateMode === 'today')    return [todayUTC()];
+  if (_dateMode === 'tomorrow') return [tomorrowUTC()];
   if (_dateMode === 'custom')   return [_customDate].filter(Boolean);
-  // week: today + next 6 days
   const dates = [];
-  for (let i = 0; i < 7; i++) {
-    dates.push(new Date(Date.now() + i*86400000).toISOString().slice(0,10));
-  }
+  for (let i = 0; i < 7; i++)
+    dates.push(new Date(Date.now()+i*86400000).toISOString().slice(0,10));
   return dates;
 }
 
-// ── Filter buttons ────────────────────────────────────────────────────────────
-function setDate(mode) {
-  _dateMode = mode;
-  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
-  const map = { today:'btn-today', tomorrow:'btn-tomorrow', week:'btn-week', custom:'btn-custom' };
-  document.getElementById(map[mode])?.classList.add('active');
-  document.getElementById('custom-date-input').classList.toggle('visible', mode === 'custom');
-  renderEvents();
-  buildTimeline();
+function evDateUTC(ev) {
+  return (ev.event_time || '').slice(0,10);
 }
 
-function toggleCustomDate() {
-  setDate('custom');
+// Returns fractional hours (UTC) from midnight for an event
+function evHoursUTC(ev) {
+  if (!ev.event_time) return 0;
+  const d = new Date(ev.event_time);
+  if (isNaN(d)) return 0;
+  return d.getUTCHours() + d.getUTCMinutes()/60;
 }
 
-function setCustomDate(val) {
-  _customDate = val;
-  renderEvents();
-  buildTimeline();
+function hToX(h) {
+  return Math.round((h / 24) * PX_PER_HOUR * 24);
 }
 
-function toggleCur(btn) {
-  const cur = btn.dataset.cur;
-  if (_activeCurs.has(cur)) { _activeCurs.delete(cur); btn.classList.remove('active-cur'); }
-  else                       { _activeCurs.add(cur);    btn.classList.add('active-cur'); }
-  renderEvents();
-}
-
-function toggleImp(btn) {
-  const imp = btn.dataset.imp;
-  const cls = { High:'active-imp-high', Medium:'active-imp-medium', Low:'active-imp-low' }[imp];
-  if (_activeImps.has(imp)) { _activeImps.delete(imp); btn.classList.remove(cls); }
-  else                       { _activeImps.add(imp);    btn.classList.add(cls); }
-  renderEvents();
-}
-
-// ── Countdown ─────────────────────────────────────────────────────────────────
 function calCountdown(isoUtc) {
   if (!isoUtc) return { label: '—', cls: '' };
   const ms = new Date(isoUtc).getTime();
@@ -677,184 +713,333 @@ function calCountdown(isoUtc) {
   return { label: `in ${h}h${m>0?' '+m+'m':''}`, cls: '' };
 }
 
-// ── Format local time ─────────────────────────────────────────────────────────
 function fmtLocalTime(isoUtc) {
   if (!isoUtc) return '';
   const d = new Date(isoUtc);
   if (isNaN(d.getTime())) return '';
   return d.toLocaleString('en-GB', {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false
+    month:'short', day:'numeric',
+    hour:'2-digit', minute:'2-digit', hour12:false
   });
 }
 
-// ── Event date (UTC) ──────────────────────────────────────────────────────────
-function evDateUTC(ev) { return (ev.event_time || '').slice(0,10); }
+// ════════════════════════════════════════════════════════════════
+//  FILTER CONTROLS
+// ════════════════════════════════════════════════════════════════
+function setDate(mode) {
+  _dateMode = mode;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  const map = {today:'btn-today',tomorrow:'btn-tomorrow',week:'btn-week',custom:'btn-custom'};
+  document.getElementById(map[mode])?.classList.add('active');
+  document.getElementById('custom-date-input').classList.toggle('visible', mode==='custom');
+  rebuildTabs();
+}
+function toggleCustomDate() { setDate('custom'); }
+function setCustomDate(val) { _customDate = val; rebuildTabs(); }
 
-// ── Build event cards HTML ────────────────────────────────────────────────────
-function buildCard(ev, delay) {
-  const cd = calCountdown(ev.event_time);
-  const timeLabel = fmtLocalTime(ev.event_time);
-
-  const hasActual   = ev.actual   && ev.actual   !== '';
-  const hasForecast = ev.forecast && ev.forecast !== '';
-  const hasPrev     = ev.previous && ev.previous !== '';
-
-  const dataRow = (hasActual || hasForecast || hasPrev) ? `
-    <div class="cal-card-data">
-      ${hasPrev     ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Previous</span><span class="cal-card-data-val">${ev.previous}</span></div>` : ''}
-      ${hasForecast ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Forecast</span><span class="cal-card-data-val">${ev.forecast}</span></div>` : ''}
-      ${hasActual   ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Actual</span><span class="cal-card-data-val actual">${ev.actual}</span></div>` : ''}
-    </div>` : '';
-
-  const aiBox = ev.analysis ? `
-    <div class="cal-card-ai">
-      <div class="cal-card-ai-label">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-        AI Analysis
-      </div>
-      <div class="cal-card-ai-text">${ev.analysis}</div>
-    </div>` : '';
-
-  return `
-    <div class="cal-card impact-${ev.impact}" style="animation-delay:${delay}ms">
-      <div class="cal-card-top">
-        <span class="cal-card-time">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          ${timeLabel}
-        </span>
-        <span class="cal-card-cur ${ev.currency}">${ev.currency}</span>
-        <span class="cal-card-impact ${ev.impact}">${ev.impact}</span>
-        <svg class="cal-card-spark" width="20" height="14" viewBox="0 0 20 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="0,10 4,6 8,9 12,3 16,7 20,2"/></svg>
-        <span class="cal-card-countdown ${cd.cls}">${cd.label}</span>
-      </div>
-      <div class="cal-card-name">${ev.title || ev.event || ''}</div>
-      ${aiBox}
-      ${dataRow}
-    </div>`;
+function toggleCur(btn) {
+  const cur = btn.dataset.cur;
+  if (_activeCurs.has(cur)) { _activeCurs.delete(cur); btn.classList.remove('active-cur'); }
+  else                       { _activeCurs.add(cur);    btn.classList.add('active-cur'); }
+  renderTimeline();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-function renderEvents() {
+function toggleImp(btn) {
+  const imp = btn.dataset.imp;
+  const cls = {High:'active-imp-high',Medium:'active-imp-medium',Low:'active-imp-low'}[imp];
+  if (_activeImps.has(imp)) { _activeImps.delete(imp); btn.classList.remove(cls); }
+  else                       { _activeImps.add(imp);    btn.classList.add(cls); }
+  renderTimeline();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DATE TABS
+// ════════════════════════════════════════════════════════════════
+function rebuildTabs() {
+  const dates = getTargetDates();
+  const todayStr    = todayUTC();
+  const tomorrowStr = tomorrowUTC();
+
+  const label = d => {
+    if (d === todayStr)    return 'Today';
+    if (d === tomorrowStr) return 'Tomorrow';
+    return new Date(d+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+  };
+
+  // Count events per date
+  const counts = {};
+  dates.forEach(d => counts[d] = 0);
+  _allEvents.forEach(ev => {
+    const d = evDateUTC(ev);
+    if (counts[d] !== undefined &&
+        _activeCurs.has(ev.currency) &&
+        _activeImps.has(ev.impact)) counts[d]++;
+  });
+
+  const tabs = document.getElementById('date-tabs');
+  tabs.innerHTML = '';
+
+  // If no active day or it's not in the new date set, pick first
+  if (!_activeDay || !dates.includes(_activeDay)) {
+    _activeDay = dates[0] || null;
+  }
+
+  dates.forEach(d => {
+    const btn = document.createElement('button');
+    btn.className = 'date-tab' + (d === _activeDay ? ' active' : '');
+    btn.innerHTML = `${label(d)} <span class="date-tab-count">${counts[d]}</span>`;
+    btn.onclick = () => { _activeDay = d; rebuildTabs(); renderTimeline(); };
+    tabs.appendChild(btn);
+  });
+
+  renderTimeline();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TIMELINE RENDER
+// ════════════════════════════════════════════════════════════════
+function renderTimeline() {
   const loading = document.getElementById('cal-loading');
   const empty   = document.getElementById('cal-empty');
-  const sections = document.getElementById('cal-sections');
+  const canvas  = document.getElementById('timeline-canvas');
+  const ruler   = document.getElementById('timeline-ruler');
 
-  const targetDates = new Set(getTargetDates());
+  if (!_activeDay) {
+    loading.style.display = 'none';
+    empty.style.display = 'block';
+    canvas.innerHTML = '';
+    ruler.innerHTML = '';
+    return;
+  }
 
-  const filtered = _allEvents.filter(ev => {
-    const d = evDateUTC(ev);
-    if (!targetDates.has(d)) return false;
-    if (!_activeCurs.has(ev.currency)) return false;
-    if (!_activeImps.has(ev.impact))   return false;
-    return true;
-  });
+  const filtered = _allEvents.filter(ev =>
+    evDateUTC(ev) === _activeDay &&
+    _activeCurs.has(ev.currency) &&
+    _activeImps.has(ev.impact)
+  );
 
   loading.style.display = 'none';
 
+  // Total canvas width
+  const totalW = PX_PER_HOUR * 24 + CARD_WIDTH + 60;
+  canvas.style.width  = totalW + 'px';
+  canvas.style.minHeight = '200px';
+  ruler.style.width   = totalW + 'px';
+
+  // ── Build ruler ticks ──
+  ruler.innerHTML = '';
+  for (let h = 0; h <= 24; h += 1) {
+    const x = hToX(h);
+    const tick = document.createElement('div');
+    tick.className = 'ruler-tick';
+    tick.style.left = x + 'px';
+    const isMajor = h % 3 === 0;
+    tick.innerHTML = `
+      <div class="ruler-tick-line" style="height:${isMajor?10:5}px;background:${isMajor?'var(--border2)':'var(--border)'}"></div>
+      ${isMajor ? `<div class="ruler-tick-label">${String(h).padStart(2,'0')}:00</div>` : ''}
+    `;
+    ruler.appendChild(tick);
+  }
+
+  // ── NOW marker on ruler ──
+  const nowH = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
+  const nowX = hToX(nowH);
+  const nowMarker = document.createElement('div');
+  nowMarker.id = 'now-marker';
+  nowMarker.style.left = nowX + 'px';
+  const nowLabel = document.createElement('div');
+  nowLabel.id = 'now-label';
+  nowLabel.style.left = nowX + 'px';
+  nowLabel.textContent = 'NOW';
+  ruler.appendChild(nowMarker);
+  ruler.appendChild(nowLabel);
+
+  // ── Build canvas ──
+  canvas.innerHTML = '';
+
   if (!filtered.length) {
     empty.style.display = 'block';
-    sections.innerHTML  = '';
+    canvas.style.minHeight = '120px';
     return;
   }
   empty.style.display = 'none';
 
-  // Group by date
-  const byDate = {};
-  filtered.forEach(ev => {
-    const d = evDateUTC(ev);
-    if (!byDate[d]) byDate[d] = [];
-    byDate[d].push(ev);
-  });
-
-  const todayStr    = todayUTC();
-  const tomorrowStr = tomorrowUTC();
-  const dateLabel = d => {
-    if (d === todayStr)    return 'Today';
-    if (d === tomorrowStr) return 'Tomorrow';
-    return new Date(d+'T12:00:00Z').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
-  };
-
-  let html = '';
-  let cardIdx = 0;
-  for (const [date, evs] of Object.entries(byDate).sort()) {
-    const fullDate = new Date(date+'T12:00:00Z').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-    html += `
-      <div class="cal-section">
-        <div class="cal-section-header">
-          <span class="cal-section-date">${dateLabel(date)}</span>
-          <span style="color:var(--border2)">·</span>
-          <span style="font-size:0.6rem;color:#3a3a50">${fullDate}</span>
-          <span class="cal-section-count">${evs.length} event${evs.length!==1?'s':''}</span>
-        </div>
-        <div class="cal-events-grid">
-          ${evs.map(ev => buildCard(ev, (cardIdx++ % 8) * 40)).join('')}
-        </div>
-      </div>`;
+  // Vertical grid lines
+  for (let h = 0; h <= 24; h++) {
+    const line = document.createElement('div');
+    line.className = 'canvas-vline' + (h%3===0?' major':'');
+    line.style.left = hToX(h) + 'px';
+    canvas.appendChild(line);
   }
-  sections.innerHTML = html;
-}
 
-// ── Timeline ruler ────────────────────────────────────────────────────────────
-function buildTimeline() {
-  const track = document.getElementById('timeline-track');
-  track.innerHTML = '';
-  const hours = [0,3,6,9,11,13,15,17,19,21,23];
-  hours.forEach(h => {
-    const pct = (h / 23) * 100;
-    const tick = document.createElement('div');
-    tick.className = 'timeline-tick';
-    tick.style.left = pct + '%';
-    tick.innerHTML = `<div class="timeline-tick-line"></div><div class="timeline-tick-label">${String(h).padStart(2,'0')}:00</div>`;
-    track.appendChild(tick);
+  // NOW line on canvas
+  const canvasNow = document.createElement('div');
+  canvasNow.id = 'canvas-now-line';
+  canvasNow.style.left = nowX + 'px';
+  canvas.appendChild(canvasNow);
+
+  // ── Group events by their hour-minute bucket (round to nearest 5min) ──
+  const groups = {};
+  filtered.forEach(ev => {
+    const h = evHoursUTC(ev);
+    // Round to nearest 5min for grouping overlapping events
+    const bucket = Math.round(h * 12) / 12;
+    if (!groups[bucket]) groups[bucket] = [];
+    groups[bucket].push(ev);
   });
-  // Now line
-  const now = new Date();
-  const nowPct = ((now.getHours() + now.getMinutes()/60) / 24) * 100;
-  const nowLine = document.createElement('div');
-  nowLine.id = 'now-line';
-  nowLine.style.left = nowPct + '%';
-  const nowLbl = document.createElement('div');
-  nowLbl.id = 'now-label';
-  nowLbl.style.left = nowPct + '%';
-  nowLbl.textContent = 'NOW';
-  track.appendChild(nowLine);
-  track.appendChild(nowLbl);
+
+  // Track max height for canvas sizing
+  let maxBottom = 200;
+
+  Object.entries(groups).forEach(([bucket, evs]) => {
+    const h = parseFloat(bucket);
+    const x = hToX(h);
+
+    const col = document.createElement('div');
+    col.className = 'time-col';
+    col.style.left = x + 'px';
+
+    let colHeight = TOP_PAD;
+
+    evs.forEach((ev, idx) => {
+      const cd = calCountdown(ev.event_time);
+      const timeLabel = fmtLocalTime(ev.event_time);
+
+      const hasActual   = ev.actual   && ev.actual   !== '';
+      const hasForecast = ev.forecast && ev.forecast !== '';
+      const hasPrev     = ev.previous && ev.previous !== '';
+
+      const dataRow = (hasActual || hasForecast || hasPrev) ? `
+        <div class="cal-card-data">
+          ${hasPrev     ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Previous</span><span class="cal-card-data-val">${ev.previous}</span></div>` : ''}
+          ${hasForecast ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Forecast</span><span class="cal-card-data-val">${ev.forecast}</span></div>` : ''}
+          ${hasActual   ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Actual</span><span class="cal-card-data-val actual">${ev.actual}</span></div>` : ''}
+        </div>` : '';
+
+      const aiBox = ev.analysis ? `
+        <div class="cal-card-ai">
+          <div class="cal-card-ai-label">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+            AI Analysis
+          </div>
+          <div class="cal-card-ai-text">${ev.analysis}</div>
+        </div>` : '';
+
+      const card = document.createElement('div');
+      card.className = `cal-card impact-${ev.impact}`;
+      card.style.animationDelay = (idx * 50) + 'ms';
+      card.innerHTML = `
+        <div class="cal-card-top">
+          <span class="cal-card-time">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${timeLabel}
+          </span>
+          <span class="cal-card-cur ${ev.currency}">${ev.currency}</span>
+          <span class="cal-card-impact ${ev.impact}">${ev.impact}</span>
+          <span class="cal-card-countdown ${cd.cls}">${cd.label}</span>
+        </div>
+        <div class="cal-card-name">${ev.title || ev.event || ''}</div>
+        ${aiBox}
+        ${dataRow}
+      `;
+      col.appendChild(card);
+    });
+
+    canvas.appendChild(col);
+
+    // Measure after append for canvas height
+    requestAnimationFrame(() => {
+      const bottom = col.offsetTop + col.offsetHeight + 40;
+      if (bottom > maxBottom) {
+        maxBottom = bottom;
+        canvas.style.minHeight = maxBottom + 'px';
+      }
+    });
+  });
+
+  // Sync ruler scroll with canvas scroll
+  updateScrollHints();
 }
 
-// ── Load data ─────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+//  SCROLL SYNC: ruler follows horizontal scroll of canvas
+// ════════════════════════════════════════════════════════════════
+const scrollEl = document.getElementById('timeline-scroll');
+const rulerWrap = document.getElementById('timeline-ruler-wrap');
+
+scrollEl.addEventListener('scroll', () => {
+  rulerWrap.scrollLeft = scrollEl.scrollLeft;
+  updateScrollHints();
+});
+
+function updateScrollHints() {
+  const sl = document.getElementById('scroll-hint-left');
+  const sr = document.getElementById('scroll-hint-right');
+  sl.classList.toggle('visible', scrollEl.scrollLeft > 20);
+  sr.classList.toggle('visible',
+    scrollEl.scrollLeft < scrollEl.scrollWidth - scrollEl.clientWidth - 20);
+}
+
+// ── Drag to scroll ────────────────────────────────────────────
+let isDragging = false, dragStartX = 0, dragScrollLeft = 0;
+scrollEl.addEventListener('mousedown', e => {
+  isDragging   = true;
+  dragStartX   = e.pageX - scrollEl.offsetLeft;
+  dragScrollLeft = scrollEl.scrollLeft;
+});
+window.addEventListener('mouseup',   () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  e.preventDefault();
+  const x    = e.pageX - scrollEl.offsetLeft;
+  const walk = (x - dragStartX) * 1.2;
+  scrollEl.scrollLeft = dragScrollLeft - walk;
+});
+
+// ════════════════════════════════════════════════════════════════
+//  SCROLL TO NOW on load
+// ════════════════════════════════════════════════════════════════
+function scrollToNow() {
+  const nowH = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
+  const nowX = hToX(nowH);
+  const offset = Math.max(0, nowX - scrollEl.clientWidth / 2);
+  scrollEl.scrollTo({ left: offset, behavior: 'smooth' });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  LOAD DATA
+// ════════════════════════════════════════════════════════════════
 async function loadCalendar() {
   try {
     const res = await fetch('/api/calendar');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     _allEvents = data.events || [];
-    renderEvents();
-  } catch (e) {
+    rebuildTabs();
+    setTimeout(scrollToNow, 300);
+  } catch(e) {
     console.error('Calendar error:', e);
     document.getElementById('cal-loading').innerHTML =
-      `<span style="color:var(--muted)">Could not load calendar — ${e.message}</span>`;
+      `<span style="color:var(--muted)">Could not load — ${e.message}</span>`;
   }
 }
 
-// Auto-refresh countdowns every 30s
-setInterval(() => {
-  if (_allEvents.length) renderEvents();
-}, 30000);
+// Refresh countdowns every 30s
+setInterval(() => { if (_allEvents.length) renderTimeline(); }, 30000);
 
-// ── Side nav ──────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+//  SIDE NAV
+// ════════════════════════════════════════════════════════════════
 {
   const nav     = document.getElementById('side-nav');
   const tooltip = document.getElementById('nav-tooltip');
   const btn     = document.getElementById('nav-collapse-btn');
 
   if (localStorage.getItem('nav-collapsed') === '1') nav.classList.add('collapsed');
-
   btn.addEventListener('click', () => {
     nav.classList.toggle('collapsed');
     localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
   });
-
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('mouseenter', e => {
       if (!nav.classList.contains('collapsed')) return;
@@ -864,16 +1049,14 @@ setInterval(() => {
     });
     item.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
   });
-
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('.nav-item').forEach(item => {
-    const href = (item.getAttribute('href') || '').replace(/\/$/, '') || '/';
+    const href = (item.getAttribute('href')||'').replace(/\/$/,'') || '/';
     item.classList.toggle('active', href === path);
   });
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-buildTimeline();
+// ── Init ──────────────────────────────────────────────────────
 loadCalendar();
 </script>
 </body>
