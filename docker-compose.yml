@@ -5,9 +5,10 @@ services:
       dockerfile: Dockerfile
     container_name: lightweightchart-agent
     restart: unless-stopped
+    networks:
+      - openclaw_shared
     ports:
       - "6767:6767"   # Mission Control dashboard
-
     environment:
       # ── Data provider ─────────────────────────────────────────────
       # "yahoo" (default) or "metatrader"
@@ -40,3 +41,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+networks:
+  openclaw_shared:
+    external: true
