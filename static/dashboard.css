@@ -312,7 +312,7 @@ footer {
   grid-template-columns: 1fr 400px;
   gap: 12px;
   padding: 0 32px;
-  margin-bottom: 0;
+  align-items: start;  /* ← panels size independently, don't stretch to match each other */
 }
 
 /* Shared panel shell */
@@ -430,12 +430,6 @@ footer {
 }
 
 /* ── FinancialJuice panel ────────────────────────────────────────────────── */
-#fj-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 280px;
-}
-
 #fj-header {
   padding: 16px 20px 14px;
   border-bottom: 1px solid var(--border);
@@ -445,17 +439,31 @@ footer {
   justify-content: space-between;
 }
 
+#fj-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: 280px;   /* ← lock the panel height */
+  height: 280px;
+  overflow: hidden;    /* ← never let content escape */
+}
+
 #fj-iframe-wrap {
   flex: 1;
-  overflow: hidden;
+  overflow: hidden;    /* ← critical — clips the iframe */
   border-radius: 0 0 var(--radius) var(--radius);
+  min-height: 0;       /* ← lets flex shrink it properly */
+  position: relative;
 }
+
 #fj-iframe-wrap iframe {
   width: 100%;
   height: 100%;
   border: none;
   display: block;
-  min-height: 230px;
+  position: absolute;  /* ← take it out of flow so it can't push siblings */
+  top: 0;
+  left: 0;
 }
 
 /* ── Open link button (shared) ───────────────────────────────────────────── */
