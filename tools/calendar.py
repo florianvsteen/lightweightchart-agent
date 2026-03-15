@@ -213,8 +213,10 @@ def _call_ollama_batch(events):
         if resp.status_code != 200:
             print(f"[calendar] Ollama error {resp.status_code}: {resp.text[:200]}")
             return {}
-        raw    = resp.json()["choices"][0]["message"]["content"].strip()
-        raw    = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        msg = resp.json()["choices"][0]["message"]
+        # qwen3 puts output in "reasoning" when content is empty (thinking mode)
+        raw = (msg.get("content") or msg.get("reasoning") or "").strip()
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         print(f"[calendar] Ollama parsed text (first 300): {raw[:300]}")
         result = _parse_response(raw, events)
         print(f"[calendar] Ollama ({OLLAMA_MODEL}): {len(result)}/{len(events)} analyses")
