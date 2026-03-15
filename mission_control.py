@@ -275,6 +275,133 @@ def proxy_api_stream(pair_id):
         }
     )
 
+"""
+Currency strength is calculated by measuring each currency's average
+performance against the other 3 majors, normalized to a -30/+30 scale.
+
+Pairs used:
+  EUR: EURUSD, EURGBP, EURJPY
+  GBP: GBPUSD, EURGBP (inverted), GBPJPY
+  USD: EURUSD (inverted), GBPUSD (inverted), USDJPY
+  JPY: USDJPY (inverted), EURJPY (inverted), GBPJPY (inverted)
+
+Each "strength" point = % change from session open, averaged across pairs.
+We return ~100 data points spaced evenly over the last trading day.
+"""
+
+@app.route("/api/currency-strength")
+def api_currency_strength():
+    """
+    Returns time-series strength data for EUR, GBP, USD, JPY.
+    Each point: { time, EUR, GBP, USD, JPY }
+    """
+    import yfinance as yf
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime, timezone
+
+    try:
+        # Fetch 1-day 5m data for all needed pairs
+        tickers = {
+            "EURUSD": "EURUSD=X",
+            "GBPUSD": "GBPUSD=X",
+            "USDJPY": "USDJPY=X",
+            "EURGBP": "EURGBP=X",
+            "EURJPY": "EURJPY=X",
+            "GBPJPY": "GBPJPY=X",
+        }
+
+        dfs = {}
+        for name, sym in tickers.items():
+            try:
+                df = yf.download(sym, period="1d", interval="5m", progress=False)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                df = df.dropna()
+                if len(df) > 5:
+                    dfs[name] = df["Close"].squeeze()
+            except Exception:
+                pass
+
+        if not dfs:
+            return jsonify({"error": "No data available"}), 500
+
+        # Align all series to a common index
+        combined = pd.DataFrame(dfs)
+        combined = combined.dropna()
+
+        if len(combined) < 3:
+            return jsonify({"error": "Insufficient data"}), 500
+
+        # Calculate % return from the first candle (session open)
+        first = combined.iloc[0]
+        pct = ((combined - first) / first * 100)
+
+        # Currency strength = average of signed cross-pair performance
+        # EUR: avg(EURUSD, EURGBP, EURJPY)
+        # GBP: avg(GBPUSD, EURGBP inverted, GBPJPY)
+        # USD: avg(EURUSD inverted, GBPUSD inverted, USDJPY)
+        # JPY: avg(USDJPY inverted, EURJPY inverted, GBPJPY inverted)
+
+        strength = pd.DataFrame(index=combined.index)
+
+        eur_cols = [c for c in ["EURUSD", "EURGBP", "EURJPY"] if c in pct.columns]
+        gbp_cols_pos = [c for c in ["GBPUSD", "GBPJPY"] if c in pct.columns]
+        gbp_cols_neg = [c for c in ["EURGBP"] if c in pct.columns]
+        usd_cols_neg = [c for c in ["EURUSD", "GBPUSD"] if c in pct.columns]
+        usd_cols_pos = [c for c in ["USDJPY"] if c in pct.columns]
+        jpy_cols_neg = [c for c in ["USDJPY", "EURJPY", "GBPJPY"] if c in pct.columns]
+
+        def safe_mean(pos_cols, neg_cols):
+            parts = []
+            for c in pos_cols:
+                if c in pct.columns:
+                    parts.append(pct[c])
+            for c in neg_cols:
+                if c in pct.columns:
+                    parts.append(-pct[c])
+            if not parts:
+                return pd.Series(0, index=combined.index)
+            return pd.concat(parts, axis=1).mean(axis=1)
+
+        strength["EUR"] = safe_mean(eur_cols, [])
+        strength["GBP"] = safe_mean(gbp_cols_pos, gbp_cols_neg)
+        strength["USD"] = safe_mean(usd_cols_pos, usd_cols_neg)
+        strength["JPY"] = safe_mean([], jpy_cols_neg)
+
+        # Smooth slightly (3-period rolling) to reduce noise
+        strength = strength.rolling(3, min_periods=1).mean()
+
+        # Downsample to ~120 points max
+        if len(strength) > 120:
+            step = len(strength) // 120
+            strength = strength.iloc[::step]
+
+        # Build output
+        points = []
+        for ts, row in strength.iterrows():
+            try:
+                t = int(ts.timestamp())
+            except Exception:
+                continue
+            points.append({
+                "time": t,
+                "EUR":  round(float(row["EUR"]), 4),
+                "GBP":  round(float(row["GBP"]), 4),
+                "USD":  round(float(row["USD"]), 4),
+                "JPY":  round(float(row["JPY"]), 4),
+            })
+
+        return jsonify({
+            "points": points,
+            "updated": int(datetime.now(timezone.utc).timestamp()),
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
 # ── Run ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
