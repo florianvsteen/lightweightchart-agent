@@ -216,8 +216,13 @@ def _call_ollama_batch(events):
         if resp.status_code != 200:
             print(f"[calendar] Ollama error {resp.status_code}: {resp.text[:200]}")
             return {}
-        raw    = resp.json()["choices"][0]["message"]["content"].strip()
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        print(f"[calendar] Ollama raw response (first 300 chars): {raw[:300]}")
         result = _parse_response(raw, events)
+        if not result:
+            # GLM sometimes wraps output in <think> tags or adds preamble — strip it
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            result = _parse_response(raw, events)
         print(f"[calendar] Ollama ({OLLAMA_MODEL}): {len(result)}/{len(events)} analyses")
         return result
     except Exception as e:
