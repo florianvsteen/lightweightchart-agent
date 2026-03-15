@@ -194,45 +194,59 @@ def _call_openai_batch(events):
 
 # ── Ollama provider ─────────────────────────────────────────────────────────────
 def _call_ollama_batch(events):
-    base_url = OLLAMA_URL.rstrip("/")
-    url      = f"{base_url}/v1/chat/completions"
-    print(f"[calendar] Ollama request to: {url} model: {OLLAMA_MODEL}")
-    try:
-        resp = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            json={"model": OLLAMA_MODEL,
-                  "messages": [{"role": "user", "content": _build_prompt(events)}],
-                  "max_tokens": 1024,
-                  "temperature": 0.3,
-                  "stream": False},
-            timeout=120,
-        )
-        print(f"[calendar] Ollama response status: {resp.status_code}")
-        print(f"[calendar] Ollama raw (first 500): {resp.text[:500]}")
-        if resp.status_code != 200:
-            print(f"[calendar] Ollama error {resp.status_code}: {resp.text[:200]}")
-            return {}
-        msg = resp.json()["choices"][0]["message"]
-        # qwen3 puts output in "reasoning" when content is empty (thinking mode)
-        raw = (msg.get("content") or msg.get("reasoning") or "").strip()
-        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-        print(f"[calendar] Ollama parsed text (first 300): {raw[:300]}")
-        result = _parse_response(raw, events)
-        print(f"[calendar] Ollama ({OLLAMA_MODEL}): {len(result)}/{len(events)} analyses")
-        return result
-    except requests.exceptions.Timeout:
-        print(f"[calendar] Ollama TIMEOUT after 120s — is the model loaded?")
-        return {}
-    except requests.exceptions.ConnectionError as e:
-        print(f"[calendar] Ollama CONNECTION ERROR: {e}")
-        print(f"[calendar] Is Ollama running at {OLLAMA_URL}?")
-        return {}
-    except Exception as e:
-        import traceback
-        print(f"[calendar] Ollama error: {type(e).__name__}: {e}")
-        traceback.print_exc()
-        return {}
+    """
+    Calls Ollama via the native /api/chat endpoint.
+    Uses think:false to disable reasoning mode on qwen3/thinking models.
+    Sends events in chunks of 5 to avoid timeouts.
+    """
+    base_url    = OLLAMA_URL.rstrip("/")
+    url         = f"{base_url}/api/chat"
+    CHUNK_SIZE  = 5
+    all_results = {}
+
+    chunks = [events[i:i+CHUNK_SIZE] for i in range(0, len(events), CHUNK_SIZE)]
+    print(f"[calendar] Ollama: {len(chunks)} chunks via {url} model={OLLAMA_MODEL}")
+
+    for idx, chunk in enumerate(chunks):
+        print(f"[calendar] Ollama chunk {idx+1}/{len(chunks)}")
+        try:
+            resp = requests.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model":   OLLAMA_MODEL,
+                    "think":   False,
+                    "stream":  False,
+                    "options": {"temperature": 0.3, "num_predict": 512},
+                    "messages": [{"role": "user", "content": _build_prompt(chunk)}],
+                },
+                timeout=90,
+            )
+            print(f"[calendar] Ollama chunk {idx+1} status: {resp.status_code}")
+            if resp.status_code != 200:
+                print(f"[calendar] Ollama error: {resp.text[:300]}")
+                continue
+
+            data = resp.json()
+            raw  = (data.get("message") or {}).get("content", "").strip()
+            print(f"[calendar] Ollama chunk {idx+1} raw (first 200): {raw[:200]}")
+
+            chunk_result = _parse_response(raw, chunk)
+            all_results.update(chunk_result)
+            print(f"[calendar] Ollama chunk {idx+1}: {len(chunk_result)}/{len(chunk)} parsed")
+
+        except requests.exceptions.Timeout:
+            print(f"[calendar] Ollama chunk {idx+1} TIMEOUT")
+        except requests.exceptions.ConnectionError as e:
+            print(f"[calendar] Ollama CONNECTION ERROR: {e}")
+            break
+        except Exception as e:
+            import traceback
+            print(f"[calendar] Ollama chunk {idx+1} error: {e}")
+            traceback.print_exc()
+
+    print(f"[calendar] Ollama total: {len(all_results)}/{len(events)} analyses")
+    return all_results
 
 
 # ── Provider router ─────────────────────────────────────────────────────────────
