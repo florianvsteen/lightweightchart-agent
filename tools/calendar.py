@@ -141,18 +141,18 @@ def _build_prompt(events: list[dict]) -> str:
     event_block = "\n".join(lines)
 
     return (
-        f"You are a professional forex analyst. Analyze these {len(events)} economic events.\n\n"
+        f"Analyze these {len(events)} economic events for forex traders.\n\n"
         f"{event_block}\n\n"
-        "For EACH event write exactly ONE sentence of trader-focused analysis.\n"
+        "For EACH event write ONE short sentence (max 20 words) covering: higher = X for currency, lower = Y.\n"
         "Rules:\n"
-        "- Number each response to match the event number above\n"
-        "- Include the previous reading and what a beat/miss means for the currency\n"
-        "- Be specific with numbers, not vague\n"
-        "- No disclaimers, no fluff\n"
-        "- Do NOT start with 'A beat or miss' — vary your openers\n\n"
-        "Example format:\n"
-        "1. With the previous at 3.2%, a reading above forecast would strengthen USD as it signals persistent inflation.\n"
-        "2. EUR employment data came in at 6.1% last time; a higher number would weigh on EUR/USD.\n\n"
+        "- Number each response to match the event number\n"
+        "- Format: 'Higher [currency] [bullish/bearish], lower [currency] [bullish/bearish].'\n"
+        "- Use concrete direction words: bullish, bearish, strengthens, weakens, supports, pressures\n"
+        "- No intro, no explanation, no disclaimers — pure impact only\n\n"
+        "Examples:\n"
+        "1. Higher = USD bullish (inflation stays hot); lower = USD bearish (disinflation confirmed).\n"
+        "2. Beat strengthens EUR vs USD; miss pressures EUR as ECB rate cut bets rise.\n"
+        "3. Above forecast signals expansion, lifting GBP; below signals contraction, weighing on GBP.\n\n"
         "Now analyze:"
     )
 
