@@ -428,7 +428,12 @@ def api_currency_strength():
 
 @app.route("/macro")
 def macro_page():
-    return render_template("macro.html")
+    import json
+    from tools.market import INSTRUMENTS
+    # Pass instrument keys to the template so the JS ticker strip
+    # and chart selector are always in sync with config.PAIRS
+    instruments_js = json.dumps(list(INSTRUMENTS.keys()))
+    return render_template("macro.html", instruments_js=instruments_js)
  
  
 @app.route("/api/macro/snapshot")
