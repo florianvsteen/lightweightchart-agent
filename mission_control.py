@@ -424,7 +424,6 @@ def api_currency_strength():
         import traceback
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-
 @app.route("/macro")
 def macro_page():
     import json
@@ -433,9 +432,6 @@ def macro_page():
     # and chart selector are always in sync with config.PAIRS
     instruments_js = json.dumps(list(INSTRUMENTS.keys()))
     return render_template("macro.html", instruments_js=instruments_js)
- 
- 
- 
  
 @app.route("/macro/<pair_id>")
 def macro_detail_page(pair_id):
@@ -470,7 +466,7 @@ def api_macro_chart(symbol):
  
  
 @app.route("/api/macro/module/<name>")
-def api_macro_module(name):
+def api_macro_module(n):
     """
     Fetch a single AI module by name.
     Names: overview | mood | policy | flow | bearing | pulse
@@ -487,13 +483,13 @@ def api_macro_module(name):
         "bearing":  get_bearing,
         "pulse":    get_pulse,
     }
-    fn = fn_map.get(name)
+    fn = fn_map.get(n)
     if not fn:
-        return jsonify({"ok": False, "error": f"Unknown module: {name}"}), 400
+        return jsonify({"ok": False, "error": f"Unknown module: {n}"}), 400
     try:
         force = request.args.get("refresh") == "1"
         data  = fn(force=force)
-        return jsonify({"ok": True, "module": name, "data": data})
+        return jsonify({"ok": True, "module": n, "data": data})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
  
@@ -635,7 +631,7 @@ def api_macro_pair_modules(pair_id):
         return jsonify({"ok": True, "pair": pair_id, "modules": data})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
+ 
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
