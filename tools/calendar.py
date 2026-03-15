@@ -1,384 +1,304 @@
 """
 tools/calendar.py
 
-Fetches this week's economic calendar from the ForexFactory public CDN:
-  https://nfs.faireconomy.media/ff_calendar_thisweek.json
+Fetches this week's economic calendar from the ForexFactory CDN JSON feed.
+Filters to High/Medium impact events for EUR, GBP, USD, JPY.
+Builds prompts here, runs them via tools.ai.ask().
 
-AI provider — set via AI_PROVIDER env var:
-  gemini  (default, free) — set GEMINI_API_KEY (aistudio.google.com)
-  openai                  — set OPENAI_API_KEY
-  ollama                  — set OLLAMA_URL (default: http://localhost:11434)
-
-Models:
-  Gemini:  gemini-2.0-flash-lite
-  OpenAI:  gpt-4o-mini  (override with OPENAI_MODEL)
-  Ollama:  glm4:latest  (override with OLLAMA_MODEL)
-           GLM Flash 4.7 — pull with: ollama pull glm4
-
-Both API providers use a single batch call. AI runs in background thread.
+Caches:
+    Calendar data : 2 hours  (disk + memory, survives restarts)
+    AI analyses   : 6 hours  (memory only, keyed per event)
 """
 
-import os
-import re
 import json
+import os
 import time
 import threading
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-AI_PROVIDER  = os.environ.get("AI_PROVIDER", "gemini").lower()
+from tools.ai import ask
 
-GEMINI_URL   = ("https://generativelanguage.googleapis.com/v1beta/models"
-                "/gemini-2.0-flash-lite:generateContent")
+# ── Config ───────────────────────────────────────────────────────────────────────
+CALENDAR_URL  = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+CURRENCIES    = {"EUR", "GBP", "USD", "JPY"}
+IMPACTS       = {"High", "Medium"}
+EVENTS_TTL    = 2 * 3600    # 2 hours  (FF updates ~hourly)
+AI_TTL        = 6 * 3600    # 6 hours
 
-OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+DISK_CACHE_PATH = os.path.join(
+    os.environ.get("DATA_DIR", "data"), "calendar_cache.json"
+)
 
-OLLAMA_URL   = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "glm4:latest")
-
-CURRENCIES = {"EUR", "GBP", "USD", "JPY"}
-IMPACTS    = {"High", "Medium"}
-EVENTS_TTL = 2 * 60 * 60
-AI_TTL     = 6 * 60 * 60
-
-CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          "..", "data", "calendar_cache.json")
-
-_events_cache = {}
-_ai_cache     = {}
-_cache_lock   = threading.Lock()
+# ── In-memory caches ─────────────────────────────────────────────────────────────
+_events_cache: dict = {}   # { "data": [...], "at": float }
+_ai_cache: dict     = {}   # { key: { "analysis": str, "at": float } }
+_ai_progress: dict  = {}   # { "total": int, "done": int, "running": bool }
+_cache_lock = threading.Lock()
 
 
-# ── Disk cache ──────────────────────────────────────────────────────────────────
-def _save_cache(data):
+# ── Disk cache ───────────────────────────────────────────────────────────────────
+def _load_disk_cache() -> list[dict]:
     try:
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-        with open(CACHE_FILE, "w") as f:
-            json.dump({"data": data, "at": time.time()}, f)
-        print(f"[calendar] Saved {len(data)} events to disk")
-    except Exception as e:
-        print(f"[calendar] Cache save error: {e}")
-
-
-def _load_cache():
-    try:
-        if os.path.exists(CACHE_FILE):
-            with open(CACHE_FILE, "r") as f:
-                saved = json.load(f)
-                data, at = saved.get("data", []), saved.get("at", 0)
-                print(f"[calendar] Loaded {len(data)} events from disk (age: {int((time.time()-at)/60)}m)")
-                return data, at
-    except Exception as e:
-        print(f"[calendar] Cache load error: {e}")
-    return [], 0
-
-
-# ── FF fetch ────────────────────────────────────────────────────────────────────
-def _fetch_raw():
-    resp = requests.get(CALENDAR_URL,
-                        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-                        timeout=15)
-    resp.raise_for_status()
-    if "html" in resp.headers.get("content-type", "").lower():
-        raise ValueError("FF returned HTML (rate limited)")
-    data = resp.json()
-    print(f"[calendar] Fetched {len(data)} raw events")
-    return data
-
-
-# ── Date parsing ────────────────────────────────────────────────────────────────
-def _parse_date(s):
-    if not s:
-        return None
-    try:
-        return datetime.fromisoformat(s)
+        with open(DISK_CACHE_PATH) as f:
+            data = json.load(f)
+            return data.get("events", [])
     except Exception:
-        return None
+        return []
 
 
-# ── Shared AI helpers ───────────────────────────────────────────────────────────
-def _event_key(ev):
+def _save_disk_cache(events: list[dict]) -> None:
+    try:
+        os.makedirs(os.path.dirname(DISK_CACHE_PATH), exist_ok=True)
+        with open(DISK_CACHE_PATH, "w") as f:
+            json.dump({"events": events, "saved_at": time.time()}, f)
+    except Exception as e:
+        print(f"[calendar] disk cache write error: {e}")
+
+
+# ── Fetch ────────────────────────────────────────────────────────────────────────
+def _fetch_raw() -> list[dict]:
+    """
+    Download the raw JSON from the FF CDN.
+    Raises on network/parse error so callers can fall back to disk cache.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+    }
+    resp = requests.get(CALENDAR_URL, headers=headers, timeout=15)
+
+    # FF returns an HTML "Request Denied" page on rate-limit — detect it
+    ct = resp.headers.get("content-type", "")
+    if "html" in ct or resp.text.strip().startswith("<"):
+        raise ValueError("FF returned HTML (rate-limited or blocked)")
+
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ── Parse ────────────────────────────────────────────────────────────────────────
+def _parse_event_time(raw_date: str) -> str:
+    """
+    FF CDN sends ISO 8601 strings with a timezone offset, e.g.:
+        "2026-03-16T10:30:00-04:00"
+    Parse to a UTC ISO string for the frontend.
+    Returns "" on failure.
+    """
+    if not raw_date:
+        return ""
+    try:
+        dt = datetime.fromisoformat(raw_date)
+        return dt.astimezone(timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _event_key(ev: dict) -> str:
     return f"{ev.get('date','')}|{ev.get('currency','')}|{ev.get('title','')}"
 
 
-def _build_prompt(events):
-    lines = []
-    for i, ev in enumerate(events, 1):
-        prev = ev.get("previous") or "N/A"
-        fcst = ev.get("forecast") or "N/A"
-        actl = ev.get("actual")
-        lines.append(
-            f"{i}. {ev.get('currency','')} {ev.get('title','')}"
-            f" — Prev: {prev} | Forecast: {fcst}" + (f" | Actual: {actl}" if actl else "")
-        )
-    return (
-        "You are a sharp forex trader writing quick notes for yourself. "
-        "For each event below, write ONE punchy sentence about what this print means for the currency. "
-        "Use specific numbers from the data. Vary your sentence starters — do NOT start with 'A beat' or 'A miss'. "
-        "Examples of good starters: 'Stronger than expected...', 'With previous at X...', "
-        "'Markets will watch...', 'Upside surprise...', 'Downside risk...', 'If it prints above X...'\n\n"
-        "Respond ONLY as a numbered list:\n"
-        "1. <sentence>\n"
-        "2. <sentence>\netc.\n\n"
-        "Events:\n" + "\n".join(lines)
-    )
-
-def _parse_response(raw_text, events):
-    result = {}
-    for num_str, text in re.findall(r"(\d+)\.\s+(.+?)(?=\n\d+\.|$)", raw_text, re.DOTALL):
-        idx = int(num_str) - 1
-        if 0 <= idx < len(events):
-            result[_event_key(events[idx])] = text.strip()
-    return result
-
-
-# ── Gemini provider ─────────────────────────────────────────────────────────────
-def _call_gemini_batch(events):
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        print("[calendar] GEMINI_API_KEY not set")
-        return {}
-    try:
-        resp = requests.post(
-            f"{GEMINI_URL}?key={api_key}",
-            headers={"Content-Type": "application/json"},
-            json={"contents": [{"parts": [{"text": _build_prompt(events)}]}],
-                  "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.3}},
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            print(f"[calendar] Gemini error {resp.status_code}: {resp.text[:200]}")
-            return {}
-        candidates = resp.json().get("candidates", [])
-        if not candidates:
-            return {}
-        raw = " ".join(p.get("text", "") for p in
-                       candidates[0].get("content", {}).get("parts", [])).strip()
-        result = _parse_response(raw, events)
-        print(f"[calendar] Gemini: {len(result)}/{len(events)} analyses")
-        return result
-    except Exception as e:
-        print(f"[calendar] Gemini error: {e}")
-        return {}
-
-
-# ── OpenAI provider ─────────────────────────────────────────────────────────────
-def _call_openai_batch(events):
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        print("[calendar] OPENAI_API_KEY not set")
-        return {}
-    try:
-        resp = requests.post(
-            OPENAI_URL,
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {api_key}"},
-            json={"model": OPENAI_MODEL,
-                  "messages": [{"role": "user", "content": _build_prompt(events)}],
-                  "max_tokens": 1024, "temperature": 0.3},
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            print(f"[calendar] OpenAI error {resp.status_code}: {resp.text[:200]}")
-            return {}
-        raw    = resp.json()["choices"][0]["message"]["content"].strip()
-        result = _parse_response(raw, events)
-        print(f"[calendar] OpenAI ({OPENAI_MODEL}): {len(result)}/{len(events)} analyses")
-        return result
-    except Exception as e:
-        print(f"[calendar] OpenAI error: {e}")
-        return {}
-
-
-# ── Ollama provider ─────────────────────────────────────────────────────────────
-def _call_ollama_batch(events):
-    """
-    Calls Ollama via the native /api/chat endpoint.
-    Uses think:false to disable reasoning mode on qwen3/thinking models.
-    Sends events in chunks of 5 to avoid timeouts.
-    """
-    base_url    = OLLAMA_URL.rstrip("/")
-    url         = f"{base_url}/api/chat"
-    CHUNK_SIZE  = 5
-    all_results = {}
-
-    chunks = [events[i:i+CHUNK_SIZE] for i in range(0, len(events), CHUNK_SIZE)]
-    print(f"[calendar] Ollama: {len(chunks)} chunks via {url} model={OLLAMA_MODEL}")
-
-    for idx, chunk in enumerate(chunks):
-        print(f"[calendar] Ollama chunk {idx+1}/{len(chunks)}")
-        try:
-            resp = requests.post(
-                url,
-                headers={"Content-Type": "application/json"},
-                json={
-                    "model":   OLLAMA_MODEL,
-                    "think":   False,
-                    "stream":  False,
-                    "options": {"temperature": 0.3, "num_predict": 512},
-                    "messages": [{"role": "user", "content": _build_prompt(chunk)}],
-                },
-                timeout=90,
-            )
-            print(f"[calendar] Ollama chunk {idx+1} status: {resp.status_code}")
-            if resp.status_code != 200:
-                print(f"[calendar] Ollama error: {resp.text[:300]}")
-                continue
-
-            data = resp.json()
-            raw  = (data.get("message") or {}).get("content", "").strip()
-            print(f"[calendar] Ollama chunk {idx+1} raw (first 200): {raw[:200]}")
-
-            chunk_result = _parse_response(raw, chunk)
-            all_results.update(chunk_result)
-            print(f"[calendar] Ollama chunk {idx+1}: {len(chunk_result)}/{len(chunk)} parsed")
-
-        except requests.exceptions.Timeout:
-            print(f"[calendar] Ollama chunk {idx+1} TIMEOUT")
-        except requests.exceptions.ConnectionError as e:
-            print(f"[calendar] Ollama CONNECTION ERROR: {e}")
-            break
-        except Exception as e:
-            import traceback
-            print(f"[calendar] Ollama chunk {idx+1} error: {e}")
-            traceback.print_exc()
-
-    print(f"[calendar] Ollama total: {len(all_results)}/{len(events)} analyses")
-    return all_results
-
-
-# ── Provider router ─────────────────────────────────────────────────────────────
-def _call_ai_batch(events):
-    print(f"[calendar] AI provider: {AI_PROVIDER}")
-    if AI_PROVIDER == "openai":
-        return _call_openai_batch(events)
-    if AI_PROVIDER == "ollama":
-        return _call_ollama_batch(events)
-    return _call_gemini_batch(events)
-
-
-# ── Public API ──────────────────────────────────────────────────────────────────
-def get_calendar(force_refresh=False):
-    """
-    Returns filtered calendar events with AI analysis.
-    Never raises — always returns a list (may be empty or stale).
-    AI enrichment runs in background so this always returns immediately.
-    """
-    try:
-        return _get_calendar_impl(force_refresh)
-    except Exception as e:
-        import traceback
-        print(f"[calendar] Error: {e}")
-        traceback.print_exc()
-        with _cache_lock:
-            return _events_cache.get("data", [])
-
-
-def _get_calendar_impl(force_refresh):
-    now = time.time()
-
-    # 1. In-memory cache
-    with _cache_lock:
-        mem_data = _events_cache.get("data")
-        mem_at   = _events_cache.get("at", 0)
-
-    if mem_data and not force_refresh and (now - mem_at) < EVENTS_TTL:
-        return mem_data
-
-    # 2. Disk cache (after restart)
-    if not mem_data:
-        disk_data, disk_at = _load_cache()
-        if disk_data:
-            with _cache_lock:
-                _events_cache["data"] = disk_data
-                _events_cache["at"]   = disk_at
-            if not force_refresh and (now - disk_at) < EVENTS_TTL:
-                print(f"[calendar] Serving {len(disk_data)} events from disk cache")
-                return disk_data
-            mem_data = disk_data
-
-    # 3. Live fetch from FF
-    try:
-        raw = _fetch_raw()
-    except Exception as e:
-        print(f"[calendar] Fetch failed: {e}")
-        fallback = mem_data or []
-        print(f"[calendar] Returning {len(fallback)} stale events")
-        return fallback
-
-    # Filter
-    filtered = []
+def _filter_events(raw: list[dict]) -> list[dict]:
+    """Filter raw FF events to our currencies + impact levels."""
+    results = []
     for ev in raw:
-        currency = (ev.get("country") or "").strip().upper()
-        impact   = (ev.get("impact")  or "").strip()
+        currency = ev.get("country", "").upper()
+        impact   = ev.get("impact", "")
         if currency not in CURRENCIES or impact not in IMPACTS:
             continue
-        raw_date = ev.get("date", "")
-        evt_dt   = _parse_date(raw_date)
-        event_time_utc = ""
-        if evt_dt is not None:
-            try:
-                event_time_utc = evt_dt.astimezone(timezone.utc).isoformat()
-            except Exception:
-                event_time_utc = evt_dt.isoformat()
-        filtered.append({
-            "date":       raw_date,
+        results.append({
+            "date":       ev.get("date", ""),
             "currency":   currency,
             "impact":     impact,
-            "title":      (ev.get("title")    or "").strip(),
-            "actual":     (ev.get("actual")   or "").strip(),
-            "forecast":   (ev.get("forecast") or "").strip(),
-            "previous":   (ev.get("previous") or "").strip(),
-            "event_time": event_time_utc,
+            "title":      ev.get("title", ""),
+            "actual":     ev.get("actual", ""),
+            "forecast":   ev.get("forecast", ""),
+            "previous":   ev.get("previous", ""),
+            "event_time": _parse_event_time(ev.get("date", "")),
             "analysis":   "",
         })
+    results.sort(key=lambda e: e["date"])
+    return results
 
-    filtered.sort(key=lambda e: e["event_time"] or e["date"])
-    print(f"[calendar] {len(filtered)} events after filtering")
 
-    # Apply cached AI analyses
-    uncached = []
-    for ev in filtered:
+# ── Prompt building (stays in calendar.py) ────────────────────────────────────────
+def _build_prompt(events: list[dict]) -> str:
+    """
+    Build the batch AI prompt for a list of events.
+    All prompt logic lives here — execution is handled by tools.ai.ask().
+    """
+    lines = []
+    for i, ev in enumerate(events, 1):
+        parts = [f"{ev['currency']} {ev['title']}"]
+        if ev.get("previous"):  parts.append(f"previous: {ev['previous']}")
+        if ev.get("forecast"):  parts.append(f"forecast: {ev['forecast']}")
+        if ev.get("actual"):    parts.append(f"actual: {ev['actual']}")
+        lines.append(f"{i}. {'; '.join(parts)}")
+
+    event_block = "\n".join(lines)
+
+    return (
+        f"You are a professional forex analyst. Analyze these {len(events)} economic events.\n\n"
+        f"{event_block}\n\n"
+        "For EACH event write exactly ONE sentence of trader-focused analysis.\n"
+        "Rules:\n"
+        "- Number each response to match the event number above\n"
+        "- Include the previous reading and what a beat/miss means for the currency\n"
+        "- Be specific with numbers, not vague\n"
+        "- No disclaimers, no fluff\n"
+        "- Do NOT start with 'A beat or miss' — vary your openers\n\n"
+        "Example format:\n"
+        "1. With the previous at 3.2%, a reading above forecast would strengthen USD as it signals persistent inflation.\n"
+        "2. EUR employment data came in at 6.1% last time; a higher number would weigh on EUR/USD.\n\n"
+        "Now analyze:"
+    )
+
+
+def _parse_batch_response(text: str, count: int) -> list[str]:
+    """Extract numbered lines from a batch AI response into a list of strings."""
+    results = [""] * count
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for i in range(count, 0, -1):
+            if line.startswith(f"{i}.") or line.startswith(f"{i})"):
+                results[i - 1] = line.split(".", 1)[-1].strip().lstrip(")").strip()
+                break
+    return results
+
+
+# ── AI enrichment ────────────────────────────────────────────────────────────────
+_CHUNK_SIZE = 5   # events per AI call (keeps prompts small, works well with Ollama)
+
+
+def _run_ai_analysis(events: list[dict]) -> None:
+    """
+    Background thread: fill in .analysis for every event that doesn't have one.
+    Uses tools.ai.ask() — provider is transparent to this module.
+    """
+    now = time.time()
+
+    # Separate events that need analysis
+    pending = []
+    for ev in events:
+        key = _event_key(ev)
+        with _cache_lock:
+            cached = _ai_cache.get(key)
+        if cached and (now - cached["at"]) < AI_TTL:
+            ev["analysis"] = cached["analysis"]
+        else:
+            pending.append(ev)
+
+    with _cache_lock:
+        _ai_progress.update({"total": len(pending), "done": 0, "running": True})
+
+    print(f"[calendar] AI analysis: {len(pending)} events to process")
+
+    # Process in chunks
+    for chunk_start in range(0, len(pending), _CHUNK_SIZE):
+        chunk = pending[chunk_start : chunk_start + _CHUNK_SIZE]
+        prompt = _build_prompt(chunk)
+
+        response = ask(prompt, max_tokens=800, temperature=0.3)
+
+        if response:
+            analyses = _parse_batch_response(response, len(chunk))
+            for ev, analysis in zip(chunk, analyses):
+                ev["analysis"] = analysis
+                with _cache_lock:
+                    _ai_cache[_event_key(ev)] = {"analysis": analysis, "at": now}
+        else:
+            print(f"[calendar] AI returned empty for chunk starting at {chunk_start}")
+
+        with _cache_lock:
+            _ai_progress["done"] += len(chunk)
+
+    with _cache_lock:
+        _ai_progress["running"] = False
+
+    # Persist updated events to disk cache
+    with _cache_lock:
+        all_events = _events_cache.get("data", [])
+    _save_disk_cache(all_events)
+
+    print("[calendar] AI analysis complete")
+
+
+# ── Public API ────────────────────────────────────────────────────────────────────
+def get_calendar(force_refresh: bool = False) -> list[dict]:
+    """
+    Return this week's filtered calendar events.
+
+    AI analysis runs in a background thread — this call returns immediately
+    with whatever analyses are already cached. The frontend polls /api/calendar
+    to pick up analyses as they complete.
+
+    Each event dict:
+        date, currency, impact, title, actual, forecast, previous,
+        event_time (ISO UTC str), analysis (str, may be empty initially)
+    """
+    now = time.time()
+
+    # 1. Return memory cache if fresh
+    with _cache_lock:
+        cached = _events_cache.get("data")
+        cache_age = now - _events_cache.get("at", 0)
+        if cached and not force_refresh and cache_age < EVENTS_TTL:
+            return cached
+
+    # 2. Try fetching fresh data
+    try:
+        raw = _fetch_raw()
+        events = _filter_events(raw)
+        print(f"[calendar] fetched {len(events)} events from FF CDN")
+    except Exception as e:
+        print(f"[calendar] fetch failed: {e} — falling back to cache")
+        # Try memory cache first, then disk
+        with _cache_lock:
+            if _events_cache.get("data"):
+                return _events_cache["data"]
+        disk = _load_disk_cache()
+        if disk:
+            return disk
+        return []
+
+    # 3. Restore AI analyses from memory cache where available
+    for ev in events:
         key = _event_key(ev)
         with _cache_lock:
             cached_ai = _ai_cache.get(key)
         if cached_ai and (now - cached_ai["at"]) < AI_TTL:
             ev["analysis"] = cached_ai["analysis"]
-        else:
-            uncached.append(ev)
 
-    # Persist immediately — return fast, don't wait for AI
+    # 4. Save to memory cache
     with _cache_lock:
-        _events_cache["data"] = filtered
+        _events_cache["data"] = events
         _events_cache["at"]   = now
-    _save_cache(filtered)
 
-    # Run AI enrichment in background thread
-    if uncached:
-        def _bg_ai(events_copy, ts):
-            try:
-                print(f"[calendar] Background AI for {len(events_copy)} events")
-                analyses = _call_ai_batch(events_copy)
-                if not analyses:
-                    return
-                with _cache_lock:
-                    current = _events_cache.get("data", [])
-                    for ev in current:
-                        key = _event_key(ev)
-                        if key in analyses:
-                            ev["analysis"] = analyses[key]
-                            _ai_cache[key] = {"analysis": analyses[key], "at": ts}
-                    snapshot = list(current)
-                _save_cache(snapshot)
-                print(f"[calendar] Background AI done: {len(analyses)} analyses")
-            except Exception as e:
-                import traceback
-                print(f"[calendar] Background AI error: {e}")
-                traceback.print_exc()
+    # 5. Kick off background AI analysis for anything missing
+    with _cache_lock:
+        already_running = _ai_progress.get("running", False)
 
-        threading.Thread(target=_bg_ai, args=(list(uncached), now),
-                         daemon=True, name="calendar-ai-bg").start()
+    needs_analysis = any(not ev["analysis"] for ev in events)
+    if needs_analysis and not already_running:
+        t = threading.Thread(
+            target=_run_ai_analysis,
+            args=(events,),
+            daemon=True,
+        )
+        t.start()
 
-    return filtered
+    return events
+
+
+def get_ai_progress() -> dict:
+    """
+    Return current AI analysis progress for the frontend progress indicator.
+    { "total": int, "done": int, "running": bool }
+    """
+    with _cache_lock:
+        return dict(_ai_progress)
