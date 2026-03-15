@@ -24,9 +24,10 @@
 /* ── Pair header ── */
 #dd-header {
   display: flex; align-items: center; gap: 20px;
-  padding: 18px 28px 16px;
+  padding: 16px 28px;
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0; flex-wrap: wrap;
+  flex-shrink: 0;
+  min-height: 80px;
 }
 #dd-icon {
   width: 52px; height: 52px; border-radius: 50%;
@@ -43,32 +44,42 @@
 #dd-icon.crypto  { background: linear-gradient(135deg, #2a1a3a 0%, #150d1f 100%); border-color: rgba(180,90,240,0.3); }
 #dd-pair-name {
   font-family: 'Syne', sans-serif; font-weight: 800;
-  font-size: 2rem; color: #fff; line-height: 1;
+  font-size: 2rem; color: #fff; line-height: 1; margin-bottom: 3px;
 }
-#dd-pair-label { font-size: 0.65rem; color: var(--muted); margin-top: 3px; letter-spacing: 0.06em; }
+#dd-pair-label { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.06em; }
 
-/* Stat boxes top right */
+/* Stat boxes — right-aligned, fixed height, no wrap */
 #dd-stat-boxes {
-  display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap;
+  display: flex;
+  gap: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
 }
 .dd-stat-box {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 18px;
-  min-width: 120px;
-  display: flex; flex-direction: column; gap: 4px;
+  border-left: 1px solid var(--border);
+  padding: 0 24px;
+  min-width: 130px;
+  display: flex; flex-direction: column;
+  justify-content: center;
+  gap: 3px;
 }
-.dd-stat-box-label { font-size: 0.52rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
-.dd-stat-box-val   { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.3rem; }
-.dd-stat-box-val.bullish  { color: var(--accent); }
-.dd-stat-box-val.bearish  { color: var(--accent2); }
-.dd-stat-box-val.sell     { color: var(--accent2); }
-.dd-stat-box-val.buy      { color: var(--accent); }
-.dd-stat-box-val.neutral  { color: var(--muted); }
-.dd-stat-box-val.number   { color: #fff; }
-/* mini gauge under each stat */
-.dd-mini-gauge { margin-top: 4px; }
+.dd-stat-box:first-child { border-left: none; }
+.dd-stat-box-label {
+  font-size: 0.5rem; color: var(--muted);
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
+.dd-stat-box-val {
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.25rem;
+}
+.dd-stat-box-val.bullish { color: var(--accent); }
+.dd-stat-box-val.bearish { color: var(--accent2); }
+.dd-stat-box-val.sell    { color: var(--accent2); }
+.dd-stat-box-val.buy     { color: var(--accent); }
+.dd-stat-box-val.neutral { color: var(--muted); }
+.dd-stat-box-val.number  { color: #fff; }
 
 /* ── Body: two columns ── */
 #dd-body {
