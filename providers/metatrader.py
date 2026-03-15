@@ -34,7 +34,7 @@ LOCK = threading.Lock()
 # Most MT5 brokers run on UTC+2 (EET) or UTC+3 (EEST in summer).
 # The API returns bar timestamps in broker LOCAL time with no timezone info.
 # Override with: MT5_BROKER_UTC_OFFSET=3 in your environment.
-_BROKER_UTC_OFFSET = int(os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
+_BROKER_UTC_OFFSET = int(os.environ.get("MT5_BROKER_UTC_OFFSET", "3"))
 
 # ── Interval string → MT5 timeframe string ────────────────────────────────────
 _TF_MAP = {
