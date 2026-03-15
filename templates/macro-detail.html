@@ -562,14 +562,16 @@ async function loadAnalysis() {
 // ── Macro modules ──
 async function loadModules() {
   try {
-    const r=await fetch('/api/macro/all'); const d=await r.json(); if(!d.ok) return;
+    // Use pair-specific endpoint so all analysis is focused on THIS pair only
+    const r=await fetch(`/api/macro/pair/${PAIR_ID}/modules`);
+    const d=await r.json(); if(!d.ok) return;
     const m=d.modules||{};
     if(m.mood)    renderMood(m.mood);
     if(m.policy)  renderPolicy(m.policy);
     if(m.flow)    renderFlow(m.flow);
     if(m.bearing) renderBearing(m.bearing);
     if(m.pulse)   renderPulse(m.pulse);
-  } catch(e){}
+  } catch(e){ console.error('modules error', e); }
 }
 
 // ── Segmented gauge (matches screenshot exactly) ──
