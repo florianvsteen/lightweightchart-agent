@@ -111,19 +111,19 @@ def _build_prompt(events):
         actl = ev.get("actual")
         lines.append(
             f"{i}. {ev.get('currency','')} {ev.get('title','')}"
-            f" - Prev: {prev} | Forecast: {fcst}" + (f" | Actual: {actl}" if actl else "")
+            f" — Prev: {prev} | Forecast: {fcst}" + (f" | Actual: {actl}" if actl else "")
         )
     return (
-        "You are a concise forex market analyst. "
-        "For each numbered economic event below, write exactly ONE sentence "
-        "explaining what a beat or miss vs forecast would mean for the currency. "
-        "Do NOT repeat the event name. Be direct and specific.\n\n"
-        "Respond in this exact format:\n"
-        "1. <one sentence>\n"
-        "2. <one sentence>\netc.\n\n"
+        "You are a sharp forex trader writing quick notes for yourself. "
+        "For each event below, write ONE punchy sentence about what this print means for the currency. "
+        "Use specific numbers from the data. Vary your sentence starters — do NOT start with 'A beat' or 'A miss'. "
+        "Examples of good starters: 'Stronger than expected...', 'With previous at X...', "
+        "'Markets will watch...', 'Upside surprise...', 'Downside risk...', 'If it prints above X...'\n\n"
+        "Respond ONLY as a numbered list:\n"
+        "1. <sentence>\n"
+        "2. <sentence>\netc.\n\n"
         "Events:\n" + "\n".join(lines)
     )
-
 
 def _parse_response(raw_text, events):
     result = {}
