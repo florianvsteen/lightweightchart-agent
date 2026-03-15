@@ -101,16 +101,22 @@ def get_ai_overview(force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age("overview"), "cached": True}
 
     ctx = _market_context()
+    pairs  = _pair_list()
     prompt = (
-        "You are a senior macro analyst. Based on current market data:\n\n"
+        "You are a senior macro strategist writing a morning briefing. "
+        "Based on current live market data:\n\n"
         f"{ctx}\n\n"
-        "Write ONE paragraph (3-4 sentences) summarizing the dominant macro theme "
-        "right now. Focus on: the most important market move, what's driving it, "
-        "and the key risk traders should watch. Be specific with numbers. "
-        "Write like a Bloomberg terminal comment — direct, no fluff."
+        f"The trader is watching: {pairs}.\n\n"
+        "Write ONE paragraph (3-4 sentences). Requirements:\n"
+        "- Start with the single most important price move and its magnitude\n"
+        "- Name the specific macro driver (Fed policy, geopolitics, data release, etc.)\n"
+        "- Explain what it means for the pairs listed above\n"
+        "- End with the one key level or event to watch\n"
+        "Style: Bloomberg terminal — terse, specific, no hedging language, no filler. "
+        "Use actual numbers from the data."
     )
 
-    text = ask(prompt, max_tokens=200, temperature=0.4)
+    text = ask(prompt, max_tokens=250, temperature=0.3)
     result = {"text": text or "Analysis unavailable."}
     _set_cache("overview", result)
     return {**result, "age_min": 0, "cached": False}
@@ -139,18 +145,31 @@ def get_market_mood(force: bool = False) -> dict:
     ctx = _market_context()
     pairs  = _pair_list()
     prompt = (
-        "You are a market sentiment analyst. Based on current market data:\n\n"
+        "You are an institutional macro strategist. Assess the CURRENT market risk sentiment "
+        "based on the following live market data:\n\n"
         f"{ctx}\n\n"
-        f"The trader is watching: {pairs}.\n\n"
+        f"The trader is focused on: {pairs}.\n\n"
+        "Use this scoring rubric to pick the correct label:\n"
+        "  EXTREME FEAR    → score -1.0: VIX > 35, multiple assets crashing, panic selling\n"
+        "  STRONG RISK-OFF → score -0.75: VIX elevated >25, equities down >1%, gold/bonds bid\n"
+        "  RISK-OFF        → score -0.45: defensive positioning, DXY up, yields falling or equities weak\n"
+        "  RISK-NEUTRAL    → score -0.1: mixed signals, uncertainty, no clear directional bias\n"
+        "  NEUTRAL         → score  0.0: balanced market, VIX ~15-18, modest moves across the board\n"
+        "  RISK-ON         → score +0.45: equities rising, DXY soft, commodities bid, VIX falling\n"
+        "  STRONG RISK-ON  → score +0.75: equities rallying >1%, credit spreads tight, VIX <14\n"
+        "  EUPHORIA        → score +1.0: parabolic moves, extreme greed, VIX <12, everything up\n\n"
+        "Be ACCURATE and CONSERVATIVE — do not default to extremes. "
+        "NEUTRAL and RISK-NEUTRAL are valid and common readings. "
+        "Only use EXTREME FEAR or EUPHORIA when data clearly warrants it.\n\n"
         "Respond ONLY with valid JSON (no markdown, no extra text):\n"
         '{\n'
         '  "label": "<one of: EXTREME FEAR | STRONG RISK-OFF | RISK-OFF | RISK-NEUTRAL | NEUTRAL | RISK-ON | STRONG RISK-ON | EUPHORIA>",\n'
-        '  "score": <float from -1.0 (extreme fear) to 1.0 (euphoria)>,\n'
-        '  "explanation": "<2-3 sentences explaining the sentiment reading, citing specific data>"\n'
+        '  "score": <float from -1.0 to 1.0 matching the rubric above>,\n'
+        '  "explanation": "<3 sentences: (1) what the dominant signal is, (2) which specific instruments confirm it, (3) what to watch for a regime change>"\n'
         '}'
     )
 
-    raw  = ask(prompt, max_tokens=300, temperature=0.2)
+    raw  = ask(prompt, max_tokens=400, temperature=0.15)
     data = _parse_json_response(raw)
 
     result = {
@@ -183,18 +202,28 @@ def get_market_policy(force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age("policy"), "cached": True}
 
     ctx = _market_context()
+    pairs  = _pair_list()
     prompt = (
-        "You are a central bank analyst. Based on current market data:\n\n"
+        "You are a central bank and monetary policy strategist. "
+        "Assess the current global monetary policy stance based on live market data:\n\n"
         f"{ctx}\n\n"
+        f"The trader is focused on: {pairs}.\n\n"
+        "Use this scoring rubric:\n"
+        "  HAWKISH         → rates rising or signaling hikes, fighting inflation\n"
+        "  SLIGHTLY HAWKISH → cautious tightening bias, higher-for-longer language\n"
+        "  NEUTRAL         → data-dependent, no clear directional bias\n"
+        "  SLIGHTLY DOVISH → beginning to signal pauses or cuts\n"
+        "  DOVISH          → cutting rates or clearly easing\n\n"
+        "Focus on: 2Y/10Y yields, yield curve shape, DXY strength, and any rate signals in the data.\n\n"
         "Respond ONLY with valid JSON (no markdown, no extra text):\n"
         '{\n'
         '  "label": "<one of: HAWKISH | SLIGHTLY HAWKISH | NEUTRAL | SLIGHTLY DOVISH | DOVISH>",\n'
-        '  "explanation": "<2-3 sentences on current central bank stance, citing rate data and Fed signals>",\n'
-        '  "outlook": "<one sentence: what to expect next from central banks>"\n'
+        '  "explanation": "<2-3 sentences citing specific yield levels, curve shape, and what it signals>",\n'
+        '  "outlook": "<one sentence: next likely central bank move and what data would change it>"\n'
         '}'
     )
 
-    raw  = ask(prompt, max_tokens=300, temperature=0.2)
+    raw  = ask(prompt, max_tokens=400, temperature=0.15)
     data = _parse_json_response(raw)
 
     result = {
@@ -272,18 +301,25 @@ def get_bearing(force: bool = False) -> dict:
     ctx = _market_context()
     pairs  = _pair_list()
     prompt = (
-        "You are a technical analyst. Based on current market data:\n\n"
+        "You are a technical trend analyst. Based on live market data:\n\n"
         f"{ctx}\n\n"
-        f"Focus on the trend relevant to: {pairs}.\n\n"
-        "Assess the primary market trend direction. Respond ONLY with valid JSON:\n"
+        f"Assess the primary trend for a trader watching: {pairs}.\n\n"
+        "Labels:\n"
+        "  STRONG UP   → clear uptrend, higher highs, momentum confirming\n"
+        "  UP          → mild upward bias, trend intact but not strong\n"
+        "  NEUTRAL     → sideways/range-bound, no directional edge\n"
+        "  DOWN        → mild downward pressure, trend weakening\n"
+        "  STRONG DOWN → clear downtrend, lower lows, momentum confirming\n\n"
+        "Base your assessment on: price changes shown, directional alignment across instruments, "
+        "and whether risk assets and safe-havens are moving in trend-confirming ways.\n\n"
+        "Respond ONLY with valid JSON:\n"
         '{\n'
         '  "label": "<one of: STRONG UP | UP | NEUTRAL | DOWN | STRONG DOWN>",\n'
-        '  "bullets": ["<short bullet 1>", "<short bullet 2>", "<short bullet 3>"]\n'
-        '}\n'
-        "Bullets should be short (max 8 words each) trend observations with specific data."
+        '  "bullets": ["<bullet 1 — max 10 words, cite a specific instrument and number>", "<bullet 2>", "<bullet 3>"]\n'
+        '}'
     )
 
-    raw  = ask(prompt, max_tokens=250, temperature=0.2)
+    raw  = ask(prompt, max_tokens=300, temperature=0.15)
     data = _parse_json_response(raw)
 
     result = {
