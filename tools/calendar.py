@@ -6,17 +6,14 @@ Fetches this week's economic calendar from the ForexFactory public CDN:
 
 - No API key required
 - FF only updates the file once per hour — we cache for 2 hours
-- Falls back to stale cache on any error (rate limit, network, etc.)
+- Persists cache to disk so restarts don't cause unnecessary FF requests
+- Falls back to disk cache on rate limit / network errors
 - Filters to High/Medium impact events for EUR, GBP, USD, JPY only
 - Calls Claude Haiku for a short AI analysis per event (cached 6 hours)
-
-FF JSON fields:
-  title, country, date (ISO 8601 with TZ offset), impact, actual, forecast, previous
-
-impact values: "High", "Medium", "Low", "Non-Economic", "Holiday"
 """
 
 import os
+import json
 import time
 import threading
 import requests
@@ -26,13 +23,43 @@ from datetime import datetime, timezone
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 CURRENCIES   = {"EUR", "GBP", "USD", "JPY"}
 IMPACTS      = {"High", "Medium"}
-EVENTS_TTL   = 2 * 60 * 60   # 2 hours — FF updates once/hour, no need to poll faster
+EVENTS_TTL   = 2 * 60 * 60   # 2 hours — FF updates once/hour
 AI_TTL       = 6 * 60 * 60   # 6 hours
 
-# ── Caches ─────────────────────────────────────────────────────────────────────
+CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    '..', 'data', 'calendar_cache.json'
+)
+
+# ── In-memory caches ───────────────────────────────────────────────────────────
 _events_cache: dict = {}   # { "data": [...], "at": float }
 _ai_cache: dict     = {}   # { key: { "analysis": str, "at": float } }
 _cache_lock = threading.Lock()
+
+
+# ── Disk cache ──────────────────────────────────────────────────────────────────
+def _save_cache(data: list):
+    try:
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        with open(CACHE_FILE, 'w') as f:
+            json.dump({"data": data, "at": time.time()}, f)
+        print(f"[calendar] Saved {len(data)} events to disk cache")
+    except Exception as e:
+        print(f"[calendar] Cache save error: {e}")
+
+
+def _load_cache() -> tuple[list, float]:
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r') as f:
+                saved = json.load(f)
+                data = saved.get("data", [])
+                at   = saved.get("at", 0)
+                print(f"[calendar] Loaded {len(data)} events from disk cache (age: {int((time.time()-at)/60)}m)")
+                return data, at
+    except Exception as e:
+        print(f"[calendar] Cache load error: {e}")
+    return [], 0
 
 
 # ── Fetch ───────────────────────────────────────────────────────────────────────
@@ -47,13 +74,12 @@ def _fetch_raw() -> list:
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/122.0.0.0 Safari/537.36"
         ),
-        "Accept": "application/json",
+        "Accept":        "application/json",
         "Cache-Control": "max-age=3600",
     }
     resp = requests.get(CALENDAR_URL, headers=headers, timeout=15)
     resp.raise_for_status()
 
-    # FF returns an HTML "Request Denied" page when rate-limited
     ct = resp.headers.get("content-type", "")
     if "html" in ct.lower():
         raise ValueError("Rate limited — FF returned HTML instead of JSON")
@@ -67,7 +93,6 @@ def _fetch_raw() -> list:
 def _parse_date(date_str: str) -> datetime | None:
     """
     Parse FF ISO 8601 date strings like "2026-03-17T13:30:00-04:00".
-    Python's datetime.fromisoformat() handles this natively in 3.7+.
     Returns a timezone-aware datetime, or None on failure.
     """
     if not date_str:
@@ -85,6 +110,10 @@ def _event_key(ev: dict) -> str:
 
 
 def _call_claude_analysis(ev: dict) -> str:
+    """
+    Call Claude Haiku for a short trader-focused analysis of this event.
+    Returns empty string if ANTHROPIC_API_KEY is not set or the call fails.
+    """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         print("[calendar] ANTHROPIC_API_KEY not set — skipping AI analysis")
@@ -114,15 +143,16 @@ def _call_claude_analysis(ev: dict) -> str:
                 "content-type":      "application/json",
             },
             json={
-                "model":    "claude-haiku-4-5",
+                "model":      "claude-haiku-4-5",
                 "max_tokens": 150,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages":   [{"role": "user", "content": prompt}],
             },
             timeout=20,
         )
         print(f"[calendar] Claude API status: {resp.status_code}")
         if resp.status_code != 200:
-          print(f"[calendar] Claude API error: {resp.text}")
+            print(f"[calendar] Claude API error: {resp.text}")
+            return ""
         blocks = resp.json().get("content", [])
         return " ".join(b["text"] for b in blocks if b.get("type") == "text").strip()
     except Exception as e:
@@ -141,27 +171,45 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
       event_time (ISO UTC string for JS),
       analysis (Claude AI text, may be empty)
 
-    On any fetch error, returns the last cached data so the UI
-    doesn't go blank just because FF rate-limited us.
+    Cache priority:
+      1. In-memory cache (fastest)
+      2. Disk cache (survives restarts)
+      3. Live fetch from FF CDN
+      4. Stale cache (if fetch fails)
     """
     now = time.time()
 
-    # Serve from cache if fresh enough
+    # ── 1. In-memory cache ─────────────────────────────────────────────────
     with _cache_lock:
-        cached = _events_cache.get("data")
-        if cached and not force_refresh and (now - _events_cache.get("at", 0)) < EVENTS_TTL:
-            return cached
+        mem_data = _events_cache.get("data")
+        mem_at   = _events_cache.get("at", 0)
 
-    # ── Fetch from FF ──────────────────────────────────────────────────────
+    if mem_data and not force_refresh and (now - mem_at) < EVENTS_TTL:
+        return mem_data
+
+    # ── 2. Disk cache (e.g. after restart) ────────────────────────────────
+    if not mem_data:
+        disk_data, disk_at = _load_cache()
+        if disk_data:
+            # Populate memory from disk
+            with _cache_lock:
+                _events_cache["data"] = disk_data
+                _events_cache["at"]   = disk_at
+            if not force_refresh and (now - disk_at) < EVENTS_TTL:
+                print(f"[calendar] Serving {len(disk_data)} events from disk cache (fresh)")
+                return disk_data
+            # Disk cache is stale — will fetch below, but keep as fallback
+            mem_data = disk_data
+
+    # ── 3. Fetch from FF ───────────────────────────────────────────────────
     try:
         raw = _fetch_raw()
     except Exception as e:
         print(f"[calendar] Fetch failed: {e}")
-        # Return stale cache rather than empty list
-        with _cache_lock:
-            stale = _events_cache.get("data", [])
-        print(f"[calendar] Returning {len(stale)} stale cached events")
-        return stale
+        # Return whatever we have — memory or disk — rather than empty list
+        fallback = mem_data or []
+        print(f"[calendar] Returning {len(fallback)} stale cached events as fallback")
+        return fallback
 
     # ── Filter ─────────────────────────────────────────────────────────────
     filtered = []
@@ -177,7 +225,6 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
         raw_date = ev.get("date", "")
         evt_dt   = _parse_date(raw_date)
 
-        # Convert to UTC ISO string for the frontend
         event_time_utc = ""
         if evt_dt is not None:
             try:
@@ -197,9 +244,7 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
             "analysis":   "",
         })
 
-    # Sort chronologically
     filtered.sort(key=lambda e: e["event_time"] or e["date"])
-
     print(f"[calendar] {len(filtered)} events after filtering ({len(raw)} raw)")
 
     # ── AI enrichment ──────────────────────────────────────────────────────
@@ -219,9 +264,11 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
 
         enriched.append(ev)
 
-    # ── Store in cache ─────────────────────────────────────────────────────
+    # ── Save to memory + disk ──────────────────────────────────────────────
     with _cache_lock:
         _events_cache["data"] = enriched
         _events_cache["at"]   = now
+
+    _save_cache(enriched)
 
     return enriched
