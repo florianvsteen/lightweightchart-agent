@@ -869,7 +869,7 @@ loadCalendar();
 
 // Refresh data every 30 minutes (calendar data doesn't change often)
 if (_calRefreshTimer) clearInterval(_calRefreshTimer);
-_calRefreshTimer = setInterval(() => loadCalendar(), 30 * 60 * 1000);
+_calRefreshTimer = setInterval(() => loadCalendar(), 2 * 60 * 60 * 1000);  // 2 hours
 
 buildGrid();
 setInterval(updateClock, 1000);
