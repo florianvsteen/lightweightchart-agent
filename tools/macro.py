@@ -427,40 +427,34 @@ def _pair_list() -> str:
         return "your tracked instruments"
 
 
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PAIR-SPECIFIC VERSIONS — all modules focused on one instrument
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _pair_context(pair_id: str) -> str:
-    """
-    Build a market context string filtered and ordered to put the
-    requested pair front and center, with supporting context after.
-    """
-    from tools.market import INSTRUMENTS, get_market_snapshot
-    snap = get_market_snapshot()
-    meta = INSTRUMENTS.get(pair_id, {})
+    """Market context with the requested pair front and center."""
+    try:
+        from tools.market import get_market_snapshot
+    except ImportError:
+        return "No market data available."
 
+    snap  = get_market_snapshot()
     lines = []
 
-    # Primary instrument first
     d = snap.get(pair_id)
     if d and d.get("last") is not None:
         sign = "+" if (d.get("change_p") or 0) >= 0 else ""
         lines.append(
-            f"PRIMARY INSTRUMENT — {d['label']} ({pair_id}): "
+            f"PRIMARY — {d['label']} ({pair_id}): "
             f"{d['last']} ({sign}{d.get('change_p', 0):.2f}% today)"
         )
 
-    # Supporting macro context (no other pairs — only macro instruments)
-    MACRO_KEYS = ["VIX", "DXY", "US10Y", "OIL"]
-    supporting = []
-    for k in MACRO_KEYS:
+    for k in ["VIX", "DXY", "US10Y", "OIL"]:
         d = snap.get(k)
         if d and d.get("last") is not None:
             sign = "+" if (d.get("change_p") or 0) >= 0 else ""
-            supporting.append(f"{d['label']}: {d['last']} ({sign}{d.get('change_p', 0):.2f}%)")
-    if supporting:
-        lines.append("MACRO CONTEXT: " + " | ".join(supporting))
+            lines.append(f"{d['label']}: {d['last']} ({sign}{d.get('change_p', 0):.2f}%)")
 
     return "\n".join(lines) if lines else "No market data available."
 
@@ -472,32 +466,21 @@ def get_pair_mood(pair_id: str, force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age(cache_key), "cached": True}
 
     ctx = _pair_context(pair_id)
+    json_schema = (
+        '{\n'
+        '  "label": "<EXTREME FEAR|STRONG RISK-OFF|RISK-OFF|RISK-NEUTRAL|NEUTRAL|RISK-ON|STRONG RISK-ON|EUPHORIA>",\n'
+        '  "score": <float -1.0 to 1.0>,\n'
+        '  "explanation": "<3 sentences specific to ' + pair_id + ': signal, confirming data, what changes the reading>"\n'
+        '}'
+    )
     prompt = (
         f"You are an institutional macro strategist analyzing {pair_id} specifically.\n\n"
-        f"Current market data:\n{ctx}\n\n"
-        f"Assess the risk sentiment as it directly affects {pair_id}.\n\n"
-        "Scoring rubric:\n"
-        "  EXTREME FEAR    → score -1.0: panic, extreme adverse move in this instrument\n"
-        "  STRONG RISK-OFF → score -0.75: strong adverse pressure specific to this pair\n"
-        "  RISK-OFF        → score -0.45: bearish conditions for this instrument\n"
-        "  RISK-NEUTRAL    → score -0.1: mixed signals, no edge for this pair\n"
-        "  NEUTRAL         → score  0.0: balanced, no directional bias\n"
-        "  RISK-ON         → score +0.45: supportive conditions for this pair\n"
-        "  STRONG RISK-ON  → score +0.75: strong tailwinds for this pair\n"
-        "  EUPHORIA        → score +1.0: parabolic favorable conditions\n\n"
-        f"Only reference {pair_id} and what directly moves it (e.g. for US100: tech sentiment, "
-        f"yields, NDX momentum. For EURUSD: EUR/USD rate differentials, ECB vs Fed). "
-        "Do NOT mention unrelated pairs.\n\n"
-        "Respond ONLY with valid JSON:\n"
-        '{
-'
-        '  "label": "<one of: EXTREME FEAR | STRONG RISK-OFF | RISK-OFF | RISK-NEUTRAL | NEUTRAL | RISK-ON | STRONG RISK-ON | EUPHORIA>",
-'
-        '  "score": <float -1.0 to 1.0>,
-'
-        f'  "explanation": "<3 sentences about {pair_id} specifically: dominant signal, confirming data, what would change the reading>"
-'
-        '}'
+        f"Market data:\n{ctx}\n\n"
+        f"Assess risk sentiment as it directly affects {pair_id}. "
+        f"Only reference {pair_id} and what moves it. Do NOT mention unrelated pairs.\n\n"
+        "Rubric: EXTREME FEAR=-1.0, STRONG RISK-OFF=-0.75, RISK-OFF=-0.45, "
+        "RISK-NEUTRAL=-0.1, NEUTRAL=0.0, RISK-ON=+0.45, STRONG RISK-ON=+0.75, EUPHORIA=+1.0\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
     )
     raw  = ask(prompt, max_tokens=400, temperature=0.15)
     data = _parse_json_response(raw)
@@ -517,22 +500,19 @@ def get_pair_policy(pair_id: str, force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age(cache_key), "cached": True}
 
     ctx = _pair_context(pair_id)
-    prompt = (
-        f"You are a monetary policy analyst. Assess how current central bank policy "
-        f"stance specifically affects {pair_id}.\n\n"
-        f"Market data:\n{ctx}\n\n"
-        f"Focus only on the central banks relevant to {pair_id} "
-        f"(e.g. Fed for US indices/USD pairs, ECB for EUR pairs, BOJ for JPY pairs, BOE for GBP pairs).\n\n"
-        "Respond ONLY with valid JSON:\n"
-        '{
-'
-        '  "label": "<one of: HAWKISH | SLIGHTLY HAWKISH | NEUTRAL | SLIGHTLY DOVISH | DOVISH>",
-'
-        f'  "explanation": "<2-3 sentences on how policy specifically impacts {pair_id}, citing relevant yields/rates>",
-'
-        f'  "outlook": "<one sentence: next likely move for {pair_id} based on policy trajectory>"
-'
+    json_schema = (
+        '{\n'
+        '  "label": "<HAWKISH|SLIGHTLY HAWKISH|NEUTRAL|SLIGHTLY DOVISH|DOVISH>",\n'
+        '  "explanation": "<2-3 sentences on how policy impacts ' + pair_id + '>",\n'
+        '  "outlook": "<one sentence: next likely move for ' + pair_id + '>"\n'
         '}'
+    )
+    prompt = (
+        f"You are a monetary policy analyst focused on {pair_id}.\n\n"
+        f"Market data:\n{ctx}\n\n"
+        f"Assess central bank stance as it affects {pair_id} only. "
+        f"Reference only the relevant central banks for {pair_id}.\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
     )
     raw  = ask(prompt, max_tokens=350, temperature=0.15)
     data = _parse_json_response(raw)
@@ -552,19 +532,17 @@ def get_pair_flow(pair_id: str, force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age(cache_key), "cached": True}
 
     ctx = _pair_context(pair_id)
-    prompt = (
-        f"Assess market flow conditions specifically for {pair_id}.\n\n"
-        f"Data:\n{ctx}\n\n"
-        "Respond ONLY with valid JSON:\n"
-        '{
-'
-        '  "label": "<one of: THIN | HEALTHY | CROWDED>",
-'
-        '  "score": <float 0.0=thin to 1.0=crowded>,
-'
-        f'  "explanation": "<one sentence on participation and flow conditions for {pair_id}>"
-'
+    json_schema = (
+        '{\n'
+        '  "label": "<THIN|HEALTHY|CROWDED>",\n'
+        '  "score": <0.0=thin to 1.0=crowded>,\n'
+        '  "explanation": "<one sentence on flow conditions for ' + pair_id + '>"\n'
         '}'
+    )
+    prompt = (
+        f"Assess market flow for {pair_id} specifically.\n\n"
+        f"Data:\n{ctx}\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
     )
     raw  = ask(prompt, max_tokens=200, temperature=0.15)
     data = _parse_json_response(raw)
@@ -584,17 +562,16 @@ def get_pair_bearing(pair_id: str, force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age(cache_key), "cached": True}
 
     ctx = _pair_context(pair_id)
-    prompt = (
-        f"You are a technical analyst. Assess the trend direction for {pair_id} specifically.\n\n"
-        f"Data:\n{ctx}\n\n"
-        "Respond ONLY with valid JSON:\n"
-        '{
-'
-        '  "label": "<one of: STRONG UP | UP | NEUTRAL | DOWN | STRONG DOWN>",
-'
-        f'  "bullets": ["<bullet citing {pair_id} price action>", "<bullet on momentum/volume>", "<bullet on key level or trigger>"]
-'
+    json_schema = (
+        '{\n'
+        '  "label": "<STRONG UP|UP|NEUTRAL|DOWN|STRONG DOWN>",\n'
+        '  "bullets": ["<' + pair_id + ' price action>", "<momentum/volume>", "<key level or trigger>"]\n'
         '}'
+    )
+    prompt = (
+        f"Assess trend direction for {pair_id} specifically.\n\n"
+        f"Data:\n{ctx}\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
     )
     raw  = ask(prompt, max_tokens=300, temperature=0.15)
     data = _parse_json_response(raw)
@@ -613,19 +590,17 @@ def get_pair_pulse(pair_id: str, force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age(cache_key), "cached": True}
 
     ctx = _pair_context(pair_id)
-    prompt = (
-        f"Assess the volatility regime for {pair_id} specifically.\n\n"
-        f"Data:\n{ctx}\n\n"
-        "Respond ONLY with valid JSON:\n"
-        '{
-'
-        '  "label": "<one of: QUIET | TRADEABLE | WILD>",
-'
-        '  "score": <float 0.0=quiet to 1.0=wild>,
-'
-        f'  "explanation": "<one sentence on volatility conditions for {pair_id}>"
-'
+    json_schema = (
+        '{\n'
+        '  "label": "<QUIET|TRADEABLE|WILD>",\n'
+        '  "score": <0.0=quiet to 1.0=wild>,\n'
+        '  "explanation": "<one sentence on volatility for ' + pair_id + '>"\n'
         '}'
+    )
+    prompt = (
+        f"Assess volatility regime for {pair_id} specifically.\n\n"
+        f"Data:\n{ctx}\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
     )
     raw  = ask(prompt, max_tokens=200, temperature=0.15)
     data = _parse_json_response(raw)
@@ -639,16 +614,17 @@ def get_pair_pulse(pair_id: str, force: bool = False) -> dict:
 
 
 def get_pair_all_modules(pair_id: str, force: bool = False) -> dict:
-    """Run all 5 pair-specific modules in parallel."""
+    """Run all 5 pair-specific modules in parallel threads."""
     results = {}
-    threads = []
 
     def run(key, fn):
         try:
             results[key] = fn(pair_id, force=force)
         except Exception as e:
+            print(f"[macro] pair module error {key} {pair_id}: {e}")
             results[key] = {}
 
+    threads = []
     for key, fn in [
         ("mood",    get_pair_mood),
         ("policy",  get_pair_policy),
