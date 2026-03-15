@@ -145,7 +145,7 @@ def _call_gemini_analysis(ev: dict) -> str:
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
-                    "maxOutputTokens": 150,
+                    "maxOutputTokens": 300,
                     "temperature": 0.4,
                 },
             },
