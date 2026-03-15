@@ -7,151 +7,227 @@
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
-
-<header>
-  <div class="logo">
-    <span class="logo-title">The Inner Flows</span>
-    <span class="logo-sub">Trading Dashboard</span>
-  </div>
-  <div class="header-right">
-    <a href="/bloomberg" target="_blank" style="
-      text-decoration:none; color:#f05a7e; font-size:0.65rem;
-      letter-spacing:0.1em; border:1px solid rgba(240,90,126,0.35);
-      padding:4px 10px; border-radius:3px; font-family:'Space Mono',monospace;
-      transition:all 0.2s; background:rgba(240,90,126,0.04);
-    " onmouseover="this.style.borderColor='rgba(240,90,126,0.7)'"
-       onmouseout="this.style.borderColor='rgba(240,90,126,0.35)'">
-      ◉ Bloomberg TV
-    </a>
-    <span id="session-global">--</span>
-    <span id="clock">--:--:--</span>
-  </div>
-</header>
-
-<div id="weekend-banner">
-  <div class="wk-inner">
-    <div class="wk-icon">⏸</div>
-    <div class="wk-title">All Operations Suspended — Weekend Halt</div>
-    <div class="wk-divider"></div>
-    <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
-    <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
-  </div>
-</div>
-
-<div class="grid" id="grid"></div>
-<div id="intel-row">
-  <!-- Left: Currency Strength Chart -->
-  <div id="cstrength-panel">
-    <div class="intel-header">
-      <div class="intel-title-group">
-        <span class="intel-icon">⟳</span>
-        <div>
-          <div class="intel-title">Currency Strength</div>
-          <div class="intel-sub">Real-time performance vs majors</div>
-        </div>
-      </div>
-      <div class="live-badge"><div class="ldot"></div> LIVE</div>
+ 
+<div id="app">
+ 
+  <!-- ══════════════════════════════════════════════════════════
+       SIDE NAV
+       ══════════════════════════════════════════════════════════ -->
+  <nav id="side-nav">
+ 
+    <div id="side-nav-logo">
+      <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+        <rect x="1" y="1" width="26" height="26" rx="6" stroke="var(--accent)" stroke-width="1.5"/>
+        <rect x="6"  y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.9"/>
+        <rect x="15" y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="6"  y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="15" y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.15"/>
+      </svg>
+      <span id="side-nav-logo-text">Inner Flows</span>
     </div>
  
-    <div id="cs-legend">
-      <span class="cs-pill" data-curr="USD" onclick="toggleCurr('USD')">USD</span>
-      <span class="cs-pill" data-curr="EUR" onclick="toggleCurr('EUR')">EUR</span>
-      <span class="cs-pill" data-curr="GBP" onclick="toggleCurr('GBP')">GBP</span>
-      <span class="cs-pill" data-curr="JPY" onclick="toggleCurr('JPY')">JPY</span>
-    </div>
+    <div class="nav-divider"></div>
  
-    <div id="cs-values">
-      <div class="cs-val-item">
-        <span class="cs-val-label">USD</span>
-        <span class="cs-val-num USD" id="cv-USD">—</span>
-      </div>
-      <div class="cs-val-item">
-        <span class="cs-val-label">EUR</span>
-        <span class="cs-val-num EUR" id="cv-EUR">—</span>
-      </div>
-      <div class="cs-val-item">
-        <span class="cs-val-label">GBP</span>
-        <span class="cs-val-num GBP" id="cv-GBP">—</span>
-      </div>
-      <div class="cs-val-item">
-        <span class="cs-val-label">JPY</span>
-        <span class="cs-val-num JPY" id="cv-JPY">—</span>
-      </div>
-    </div>
+    <ul id="side-nav-links">
  
-    <div id="cs-chart-wrap">
-      <canvas id="cs-canvas"></canvas>
-      <div id="cs-error">No data — market may be closed</div>
-    </div>
-  </div>
-  <!-- Right: FinancialJuice Live Feed -->
-  <div id="fj-panel">
-    <div id="fj-header" class="intel-header" style="margin-bottom:0">
-      <div class="intel-title-group">
-        <span class="intel-icon">📰</span>
-        <div>
-          <div class="intel-title">FinancialJuice</div>
-          <div class="intel-sub">Live market headlines</div>
-        </div>
-      </div>
-      <a href="https://www.financialjuice.com" target="_blank" style="
-        font-size:0.6rem;color:var(--muted);letter-spacing:0.1em;
-        border:1px solid var(--border2);padding:2px 8px;border-radius:2px;
-        text-decoration:none;transition:all 0.2s;
-      " onmouseover="this.style.color='var(--accent)';this.style.borderColor='rgba(90,240,196,0.4)'"
-         onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border2)'">
-        ↗ Open
+      <li>
+        <a href="/" class="nav-item active" data-label="Dashboard">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+          </span>
+          <span class="nav-label">Dashboard</span>
+        </a>
+      </li>
+ 
+      <li>
+        <a href="/macro" class="nav-item" data-label="Macro Desk">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+              <polyline points="17 6 23 6 23 12"/>
+            </svg>
+          </span>
+          <span class="nav-label">Macro Desk</span>
+        </a>
+      </li>
+ 
+      <li>
+        <a href="/calendar-page" class="nav-item" data-label="Calendar">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8"  y1="2" x2="8"  y2="6"/>
+              <line x1="3"  y1="10" x2="21" y2="10"/>
+            </svg>
+          </span>
+          <span class="nav-label">Calendar</span>
+        </a>
+      </li>
+ 
+    </ul>
+ 
+    <div id="side-nav-bottom">
+      <div class="nav-divider"></div>
+      <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
+        <span class="nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </span>
+        <span class="nav-label">Bloomberg TV</span>
       </a>
     </div>
-    <div id="fj-iframe-wrap">
-      <iframe
-        src="https://www.financialjuice.com/widgets/headlines.aspx?z=dark&exclude=&t=1&r=1&w=380&h=100%25&background=111116&font=ffffff&fade=111116"
-        scrolling="yes"
-        allowtransparency="true"
-        title="FinancialJuice Headlines"
-      ></iframe>
-    </div>
-  </div>
-</div>
-<div id="calendar-row">
-  <div id="calendar-panel">
-    <div id="cal-header">
-      <div class="intel-title-group">
-        <span class="cal-icon">📅</span>
-        <div>
-          <div class="intel-title">Calendar</div>
-          <div class="intel-sub">Upcoming events · High &amp; Medium impact</div>
-        </div>
+ 
+    <!-- Collapse toggle -->
+    <button id="nav-collapse-btn" aria-label="Toggle nav">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+ 
+  </nav>
+ 
+  <!-- Tooltip (collapsed hover) -->
+  <div id="nav-tooltip"></div>
+ 
+  <!-- ══════════════════════════════════════════════════════════
+       MAIN CONTENT
+       ══════════════════════════════════════════════════════════ -->
+  <div id="main-content">
+ 
+    <header>
+      <div class="logo">
+        <span class="logo-title">The Inner Flows</span>
+        <span class="logo-sub">Trading Dashboard</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div id="cal-filter-bar">
-          <button class="cal-filter active" data-curr="ALL">All</button>
-          <button class="cal-filter" data-curr="EUR">EUR</button>
-          <button class="cal-filter" data-curr="GBP">GBP</button>
-          <button class="cal-filter" data-curr="USD">USD</button>
-          <button class="cal-filter" data-curr="JPY">JPY</button>
-        </div>
-        <!--AI ANALYSIS BUTTON
-        <button id="cal-refresh-btn" class="open-link" onclick="triggerAiAnalysis()" style="border-color:rgba(90,240,196,0.4);color:var(--accent)">✦ Run AI Analysis</button>-->
+      <div class="header-right">
+        <span id="session-global">--</span>
+        <span id="clock">--:--:--</span>
+      </div>
+    </header>
+ 
+    <div id="weekend-banner">
+      <div class="wk-inner">
+        <div class="wk-icon">⏸</div>
+        <div class="wk-title">All Operations Suspended — Weekend Halt</div>
+        <div class="wk-divider"></div>
+        <div class="wk-countdown" id="weekend-countdown">--:--:--</div>
+        <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
       </div>
     </div>
  
-    <!-- Event list -->
-    <div id="cal-list">
-      <div class="cal-loading">
-        <div class="cal-spinner"></div>
-        <span>Loading calendar events…</span>
+    <div class="grid" id="grid"></div>
+ 
+    <div id="intel-row">
+      <!-- Currency Strength Chart -->
+      <div id="cstrength-panel">
+        <div class="intel-header">
+          <div class="intel-title-group">
+            <span class="intel-icon">⟳</span>
+            <div>
+              <div class="intel-title">Currency Strength</div>
+              <div class="intel-sub">Real-time performance vs majors</div>
+            </div>
+          </div>
+          <div class="live-badge"><div class="ldot"></div> LIVE</div>
+        </div>
+ 
+        <div id="cs-legend">
+          <span class="cs-pill" data-curr="USD" onclick="toggleCurr('USD')">USD</span>
+          <span class="cs-pill" data-curr="EUR" onclick="toggleCurr('EUR')">EUR</span>
+          <span class="cs-pill" data-curr="GBP" onclick="toggleCurr('GBP')">GBP</span>
+          <span class="cs-pill" data-curr="JPY" onclick="toggleCurr('JPY')">JPY</span>
+        </div>
+ 
+        <div id="cs-values">
+          <div class="cs-val-item"><span class="cs-val-label">USD</span><span class="cs-val-num USD" id="cv-USD">—</span></div>
+          <div class="cs-val-item"><span class="cs-val-label">EUR</span><span class="cs-val-num EUR" id="cv-EUR">—</span></div>
+          <div class="cs-val-item"><span class="cs-val-label">GBP</span><span class="cs-val-num GBP" id="cv-GBP">—</span></div>
+          <div class="cs-val-item"><span class="cs-val-label">JPY</span><span class="cs-val-num JPY" id="cv-JPY">—</span></div>
+        </div>
+ 
+        <div id="cs-chart-wrap">
+          <canvas id="cs-canvas"></canvas>
+          <div id="cs-error">No data — market may be closed</div>
+        </div>
+      </div>
+ 
+      <!-- FinancialJuice Live Feed -->
+      <div id="fj-panel">
+        <div id="fj-header" class="intel-header" style="margin-bottom:0">
+          <div class="intel-title-group">
+            <span class="intel-icon">📰</span>
+            <div>
+              <div class="intel-title">FinancialJuice</div>
+              <div class="intel-sub">Live market headlines</div>
+            </div>
+          </div>
+          <a href="https://www.financialjuice.com" target="_blank" style="
+            font-size:0.6rem;color:var(--muted);letter-spacing:0.1em;
+            border:1px solid var(--border2);padding:2px 8px;border-radius:2px;
+            text-decoration:none;transition:all 0.2s;
+          " onmouseover="this.style.color='var(--accent)';this.style.borderColor='rgba(90,240,196,0.4)'"
+             onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border2)'">
+            ↗ Open
+          </a>
+        </div>
+        <div id="fj-iframe-wrap">
+          <iframe
+            src="https://www.financialjuice.com/widgets/headlines.aspx?z=dark&exclude=&t=1&r=1&w=380&h=100%25&background=111116&font=ffffff&fade=111116"
+            scrolling="yes"
+            allowtransparency="true"
+            title="FinancialJuice Headlines"
+          ></iframe>
+        </div>
       </div>
     </div>
-  </div>
-</div>
-<footer>
-  <span id="last-update">Waiting for data...</span>
-  <div class="refresh-indicator">
-    <div class="refresh-dot" id="refresh-dot"></div>
-    <span id="refresh-label">LIVE · 5s</span>
-  </div>
-</footer>
+ 
+    <div id="calendar-row">
+      <div id="calendar-panel">
+        <div id="cal-header">
+          <div class="intel-title-group">
+            <span class="cal-icon">📅</span>
+            <div>
+              <div class="intel-title">Calendar</div>
+              <div class="intel-sub">Upcoming events · High &amp; Medium impact</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div id="cal-filter-bar">
+              <button class="cal-filter active" data-curr="ALL">All</button>
+              <button class="cal-filter" data-curr="EUR">EUR</button>
+              <button class="cal-filter" data-curr="GBP">GBP</button>
+              <button class="cal-filter" data-curr="USD">USD</button>
+              <button class="cal-filter" data-curr="JPY">JPY</button>
+            </div>
+          </div>
+        </div>
+ 
+        <div id="cal-list">
+          <div class="cal-loading">
+            <div class="cal-spinner"></div>
+            <span>Loading calendar events…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+ 
+    <footer>
+      <span id="last-update">Waiting for data...</span>
+      <div class="refresh-indicator">
+        <div class="refresh-dot" id="refresh-dot"></div>
+        <span id="refresh-label">LIVE · 5s</span>
+      </div>
+    </footer>
+ 
+  </div><!-- /#main-content -->
+</div><!-- /#app -->
 
 <script>
 const PAIRS = {{ pairs_js | safe }};
@@ -903,6 +979,50 @@ async function triggerAiAnalysis() {
     btn.disabled = false;
   }
 }
+
+// ── Side nav collapse + tooltip ──────────────────────────────
+(function() {
+  const nav     = document.getElementById('side-nav');
+  const tooltip = document.getElementById('nav-tooltip');
+ 
+  // Restore collapsed state
+  if (localStorage.getItem('nav-collapsed') === '1') {
+    nav.classList.add('collapsed');
+  }
+ 
+  // Collapse toggle button
+  const btn = document.createElement('button');
+  btn.id = 'nav-collapse-btn';
+  btn.setAttribute('aria-label', 'Toggle nav');
+  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+  btn.addEventListener('click', () => {
+    nav.classList.toggle('collapsed');
+    localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
+  });
+  nav.appendChild(btn);
+ 
+  // Tooltip on collapsed hover
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('mouseenter', (e) => {
+      if (!nav.classList.contains('collapsed')) return;
+      tooltip.textContent = item.dataset.label;
+      tooltip.style.top = (e.currentTarget.getBoundingClientRect().top + 6) + 'px';
+      tooltip.classList.add('visible');
+    });
+    item.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    });
+  });
+ 
+  // Set active link based on current path
+  const path = window.location.pathname;
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.remove('active');
+    if (item.getAttribute('href') === path) {
+      item.classList.add('active');
+    }
+  });
+})();
 
 // ── Init ──────────────────────────────────────────────────────────────────
 loadCalendar();
