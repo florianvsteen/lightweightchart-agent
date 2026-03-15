@@ -5,7 +5,8 @@ MetaTrader 5 data provider via the openclaw MT5 Flask API.
 Calls the Wine-hosted Flask app running inside the MT5 Docker container.
 
 Required env vars:
-  MT5_API_URL   Base URL of the MT5 Flask API (e.g. http://mt5.flownet.be:6868)
+  MT5_API_URL            Base URL of the MT5 Flask API (e.g. http://mt5:5001)
+  MT5_BROKER_UTC_OFFSET  Hours to subtract from broker time to get UTC (default: 2)
 
 Exposes:
   get_df(ticker, interval, period)       → pd.DataFrame  (OHLCV, DatetimeIndex, UTC)
@@ -13,7 +14,7 @@ Exposes:
   LOCK  — threading.Lock (shared across all calls)
 
 Interval → MT5 timeframe string:
-  "1m"  → M1    "5m"  → M5    "15m" → M15   "30m" → M30
+  "1m"  → M1    "3m"  → M3    "5m"  → M5    "15m" → M15   "30m" → M30
   "1h"  → H1    "4h"  → H4    "1d"  → D1    "1wk" → W1
 
 Period string → number of bars to fetch:
@@ -29,6 +30,11 @@ from datetime import datetime, timezone, timedelta
 
 # ── Provider lock ─────────────────────────────────────────────────────────────
 LOCK = threading.Lock()
+
+# Most MT5 brokers run on UTC+2 (EET) or UTC+3 (EEST in summer).
+# The API returns bar timestamps in broker LOCAL time with no timezone info.
+# Override with: MT5_BROKER_UTC_OFFSET=3 in your environment.
+_BROKER_UTC_OFFSET = int(os.environ.get("MT5_BROKER_UTC_OFFSET", "2"))
 
 # ── Interval string → MT5 timeframe string ────────────────────────────────────
 _TF_MAP = {
@@ -46,7 +52,6 @@ _TF_MAP = {
 }
 
 # ── Interval → bars needed for a given period ─────────────────────────────────
-# bars = period_minutes / interval_minutes
 _INTERVAL_MINUTES = {
     "1m": 1, "2m": 2, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
     "1h": 60, "4h": 240, "1d": 1440, "1w": 10080, "1wk": 10080,
@@ -74,7 +79,7 @@ def _base_url() -> str:
     if not url:
         raise RuntimeError(
             "MT5_API_URL is not set. "
-            "Example: export MT5_API_URL=http://mt5.flownet.be:6868"
+            "Example: export MT5_API_URL=http://mt5:5001"
         )
     return url
 
@@ -143,8 +148,12 @@ def _bars_to_df(bars: list) -> pd.DataFrame:
     cols = [c for c in ["time", "Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     df = df[cols]
 
-    # Parse time — API returns ISO datetime strings
-    df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
+    # Parse time — API returns naive datetime strings in broker local time (UTC+2 or UTC+3)
+    # Treat as naive, subtract broker offset to get UTC, then localize as UTC
+    df["time"] = pd.to_datetime(df["time"], utc=False, errors="coerce")
+    df["time"] = df["time"] - pd.Timedelta(hours=_BROKER_UTC_OFFSET)
+    df["time"] = df["time"].dt.tz_localize("UTC")
+
     df = df.dropna(subset=["time"])
     df = df.set_index("time")
 
@@ -159,7 +168,7 @@ def get_df(ticker: str, interval: str, period: str = None) -> pd.DataFrame:
 
     Args:
         ticker:   MT5 symbol name (e.g. "EURUSD", "XAUUSD", "US30Cash")
-        interval: candle interval ("1m", "5m", "15m", "30m", "1h", "4h", "1d")
+        interval: candle interval ("1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d")
         period:   lookback period ("1d", "5d", "30d", "3mo", "6mo"). Derived from interval if None.
 
     Returns:
