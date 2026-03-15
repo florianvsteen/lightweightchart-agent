@@ -89,7 +89,8 @@ def _call_claude_analysis(ev: dict) -> str:
     Call Claude Haiku for a short trader-focused analysis of this event.
     Returns empty string if ANTHROPIC_API_KEY is not set or the call fails.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key_present = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
+    print(f"[calendar] AI enrichment: {len(filtered)} events, API key present: {api_key_present}")
     if not api_key:
         return ""
 
