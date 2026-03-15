@@ -10,7 +10,7 @@
 
 /* ── Back link ── */
 #dd-back {
-  padding: 12px 32px;
+  padding: 12px 28px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -24,7 +24,7 @@
 /* ── Pair header ── */
 #dd-header {
   display: flex; align-items: center; gap: 20px;
-  padding: 20px 32px 16px;
+  padding: 18px 28px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0; flex-wrap: wrap;
 }
@@ -66,15 +66,21 @@
 #dd-body {
   display: grid;
   grid-template-columns: 420px 1fr;
-  gap: 1px;
-  background: var(--border);
   flex: 1;
+  min-height: 0;
 }
-#dd-left  { background: var(--bg); display: flex; flex-direction: column; }
-#dd-right { background: var(--bg); display: flex; flex-direction: column; }
+#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-y: auto; }
+#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 0; overflow-y: auto; }
 
 /* ── Price + chart (left top) ── */
-#dd-chart-panel { padding: 20px 22px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#dd-chart-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px 16px;
+  flex-shrink: 0;
+  margin: 16px 0 0;
+}
 #dd-price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 #dd-price { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2rem; color: #fff; line-height: 1; }
 #dd-price-chg { font-size: 0.85rem; font-weight: 700; }
@@ -92,16 +98,25 @@
 #dd-chart-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 
 /* ── News (left bottom) ── */
-#dd-news-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#dd-news-panel {
+  flex: 1; display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 0;
+}
 #dd-news-header {
-  padding: 14px 22px 10px; border-bottom: 1px solid var(--border);
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
   font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 800; color: #fff;
+  border-radius: var(--radius) var(--radius) 0 0;
   flex-shrink: 0;
 }
 #dd-news-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
 #dd-news-list::-webkit-scrollbar { width: 3px; }
 #dd-news-list::-webkit-scrollbar-thumb { background: var(--border2); }
-.dd-news-item { padding: 10px 22px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px; }
+.dd-news-item { padding: 10px 18px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px; }
 .dd-news-item:hover { background: rgba(255,255,255,0.03); }
 .dd-news-meta { display: flex; align-items: center; gap: 6px; }
 .dd-news-source { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.06em; }
@@ -116,8 +131,8 @@
 /* ── Right column panels ── */
 /* AI Overview */
 #dd-overview-panel {
-  padding: 18px 24px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-shrink: 0;
+  padding: 16px 20px;
+  flex-shrink: 0;
 }
 .dd-section-label {
   display: flex; align-items: center; gap: 7px;
@@ -127,9 +142,13 @@
 #dd-overview-text { font-size: 0.72rem; color: var(--text); line-height: 1.7; opacity: 0.9; }
 
 /* Module row: Mood + Policy */
-#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.dd-module { padding: 16px 20px; border-right: 1px solid var(--border); position: relative; }
-.dd-module:last-child { border-right: none; }
+#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+.dd-module {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
 /* Rounded card wrapper for mood/policy content */
 .dd-module-card {
   background: var(--bg);
@@ -295,8 +314,8 @@
             <div id="dd-price">—</div>
             <div id="dd-price-chg" class="flat">—</div>
             <div class="dd-period-row" style="margin-left:auto;margin-bottom:0">
-              <button class="chart-period-btn active" data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
-              <button class="chart-period-btn"        data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
+              <button class="chart-period-btn"        data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
+              <button class="chart-period-btn active" data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
               <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
             </div>
           </div>
@@ -316,7 +335,7 @@
       <!-- RIGHT: AI modules -->
       <div id="dd-right">
 
-        <div id="dd-overview-panel">
+        <div id="dd-overview-panel" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;flex-shrink:0">
           <div class="dd-section-label">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
             AI overview
@@ -411,8 +430,8 @@
 <script>
 const PAIR_ID  = '{{ pair_id }}';
 let _chart     = null;
-let _period    = '1d';
-let _interval  = '5m';
+let _period    = '5d';
+let _interval  = '30m';
 
 // ── Helpers ──
 function drawSparkline(){} // legacy — kept for safety, not used
