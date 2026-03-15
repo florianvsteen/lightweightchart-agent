@@ -22,11 +22,12 @@ import json
 import re
 import time
 import threading
-import logging
-log = logging.getLogger(__name__)
 
 from tools.ai     import ask
 from tools.market import get_market_snapshot
+
+import logging
+log = logging.getLogger(__name__)
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 AI_TTL = 30 * 60   # 30 min — macro narrative doesn't change every second
