@@ -980,47 +980,38 @@ async function triggerAiAnalysis() {
   }
 }
 
-// ── Side nav collapse + tooltip ──────────────────────────────
 (function() {
   const nav     = document.getElementById('side-nav');
   const tooltip = document.getElementById('nav-tooltip');
+  const btn     = document.getElementById('nav-collapse-btn'); // already in HTML
  
-  // Restore collapsed state
+  // Restore collapsed state from last visit
   if (localStorage.getItem('nav-collapsed') === '1') {
     nav.classList.add('collapsed');
   }
  
-  // Collapse toggle button
-  const btn = document.createElement('button');
-  btn.id = 'nav-collapse-btn';
-  btn.setAttribute('aria-label', 'Toggle nav');
-  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+  // Toggle collapse
   btn.addEventListener('click', () => {
     nav.classList.toggle('collapsed');
     localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
   });
-  nav.appendChild(btn);
  
-  // Tooltip on collapsed hover
+  // Tooltip on hover when collapsed
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('mouseenter', (e) => {
       if (!nav.classList.contains('collapsed')) return;
-      tooltip.textContent = item.dataset.label;
+      tooltip.textContent = item.dataset.label || '';
       tooltip.style.top = (e.currentTarget.getBoundingClientRect().top + 6) + 'px';
       tooltip.classList.add('visible');
     });
-    item.addEventListener('mouseleave', () => {
-      tooltip.classList.remove('visible');
-    });
+    item.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
   });
  
-  // Set active link based on current path
-  const path = window.location.pathname;
+  // Set active link from current path
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('.nav-item').forEach(item => {
-    item.classList.remove('active');
-    if (item.getAttribute('href') === path) {
-      item.classList.add('active');
-    }
+    const href = (item.getAttribute('href') || '').replace(/\/$/, '') || '/';
+    item.classList.toggle('active', href === path);
   });
 })();
 
