@@ -22,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 CURRENCIES   = {"EUR", "GBP", "USD", "JPY"}
 IMPACTS      = {"High", "Medium"}
-EVENTS_TTL   = 30 * 60   # 30 min
+EVENTS_TTL = 2 * 60 * 60   # 2 hours — FF rate limits at ~2 req/5min
 AI_TTL       = 6 * 3600  # 6 hours
 
 # ── Caches ─────────────────────────────────────────────────────────────────────
