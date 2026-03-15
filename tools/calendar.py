@@ -4,11 +4,13 @@ tools/calendar.py
 Fetches this week's economic calendar from the ForexFactory public CDN:
   https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
-AI analysis provider — switch with env var:
-  export CALENDAR_AI_PROVIDER=gemini    (default, free at aistudio.google.com)
-  export CALENDAR_AI_PROVIDER=openai    (requires OPENAI_API_KEY)
+Requires: OPENAI_API_KEY env var
+Model: gpt-4o-mini (cheap, fast)
 
-Both providers use a single batch API call for all events.
+- Caches FF data for 2 hours (FF only updates once/hour)
+- Persists cache to disk so restarts don't hit FF again
+- AI analyses cached 6 hours, fetched in a single batch call
+- AI enrichment runs in background thread — never blocks HTTP response
 """
 
 import os
@@ -21,19 +23,8 @@ from datetime import datetime, timezone
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-
-# Switch AI provider: "gemini" (default, free) or "openai"
-AI_PROVIDER  = os.environ.get("AI_PROVIDER", "gemini").lower()
-
-# Gemini — free tier, set GEMINI_API_KEY (aistudio.google.com)
-GEMINI_URL   = (
-    "https://generativelanguage.googleapis.com/v1beta/models"
-    "/gemini-2.0-flash-lite:generateContent"
-)
-
-# OpenAI — set OPENAI_API_KEY, uses gpt-4o-mini by default
 OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 CURRENCIES = {"EUR", "GBP", "USD", "JPY"}
 IMPACTS    = {"High", "Medium"}
@@ -45,13 +36,14 @@ CACHE_FILE = os.path.join(
     "..", "data", "calendar_cache.json"
 )
 
-_events_cache: dict = {}
-_ai_cache: dict     = {}
-_cache_lock = threading.Lock()
+# ── In-memory caches ───────────────────────────────────────────────────────────
+_events_cache = {}
+_ai_cache     = {}
+_cache_lock   = threading.Lock()
 
 
 # ── Disk cache ──────────────────────────────────────────────────────────────────
-def _save_cache(data: list):
+def _save_cache(data):
     try:
         os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
         with open(CACHE_FILE, "w") as f:
@@ -61,7 +53,7 @@ def _save_cache(data: list):
         print(f"[calendar] Cache save error: {e}")
 
 
-def _load_cache() -> tuple:
+def _load_cache():
     try:
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, "r") as f:
@@ -69,7 +61,7 @@ def _load_cache() -> tuple:
                 data = saved.get("data", [])
                 at   = saved.get("at", 0)
                 age  = int((time.time() - at) / 60)
-                print(f"[calendar] Loaded {len(data)} events from disk cache (age: {age}m)")
+                print(f"[calendar] Loaded {len(data)} events from disk (age: {age}m)")
                 return data, at
     except Exception as e:
         print(f"[calendar] Cache load error: {e}")
@@ -77,43 +69,39 @@ def _load_cache() -> tuple:
 
 
 # ── FF fetch ────────────────────────────────────────────────────────────────────
-def _fetch_raw() -> list:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept":        "application/json",
-        "Cache-Control": "max-age=3600",
-    }
-    resp = requests.get(CALENDAR_URL, headers=headers, timeout=15)
+def _fetch_raw():
+    resp = requests.get(
+        CALENDAR_URL,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+        timeout=15,
+    )
     resp.raise_for_status()
-    ct = resp.headers.get("content-type", "")
-    if "html" in ct.lower():
-        raise ValueError("Rate limited — FF returned HTML instead of JSON")
+    if "html" in resp.headers.get("content-type", "").lower():
+        raise ValueError("FF returned HTML (rate limited)")
     data = resp.json()
-    print(f"[calendar] Fetched {len(data)} raw events from FF CDN")
+    print(f"[calendar] Fetched {len(data)} raw events")
     return data
 
 
 # ── Date parsing ────────────────────────────────────────────────────────────────
-def _parse_date(date_str: str):
+def _parse_date(date_str):
     if not date_str:
         return None
     try:
         return datetime.fromisoformat(date_str)
-    except Exception as e:
-        print(f"[calendar] Could not parse date: {date_str!r} — {e}")
+    except Exception:
         return None
 
 
-# ── Shared AI helpers ───────────────────────────────────────────────────────────
-def _event_key(ev: dict) -> str:
+# ── AI helpers ──────────────────────────────────────────────────────────────────
+def _event_key(ev):
     return f"{ev.get('date', '')}|{ev.get('currency', '')}|{ev.get('title', '')}"
 
 
-def _build_prompt(events: list) -> str:
+def _build_prompt(events):
     lines = []
     for i, ev in enumerate(events, 1):
         prev = ev.get("previous") or "N/A"
@@ -129,7 +117,7 @@ def _build_prompt(events: list) -> str:
         "For each numbered economic event below, write exactly ONE sentence "
         "explaining what a beat or miss vs forecast would mean for the currency. "
         "Do NOT repeat the event name. Be direct and specific.\n\n"
-        "Respond in this exact format only:\n"
+        "Respond in this exact format:\n"
         "1. <one sentence>\n"
         "2. <one sentence>\n"
         "etc.\n\n"
@@ -137,7 +125,7 @@ def _build_prompt(events: list) -> str:
     )
 
 
-def _parse_response(raw_text: str, events: list) -> dict:
+def _parse_response(raw_text, events):
     result  = {}
     matches = re.findall(r"(\d+)\.\s+(.+?)(?=\n\d+\.|$)", raw_text, re.DOTALL)
     for num_str, text in matches:
@@ -147,62 +135,14 @@ def _parse_response(raw_text: str, events: list) -> dict:
     return result
 
 
-# ── Gemini provider ─────────────────────────────────────────────────────────────
-def _call_gemini_batch(events: list) -> dict:
-    """
-    Single Gemini 2.0 Flash-Lite call for all events.
-    Free tier — set GEMINI_API_KEY (aistudio.google.com).
-    """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        print("[calendar] GEMINI_API_KEY not set — skipping AI analysis")
-        return {}
-    if not events:
-        return {}
-
-    try:
-        resp = requests.post(
-            f"{GEMINI_URL}?key={api_key}",
-            headers={"Content-Type": "application/json"},
-            json={
-                "contents": [{"parts": [{"text": _build_prompt(events)}]}],
-                "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.3},
-            },
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            print(f"[calendar] Gemini error {resp.status_code}: {resp.text[:300]}")
-            return {}
-        candidates = resp.json().get("candidates", [])
-        if not candidates:
-            return {}
-        raw = " ".join(
-            p.get("text", "")
-            for p in candidates[0].get("content", {}).get("parts", [])
-        ).strip()
-        result = _parse_response(raw, events)
-        print(f"[calendar] Gemini batch: {len(result)}/{len(events)} analyses")
-        return result
-    except Exception as e:
-        print(f"[calendar] Gemini batch error: {type(e).__name__}: {e}")
-        return {}
-
-
-# ── OpenAI provider ─────────────────────────────────────────────────────────────
-def _call_openai_batch(events: list) -> dict:
-    """
-    Single OpenAI gpt-4o-mini call for all events.
-    Set OPENAI_API_KEY env var.
-    Override model with OPENAI_MODEL env var (default: gpt-4o-mini).
-    """
+def _call_openai_batch(events):
+    """Single OpenAI call for all events. Returns {event_key: analysis}."""
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
-        print("[calendar] OPENAI_API_KEY not set — skipping AI analysis")
+        print("[calendar] OPENAI_API_KEY not set")
         return {}
     if not events:
         return {}
-
-    model = os.environ.get("OPENAI_MODEL", OPENAI_MODEL)
 
     try:
         resp = requests.post(
@@ -212,7 +152,7 @@ def _call_openai_batch(events: list) -> dict:
                 "Authorization": f"Bearer {api_key}",
             },
             json={
-                "model":       model,
+                "model":       OPENAI_MODEL,
                 "messages":    [{"role": "user", "content": _build_prompt(events)}],
                 "max_tokens":  1024,
                 "temperature": 0.3,
@@ -220,55 +160,38 @@ def _call_openai_batch(events: list) -> dict:
             timeout=30,
         )
         if resp.status_code != 200:
-            print(f"[calendar] OpenAI error {resp.status_code}: {resp.text[:300]}")
+            print(f"[calendar] OpenAI error {resp.status_code}: {resp.text[:200]}")
             return {}
         raw    = resp.json()["choices"][0]["message"]["content"].strip()
         result = _parse_response(raw, events)
-        print(f"[calendar] OpenAI batch ({model}): {len(result)}/{len(events)} analyses")
+        print(f"[calendar] OpenAI: {len(result)}/{len(events)} analyses")
         return result
     except Exception as e:
-        print(f"[calendar] OpenAI batch error: {type(e).__name__}: {e}")
+        print(f"[calendar] OpenAI error: {e}")
         return {}
 
 
-# ── Provider router ─────────────────────────────────────────────────────────────
-def _call_ai_batch(events: list) -> dict:
-    """
-    Route to Gemini or OpenAI based on CALENDAR_AI_PROVIDER env var.
-    Default: gemini (free).
-    """
-    print(f"[calendar] Using AI provider: {AI_PROVIDER}")
-    if AI_PROVIDER == "openai":
-        return _call_openai_batch(events)
-    return _call_gemini_batch(events)
-
-
 # ── Public API ──────────────────────────────────────────────────────────────────
-def get_calendar(force_refresh: bool = False) -> list:
+def get_calendar(force_refresh=False):
     """
-    Return this week's filtered, AI-enriched calendar events.
-
-    Cache priority:
-      1. In-memory (fastest)
-      2. Disk (survives restarts, avoids FF rate limits)
-      3. Live FF fetch
-      4. Stale fallback (if fetch fails)
+    Returns filtered calendar events with AI analysis.
+    Never raises — always returns a list (may be empty or stale).
+    AI enrichment runs in background so this returns immediately.
     """
     try:
         return _get_calendar_impl(force_refresh)
     except Exception as e:
         import traceback
-        print(f"[calendar] get_calendar crashed: {e}")
+        print(f"[calendar] Error: {e}")
         traceback.print_exc()
-        # Return stale cache rather than propagating and crashing Flask
         with _cache_lock:
             return _events_cache.get("data", [])
 
 
-def _get_calendar_impl(force_refresh: bool = False) -> list:
+def _get_calendar_impl(force_refresh):
     now = time.time()
 
-    # 1. In-memory
+    # 1. In-memory cache
     with _cache_lock:
         mem_data = _events_cache.get("data")
         mem_at   = _events_cache.get("at", 0)
@@ -276,7 +199,7 @@ def _get_calendar_impl(force_refresh: bool = False) -> list:
     if mem_data and not force_refresh and (now - mem_at) < EVENTS_TTL:
         return mem_data
 
-    # 2. Disk (after restart)
+    # 2. Disk cache (after restart)
     if not mem_data:
         disk_data, disk_at = _load_cache()
         if disk_data:
@@ -284,20 +207,20 @@ def _get_calendar_impl(force_refresh: bool = False) -> list:
                 _events_cache["data"] = disk_data
                 _events_cache["at"]   = disk_at
             if not force_refresh and (now - disk_at) < EVENTS_TTL:
-                print(f"[calendar] Serving {len(disk_data)} events from fresh disk cache")
+                print(f"[calendar] Serving {len(disk_data)} events from disk cache")
                 return disk_data
             mem_data = disk_data
 
-    # 3. Live fetch
+    # 3. Live fetch from FF
     try:
         raw = _fetch_raw()
     except Exception as e:
         print(f"[calendar] Fetch failed: {e}")
         fallback = mem_data or []
-        print(f"[calendar] Returning {len(fallback)} stale events as fallback")
+        print(f"[calendar] Returning {len(fallback)} stale events")
         return fallback
 
-    # Filter
+    # Filter to relevant events
     filtered = []
     for ev in raw:
         currency = (ev.get("country") or "").strip().upper()
@@ -325,10 +248,10 @@ def _get_calendar_impl(force_refresh: bool = False) -> list:
         })
 
     filtered.sort(key=lambda e: e["event_time"] or e["date"])
-    print(f"[calendar] {len(filtered)} events after filtering ({len(raw)} raw)")
+    print(f"[calendar] {len(filtered)} events after filtering")
 
-    # Apply cached AI analyses where available
-    uncached_events = []
+    # Apply cached AI analyses
+    uncached = []
     for ev in filtered:
         key = _event_key(ev)
         with _cache_lock:
@@ -336,25 +259,22 @@ def _get_calendar_impl(force_refresh: bool = False) -> list:
         if cached_ai and (now - cached_ai["at"]) < AI_TTL:
             ev["analysis"] = cached_ai["analysis"]
         else:
-            uncached_events.append(ev)
+            uncached.append(ev)
 
-    # Return immediately — don't block the HTTP request on AI calls
-    enriched = sorted(filtered, key=lambda e: e["event_time"] or e["date"])
+    # Persist immediately — return fast, don't wait for AI
     with _cache_lock:
-        _events_cache["data"] = enriched
+        _events_cache["data"] = filtered
         _events_cache["at"]   = now
-    _save_cache(enriched)
+    _save_cache(filtered)
 
-    # Fetch missing AI analyses in a background thread
-    if uncached_events:
-        def _bg_ai(events_snapshot, ts):
+    # Run AI enrichment in background thread
+    if uncached:
+        def _bg_ai(events_copy, ts):
             try:
-                print(f"[calendar] Background AI fetch for {len(events_snapshot)} events")
-                analyses = _call_ai_batch(events_snapshot)
+                print(f"[calendar] Background AI for {len(events_copy)} events")
+                analyses = _call_openai_batch(events_copy)
                 if not analyses:
-                    print("[calendar] Background AI returned no results")
                     return
-                # Update in-memory cache — snapshot current data first, release lock before I/O
                 with _cache_lock:
                     current = _events_cache.get("data", [])
                     for ev in current:
@@ -362,20 +282,19 @@ def _get_calendar_impl(force_refresh: bool = False) -> list:
                         if key in analyses:
                             ev["analysis"] = analyses[key]
                             _ai_cache[key] = {"analysis": analyses[key], "at": ts}
-                    data_to_save = list(current)
-                # Save to disk outside the lock
-                _save_cache(data_to_save)
-                print(f"[calendar] Background AI complete: {len(analyses)} analyses saved")
+                    data_snapshot = list(current)
+                _save_cache(data_snapshot)
+                print(f"[calendar] Background AI done: {len(analyses)} analyses")
             except Exception as e:
                 import traceback
-                print(f"[calendar] Background AI thread error: {e}")
+                print(f"[calendar] Background AI error: {e}")
                 traceback.print_exc()
 
         threading.Thread(
             target=_bg_ai,
-            args=(list(uncached_events), now),
+            args=(list(uncached), now),
             daemon=True,
-            name="calendar-ai-bg"
+            name="calendar-ai-bg",
         ).start()
 
-    return enriched
+    return filtered
