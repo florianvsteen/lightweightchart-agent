@@ -4,8 +4,8 @@ tools/calendar.py
 Fetches this week's economic calendar from the ForexFactory public CDN:
   https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
-Requires: OPENAI_API_KEY env var
-Model: gpt-4o-mini (cheap, fast)
+Requires: GEMINI_API_KEY env var (free at aistudio.google.com)
+Model: gemini-2.0-flash-lite
 
 - Caches FF data for 2 hours (FF only updates once/hour)
 - Persists cache to disk so restarts don't hit FF again
@@ -23,8 +23,10 @@ from datetime import datetime, timezone
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GEMINI_URL   = (
+    "https://generativelanguage.googleapis.com/v1beta/models"
+    "/gemini-2.0-flash-lite:generateContent"
+)
 
 CURRENCIES = {"EUR", "GBP", "USD", "JPY"}
 IMPACTS    = {"High", "Medium"}
@@ -72,10 +74,7 @@ def _load_cache():
 def _fetch_raw():
     resp = requests.get(
         CALENDAR_URL,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json",
-        },
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
         timeout=15,
     )
     resp.raise_for_status()
@@ -135,39 +134,40 @@ def _parse_response(raw_text, events):
     return result
 
 
-def _call_openai_batch(events):
-    """Single OpenAI call for all events. Returns {event_key: analysis}."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+def _call_gemini_batch(events):
+    """Single Gemini call for all events. Returns {event_key: analysis}."""
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        print("[calendar] OPENAI_API_KEY not set")
+        print("[calendar] GEMINI_API_KEY not set")
         return {}
     if not events:
         return {}
 
     try:
         resp = requests.post(
-            OPENAI_URL,
-            headers={
-                "Content-Type":  "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
+            f"{GEMINI_URL}?key={api_key}",
+            headers={"Content-Type": "application/json"},
             json={
-                "model":       OPENAI_MODEL,
-                "messages":    [{"role": "user", "content": _build_prompt(events)}],
-                "max_tokens":  1024,
-                "temperature": 0.3,
+                "contents": [{"parts": [{"text": _build_prompt(events)}]}],
+                "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.3},
             },
             timeout=30,
         )
         if resp.status_code != 200:
-            print(f"[calendar] OpenAI error {resp.status_code}: {resp.text[:200]}")
+            print(f"[calendar] Gemini error {resp.status_code}: {resp.text[:200]}")
             return {}
-        raw    = resp.json()["choices"][0]["message"]["content"].strip()
+        candidates = resp.json().get("candidates", [])
+        if not candidates:
+            return {}
+        raw = " ".join(
+            p.get("text", "")
+            for p in candidates[0].get("content", {}).get("parts", [])
+        ).strip()
         result = _parse_response(raw, events)
-        print(f"[calendar] OpenAI: {len(result)}/{len(events)} analyses")
+        print(f"[calendar] Gemini: {len(result)}/{len(events)} analyses")
         return result
     except Exception as e:
-        print(f"[calendar] OpenAI error: {e}")
+        print(f"[calendar] Gemini error: {e}")
         return {}
 
 
@@ -176,7 +176,7 @@ def get_calendar(force_refresh=False):
     """
     Returns filtered calendar events with AI analysis.
     Never raises — always returns a list (may be empty or stale).
-    AI enrichment runs in background so this returns immediately.
+    AI enrichment runs in background so this always returns immediately.
     """
     try:
         return _get_calendar_impl(force_refresh)
@@ -272,7 +272,7 @@ def _get_calendar_impl(force_refresh):
         def _bg_ai(events_copy, ts):
             try:
                 print(f"[calendar] Background AI for {len(events_copy)} events")
-                analyses = _call_openai_batch(events_copy)
+                analyses = _call_gemini_batch(events_copy)
                 if not analyses:
                     return
                 with _cache_lock:
