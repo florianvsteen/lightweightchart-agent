@@ -4,12 +4,13 @@ tools/calendar.py
 Fetches this week's economic calendar from the ForexFactory public CDN:
   https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
-- No API key required
+- No API key required for calendar data
 - FF only updates the file once per hour — we cache for 2 hours
 - Persists cache to disk so restarts don't cause unnecessary FF requests
 - Falls back to disk cache on rate limit / network errors
 - Filters to High/Medium impact events for EUR, GBP, USD, JPY only
-- Calls Claude Haiku for a short AI analysis per event (cached 6 hours)
+- Calls Google Gemini 2.5 Flash for AI analysis (free tier, cached 6 hours)
+  Set GEMINI_API_KEY env var — get a free key at aistudio.google.com
 """
 
 import os
@@ -20,11 +21,12 @@ import requests
 from datetime import datetime, timezone
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-CURRENCIES   = {"EUR", "GBP", "USD", "JPY"}
-IMPACTS      = {"High", "Medium"}
-EVENTS_TTL   = 2 * 60 * 60   # 2 hours — FF updates once/hour
-AI_TTL       = 6 * 60 * 60   # 6 hours
+CALENDAR_URL  = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+GEMINI_URL    = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+CURRENCIES    = {"EUR", "GBP", "USD", "JPY"}
+IMPACTS       = {"High", "Medium"}
+EVENTS_TTL    = 2 * 60 * 60   # 2 hours — FF updates once/hour
+AI_TTL        = 6 * 60 * 60   # 6 hours
 
 CACHE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -55,7 +57,8 @@ def _load_cache() -> tuple[list, float]:
                 saved = json.load(f)
                 data = saved.get("data", [])
                 at   = saved.get("at", 0)
-                print(f"[calendar] Loaded {len(data)} events from disk cache (age: {int((time.time()-at)/60)}m)")
+                age_min = int((time.time() - at) / 60)
+                print(f"[calendar] Loaded {len(data)} events from disk cache (age: {age_min}m)")
                 return data, at
     except Exception as e:
         print(f"[calendar] Cache load error: {e}")
@@ -104,19 +107,20 @@ def _parse_date(date_str: str) -> datetime | None:
         return None
 
 
-# ── AI analysis ─────────────────────────────────────────────────────────────────
+# ── AI analysis via Gemini ───────────────────────────────────────────────────────
 def _event_key(ev: dict) -> str:
     return f"{ev.get('date', '')}|{ev.get('currency', '')}|{ev.get('title', '')}"
 
 
-def _call_claude_analysis(ev: dict) -> str:
+def _call_gemini_analysis(ev: dict) -> str:
     """
-    Call Claude Haiku for a short trader-focused analysis of this event.
-    Returns empty string if ANTHROPIC_API_KEY is not set or the call fails.
+    Call Google Gemini 2.5 Flash for a short trader-focused analysis.
+    Requires GEMINI_API_KEY env var — free key from aistudio.google.com
+    Returns empty string on failure.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        print("[calendar] ANTHROPIC_API_KEY not set — skipping AI analysis")
+        print("[calendar] GEMINI_API_KEY not set — skipping AI analysis")
         return ""
 
     parts = [f"{ev.get('currency', '')} {ev.get('title', '')}"]
@@ -136,27 +140,31 @@ def _call_claude_analysis(ev: dict) -> str:
 
     try:
         resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key":         api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
+            f"{GEMINI_URL}?key={api_key}",
+            headers={"Content-Type": "application/json"},
             json={
-                "model":      "claude-haiku-4-5",
-                "max_tokens": 150,
-                "messages":   [{"role": "user", "content": prompt}],
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 150,
+                    "temperature": 0.4,
+                },
             },
             timeout=20,
         )
-        print(f"[calendar] Claude API status: {resp.status_code}")
+
         if resp.status_code != 200:
-            print(f"[calendar] Claude API error: {resp.text}")
+            print(f"[calendar] Gemini API error {resp.status_code}: {resp.text[:200]}")
             return ""
-        blocks = resp.json().get("content", [])
-        return " ".join(b["text"] for b in blocks if b.get("type") == "text").strip()
+
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return ""
+        parts_out = candidates[0].get("content", {}).get("parts", [])
+        return " ".join(p.get("text", "") for p in parts_out).strip()
+
     except Exception as e:
-        print(f"[calendar] Claude error: {type(e).__name__}: {e}")
+        print(f"[calendar] Gemini error: {type(e).__name__}: {e}")
         return ""
 
 
@@ -169,13 +177,13 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
       title, currency, impact, date (raw FF string),
       actual, forecast, previous,
       event_time (ISO UTC string for JS),
-      analysis (Claude AI text, may be empty)
+      analysis (Gemini AI text, may be empty)
 
     Cache priority:
-      1. In-memory cache (fastest)
-      2. Disk cache (survives restarts)
+      1. In-memory cache (fastest, avoids any I/O)
+      2. Disk cache (survives restarts without hitting FF)
       3. Live fetch from FF CDN
-      4. Stale cache (if fetch fails)
+      4. Stale cache fallback (if fetch fails / rate limited)
     """
     now = time.time()
 
@@ -187,26 +195,24 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
     if mem_data and not force_refresh and (now - mem_at) < EVENTS_TTL:
         return mem_data
 
-    # ── 2. Disk cache (e.g. after restart) ────────────────────────────────
+    # ── 2. Disk cache (e.g. after process restart) ─────────────────────────
     if not mem_data:
         disk_data, disk_at = _load_cache()
         if disk_data:
-            # Populate memory from disk
             with _cache_lock:
                 _events_cache["data"] = disk_data
                 _events_cache["at"]   = disk_at
             if not force_refresh and (now - disk_at) < EVENTS_TTL:
-                print(f"[calendar] Serving {len(disk_data)} events from disk cache (fresh)")
+                print(f"[calendar] Serving {len(disk_data)} events from fresh disk cache")
                 return disk_data
-            # Disk cache is stale — will fetch below, but keep as fallback
+            # Stale but keep as fallback below
             mem_data = disk_data
 
-    # ── 3. Fetch from FF ───────────────────────────────────────────────────
+    # ── 3. Live fetch from FF ──────────────────────────────────────────────
     try:
         raw = _fetch_raw()
     except Exception as e:
         print(f"[calendar] Fetch failed: {e}")
-        # Return whatever we have — memory or disk — rather than empty list
         fallback = mem_data or []
         print(f"[calendar] Returning {len(fallback)} stale cached events as fallback")
         return fallback
@@ -258,17 +264,16 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
         if cached_ai and (now - cached_ai["at"]) < AI_TTL:
             ev["analysis"] = cached_ai["analysis"]
         else:
-            ev["analysis"] = _call_claude_analysis(ev)
+            ev["analysis"] = _call_gemini_analysis(ev)
             with _cache_lock:
                 _ai_cache[key] = {"analysis": ev["analysis"], "at": now}
 
         enriched.append(ev)
 
-    # ── Save to memory + disk ──────────────────────────────────────────────
+    # ── Persist to memory + disk ───────────────────────────────────────────
     with _cache_lock:
         _events_cache["data"] = enriched
         _events_cache["at"]   = now
 
     _save_cache(enriched)
-
     return enriched
