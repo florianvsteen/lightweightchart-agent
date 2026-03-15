@@ -648,12 +648,16 @@ if (typeof Chart === 'undefined') {
   setInterval(loadCurrencyStrength, 5 * 60 * 1000);
 }
 
-// ── Economic Calendar ─────────────────────────────────────────────────────────
-let _calEvents   = [];
-let _calFilter   = 'ALL';
-let _calTimer    = null;
- 
-// Filter button clicks
+// ═══════════════════════════════════════════════════════════════════════════
+// ECONOMIC CALENDAR
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _calEvents = [];
+let _calFilter = 'ALL';
+let _calCountdownTimer = null;
+let _calRefreshTimer   = null;
+
+// ── Filter buttons ────────────────────────────────────────────────────────
 document.querySelectorAll('.cal-filter').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.cal-filter').forEach(b => b.classList.remove('active'));
@@ -662,110 +666,130 @@ document.querySelectorAll('.cal-filter').forEach(btn => {
     renderCalendar();
   });
 });
- 
+
+// ── Countdown ─────────────────────────────────────────────────────────────
 function calCountdown(eventIsoUtc) {
   if (!eventIsoUtc) return { label: '—', cls: '' };
   const eventMs = new Date(eventIsoUtc).getTime();
   if (isNaN(eventMs)) return { label: '—', cls: '' };
+
   const diffMs   = eventMs - Date.now();
   const totalMin = Math.floor(Math.abs(diffMs) / 60000);
+
   if (diffMs < 0) {
     if (totalMin < 60) return { label: `${totalMin}m ago`, cls: 'past' };
-    return { label: `${Math.floor(totalMin / 60)}h ago`, cls: 'past' };
+    const h = Math.floor(totalMin / 60);
+    if (h < 24) return { label: `${h}h ago`, cls: 'past' };
+    return { label: `${Math.floor(h / 24)}d ago`, cls: 'past' };
   }
+
   if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
   if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
   const h = Math.floor(totalMin / 60), m = totalMin % 60;
   return { label: `in ${h}h${m > 0 ? ' ' + m + 'm' : ''}`, cls: '' };
 }
- 
+
+// ── Time formatting ───────────────────────────────────────────────────────
 function formatEventTime(eventIsoUtc) {
   if (!eventIsoUtc) return null;
   const d = new Date(eventIsoUtc);
   if (isNaN(d.getTime())) return null;
- 
-  // Browser local time (user's timezone)
+
+  // Local time in browser's timezone
   const local = d.toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
-  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    .replace('Europe/', '')
-    .replace('America/', '')
-    .replace('Asia/', '');
- 
+
+  // Friendly timezone name — strip continent prefix
+  const tzFull = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localTz = tzFull.includes('/') ? tzFull.split('/').pop().replace(/_/g, ' ') : tzFull;
+
   // UTC time
   const utc = d.toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
   });
- 
+
   return { local, utc, localTz };
 }
- 
+
+// ── Date helpers ──────────────────────────────────────────────────────────
 function getEventDateStr(ev) {
+  // event_time is ISO UTC like "2026-03-17T13:30:00+00:00"
+  // Slice the UTC date portion for grouping
   return (ev.event_time || '').slice(0, 10);
 }
- 
+
+// ── Render ────────────────────────────────────────────────────────────────
 function renderCalendar() {
   const list = document.getElementById('cal-list');
   if (!list) return;
- 
+
   const filtered = _calFilter === 'ALL'
     ? _calEvents
     : _calEvents.filter(e => e.currency === _calFilter);
- 
+
   if (!filtered.length) {
     list.innerHTML = '<div class="cal-empty">No events found for the selected filter.</div>';
     return;
   }
- 
-  // Group by UTC date
+
+  // Group events by UTC date
   const byDate = {};
   filtered.forEach(ev => {
     const d = getEventDateStr(ev);
+    if (!d) return;
     if (!byDate[d]) byDate[d] = [];
     byDate[d].push(ev);
   });
- 
+
   const todayStr    = new Date().toISOString().slice(0, 10);
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  const dateLabel   = d => d === todayStr ? 'Today' : d === tomorrowStr ? 'Tomorrow' : d;
- 
+
+  const dateLabel = d => {
+    if (d === todayStr)    return 'Today';
+    if (d === tomorrowStr) return 'Tomorrow';
+    return d;
+  };
+
   let html = '';
-  for (const [date, events] of Object.entries(byDate)) {
-    if (!date) continue;
+
+  for (const [date, events] of Object.entries(byDate).sort()) {
     const displayDate = new Date(date + 'T12:00:00Z')
       .toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
     html += `<div class="cal-date-sep">${dateLabel(date)} · ${displayDate}</div>`;
- 
+
     events.forEach(ev => {
       const cd   = calCountdown(ev.event_time);
       const time = formatEventTime(ev.event_time);
- 
+
       const hasActual   = ev.actual   && ev.actual   !== '';
       const hasForecast = ev.forecast && ev.forecast !== '';
       const hasPrev     = ev.previous && ev.previous !== '';
- 
-      // Time display: local time big, UTC small
+
+      // Time block: local time + UTC
       const timeHtml = time ? `
         <div class="cal-time-block">
           <span class="cal-time-local">${time.local}</span>
           <span class="cal-time-tz">${time.localTz}</span>
           <span class="cal-time-utc">${time.utc} UTC</span>
         </div>` : '';
- 
+
+      // Prev / Forecast / Actual row
       const dataRow = (hasActual || hasForecast || hasPrev) ? `
         <div class="cal-data-row">
           ${hasPrev     ? `<div class="cal-data-item"><span class="cal-data-label">Previous</span><span class="cal-data-val">${ev.previous}</span></div>` : ''}
           ${hasForecast ? `<div class="cal-data-item"><span class="cal-data-label">Forecast</span><span class="cal-data-val">${ev.forecast}</span></div>` : ''}
           ${hasActual   ? `<div class="cal-data-item"><span class="cal-data-label">Actual</span><span class="cal-data-val actual">${ev.actual}</span></div>` : ''}
         </div>` : '';
- 
+
+      // AI analysis box
       const aiBox = ev.analysis ? `
         <div class="cal-ai-box">
           <div class="cal-ai-label">✦ AI Analysis</div>
           <div class="cal-ai-text">${ev.analysis}</div>
         </div>` : '';
- 
+
       html += `
         <div class="cal-event-card">
           <div class="cal-event-top">
@@ -780,44 +804,72 @@ function renderCalendar() {
         </div>`;
     });
   }
- 
+
   list.innerHTML = html;
 }
-  
-// Refresh countdowns every minute without re-fetching
-function startCalCountdownTimer() {
-  if (_calTimer) clearInterval(_calTimer);
-  _calTimer = setInterval(() => {
-    if (_calEvents.length) renderCalendar();
-  }, 60 * 1000);
+
+// ── Countdown-only refresh (updates badges in-place, no full re-render) ──
+function updateCountdownBadges() {
+  if (!_calEvents.length) return;
+
+  const cards = document.querySelectorAll('.cal-event-card');
+  const filtered = _calFilter === 'ALL'
+    ? _calEvents
+    : _calEvents.filter(e => e.currency === _calFilter);
+
+  cards.forEach((card, i) => {
+    const ev = filtered[i];
+    if (!ev) return;
+    const badge = card.querySelector('.cal-countdown');
+    if (!badge) return;
+    const cd = calCountdown(ev.event_time);
+    badge.textContent = `🕐 ${cd.label}`;
+    badge.className   = `cal-countdown${cd.cls ? ' ' + cd.cls : ''}`;
+  });
 }
- 
+
+function startCalCountdownTimer() {
+  if (_calCountdownTimer) clearInterval(_calCountdownTimer);
+  // Update countdown badges every 30 seconds (lightweight — no full re-render)
+  _calCountdownTimer = setInterval(updateCountdownBadges, 30 * 1000);
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────
 async function loadCalendar(forceRefresh = false) {
   const list = document.getElementById('cal-list');
   if (!list) return;
- 
-  list.innerHTML = '<div class="cal-loading"><div class="cal-spinner"></div><span>Loading calendar events…</span></div>';
- 
+
+  // Only show loading spinner on first load, not on background refreshes
+  if (!_calEvents.length) {
+    list.innerHTML = '<div class="cal-loading"><div class="cal-spinner"></div><span>Loading calendar events…</span></div>';
+  }
+
   try {
     const url = '/api/calendar' + (forceRefresh ? '?refresh=1' : '');
-    const res = await fetch(url);
+    const res  = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
- 
+
     if (data.error) throw new Error(data.error);
- 
+
     _calEvents = data.events || [];
     renderCalendar();
     startCalCountdownTimer();
   } catch (e) {
     console.error('Calendar load error:', e);
-    list.innerHTML = `<div class="cal-empty">Could not load calendar — ${e.message}</div>`;
+    if (!_calEvents.length) {
+      list.innerHTML = `<div class="cal-empty">Could not load calendar — ${e.message}</div>`;
+    }
+    // If we already have data, silently fail and keep showing old data
   }
 }
- 
-// Load on page init, refresh every 30 minutes
+
+// ── Init ──────────────────────────────────────────────────────────────────
 loadCalendar();
-setInterval(() => loadCalendar(), 30 * 60 * 1000);
+
+// Refresh data every 30 minutes (calendar data doesn't change often)
+if (_calRefreshTimer) clearInterval(_calRefreshTimer);
+_calRefreshTimer = setInterval(() => loadCalendar(), 30 * 60 * 1000);
 
 buildGrid();
 setInterval(updateClock, 1000);
