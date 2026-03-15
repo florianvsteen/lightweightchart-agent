@@ -512,6 +512,90 @@ def api_macro_news():
         return jsonify({"ok": True, "items": items, "count": len(items)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+@app.route("/api/macro/pair/<pair_id>")
+def api_macro_pair(pair_id):
+    """
+    AI analysis + sentiment for a single config pair.
+    Uses tools.ai.ask() with market context focused on that pair.
+    Also fetches news from tools.news (your existing yfinance news module).
+    """
+    import json
+    from tools.ai     import ask
+    from tools.market import get_market_snapshot, INSTRUMENTS
+    from tools.news   import get_news   # your existing pair news module
+ 
+    pair_id = pair_id.upper()
+ 
+    # Validate it's a known pair
+    if pair_id not in INSTRUMENTS:
+        return jsonify({"ok": False, "error": f"Unknown pair: {pair_id}"}), 400
+ 
+    meta  = INSTRUMENTS[pair_id]
+    snap  = get_market_snapshot()
+    d     = snap.get(pair_id, {})
+    price = d.get("last")
+    chg_p = d.get("change_p")
+ 
+    # Build price context string
+    price_ctx = ""
+    if price is not None:
+        sign = "+" if (chg_p or 0) >= 0 else ""
+        price_ctx = f"{pair_id} ({meta['label']}) is at {price} ({sign}{chg_p:.2f}% today)."
+ 
+    # Fetch pair-specific news for context
+    news_items = get_news(pair_id, yf_ticker=meta.get("sym"))
+    news_ctx = ""
+    if news_items:
+        headlines = "\n".join(f"- {n['headline']}" for n in news_items[:5])
+        news_ctx  = f"\n\nRecent headlines:\n{headlines}"
+ 
+    prompt = (
+        f"You are a macro FX/trading analyst. Analyze this instrument:\n\n"
+        f"{price_ctx}{news_ctx}\n\n"
+        "Respond ONLY with valid JSON (no markdown):\n"
+        '{\n'
+        '  "text": "<2-3 sentence macro analysis of this specific instrument right now, '
+        'citing price action, key driver, and what to watch>",\n'
+        '  "sentiment": "<Bullish | Bearish | Neutral>"\n'
+        '}'
+    )
+ 
+    raw  = ask(prompt, max_tokens=300, temperature=0.3)
+    data = {}
+    try:
+        import re
+        cleaned = re.sub(r"^```[a-z]*\n?", "", raw.strip())
+        cleaned = re.sub(r"\n?```$", "", cleaned)
+        data    = json.loads(cleaned)
+    except Exception:
+        pass
+ 
+    return jsonify({
+        "ok":   True,
+        "pair": pair_id,
+        "data": {
+            "text":      data.get("text", ""),
+            "sentiment": data.get("sentiment", "Neutral"),
+            "news":      news_items[:5],
+        }
+    })
+ 
+ 
+@app.route("/api/news/<pair_id>")
+def api_pair_news(pair_id):
+    """
+    Expose your existing tools/news.py pair news for the Deep Dive sidebar.
+    Re-uses the same get_news() function used by chart views.
+    """
+    from tools.news   import get_news
+    from tools.market import INSTRUMENTS
+ 
+    pair_id = pair_id.upper()
+    meta    = INSTRUMENTS.get(pair_id, {})
+    articles = get_news(pair_id, yf_ticker=meta.get("sym"))
+    return jsonify({"ok": True, "pair": pair_id, "articles": articles})
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
