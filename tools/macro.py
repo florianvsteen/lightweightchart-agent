@@ -119,7 +119,7 @@ def get_ai_overview(force: bool = False) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 #  MODULE 2 — Market Mood (sentiment gauge)
 # ══════════════════════════════════════════════════════════════════════════════
-MOOD_OPTIONS = ["RISK-ON", "NEUTRAL", "RISK-OFF", "EXTREME FEAR", "EUPHORIA"]
+MOOD_OPTIONS = ["EXTREME FEAR", "STRONG RISK-OFF", "RISK-OFF", "RISK-NEUTRAL", "NEUTRAL", "RISK-ON", "STRONG RISK-ON", "EUPHORIA"]
 
 def get_market_mood(force: bool = False) -> dict:
     """
@@ -144,7 +144,7 @@ def get_market_mood(force: bool = False) -> dict:
         f"The trader is watching: {pairs}.\n\n"
         "Respond ONLY with valid JSON (no markdown, no extra text):\n"
         '{\n'
-        '  "label": "<one of: RISK-ON | NEUTRAL | RISK-OFF | EXTREME FEAR | EUPHORIA>",\n'
+        '  "label": "<one of: EXTREME FEAR | STRONG RISK-OFF | RISK-OFF | RISK-NEUTRAL | NEUTRAL | RISK-ON | STRONG RISK-ON | EUPHORIA>",\n'
         '  "score": <float from -1.0 (extreme fear) to 1.0 (euphoria)>,\n'
         '  "explanation": "<2-3 sentences explaining the sentiment reading, citing specific data>"\n'
         '}'
