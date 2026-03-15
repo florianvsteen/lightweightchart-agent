@@ -112,30 +112,46 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
-  min-height: 0;
+  overflow: hidden; min-height: 0;
 }
 #dd-news-header {
-  padding: 14px 18px 10px;
-  border-bottom: 1px solid var(--border);
-  font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 800; color: #fff;
-  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 16px 18px 12px;
+  font-family: 'Syne', sans-serif; font-size: 0.9rem; font-weight: 800; color: #fff;
   flex-shrink: 0;
 }
-#dd-news-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+#dd-news-list {
+  flex: 1; overflow-y: auto;
+  padding: 0 12px 12px;
+  scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+  display: flex; flex-direction: column; gap: 8px;
+}
 #dd-news-list::-webkit-scrollbar { width: 3px; }
-#dd-news-list::-webkit-scrollbar-thumb { background: var(--border2); }
-.dd-news-item { padding: 10px 18px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px; }
-.dd-news-item:hover { background: rgba(255,255,255,0.03); }
-.dd-news-meta { display: flex; align-items: center; gap: 6px; }
-.dd-news-source { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.06em; }
-.dd-news-age    { font-size: 0.48rem; color: #333; margin-left: auto; }
-.dd-news-sentiment { font-size: 0.46rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 5px; border-radius: 10px; border: 1px solid; }
-.dd-news-sentiment.bullish { border-color: rgba(90,240,196,0.4); color: var(--accent); }
-.dd-news-sentiment.bearish { border-color: rgba(240,90,126,0.4); color: var(--accent2); }
-.dd-news-sentiment.neutral { border-color: var(--border2); color: var(--muted); }
-.dd-news-headline { font-size: 0.68rem; font-weight: 700; color: var(--text); line-height: 1.4; }
-.dd-news-summary  { font-size: 0.58rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#dd-news-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Each item is its own card */
+.dd-news-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.dd-news-item:hover { background: #13131a; border-color: var(--border2); }
+
+.dd-news-meta { display: flex; align-items: center; gap: 8px; }
+.dd-news-favicon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
+.dd-news-source { font-size: 0.58rem; color: var(--text); letter-spacing: 0.04em; font-weight: 700; }
+.dd-news-age { font-size: 0.55rem; color: var(--muted); margin-left: auto; white-space: nowrap; }
+.dd-news-open { color: var(--muted); font-size: 0.7rem; opacity: 0.4; flex-shrink: 0; transition: all 0.15s; }
+.dd-news-item:hover .dd-news-open { opacity: 1; color: var(--accent); }
+.dd-news-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.dd-news-sentiment-icon { flex-shrink: 0; margin-top: 2px; color: var(--muted); opacity: 0.4; }
+.dd-news-sentiment-icon.bullish { color: var(--accent); opacity: 1; }
+.dd-news-sentiment-icon.bearish { color: var(--accent2); opacity: 1; }
+.dd-news-headline { font-size: 0.72rem; font-weight: 700; color: #fff; line-height: 1.4; }
+.dd-news-summary { font-size: 0.62rem; color: var(--muted); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ── Right column panels ── */
 /* AI Overview */
@@ -810,39 +826,50 @@ function renderPulse(d) {
 }
 
 // ── News ──
-async function loadNews() {
-  try {
-    const r=await fetch(`/api/news/${PAIR_ID}`); const d=await r.json();
-    const list=document.getElementById('dd-news-list');
-    const items=d.articles||[];
-    if(!items.length){list.innerHTML='<div style="padding:16px 22px;font-size:0.58rem;color:var(--muted)">No news available</div>';return;}
-    list.innerHTML=items.map(n=>`
-      <div class="dd-news-item" onclick="window.open('${n.link||'#'}','_blank')">
-        <div class="dd-news-meta">
-          <span class="dd-news-source">${n.source||''}</span>
-          <span class="dd-news-age">${n.age||''}</span>
-          ${n.sentiment?`<span class="dd-news-sentiment ${n.sentiment}">${n.sentiment}</span>`:''}
-        </div>
-        <div class="dd-news-headline">${n.headline||''}</div>
-        ${n.summary?`<div class="dd-news-summary">${n.summary}</div>`:''}
-      </div>`).join('');
-  } catch(e){document.getElementById('dd-news-list').innerHTML='<div style="padding:16px 22px;font-size:0.58rem;color:var(--muted)">Could not load news</div>';}
+function sentimentIcon(s) {
+  const cls = (s || '').toLowerCase();
+  if (cls === 'bullish') return `<svg class="dd-news-sentiment-icon bullish" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`;
+  if (cls === 'bearish') return `<svg class="dd-news-sentiment-icon bearish" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>`;
+  return `<svg class="dd-news-sentiment-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
 }
 
-// ── Side nav ──
-{ const nav=document.getElementById('side-nav'),tip=document.getElementById('nav-tooltip'),btn=document.getElementById('nav-collapse-btn');
-  if(localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
-  btn.addEventListener('click',()=>{nav.classList.toggle('collapsed');localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0');});
-  document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('mouseenter',e=>{if(!nav.classList.contains('collapsed'))return;tip.textContent=i.dataset.label||'';tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px';tip.classList.add('visible');});i.addEventListener('mouseleave',()=>tip.classList.remove('visible'));});
-  document.querySelectorAll('.nav-item').forEach(i=>{const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/';i.classList.toggle('active',h==='/macro');});}
+async function loadNews() {
+  const list = document.getElementById('dd-news-list');
+  try {
+    const r = await fetch(`/api/news/${PAIR_ID}`);
+    const d = await r.json();
+    const items = d.articles || [];
 
-// ── Init ──
-(async()=>{
-  setPairIcon(PAIR_ID);
-  await loadSnapshot();
-  await Promise.all([loadChart(), loadAnalysis(), loadModules(), loadNews()]);
-})();
-setInterval(loadSnapshot, 5*60*1000);
-</script>
-</body>
-</html>
+    if (!items.length) {
+      list.innerHTML = '<div style="padding:16px;font-size:0.58rem;color:var(--muted)">No news available</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(n => {
+      const title  = n.headline || n.title || '';
+      const summary= n.summary  || '';
+      const source = n.source   || n.domain || '';
+      const domain = n.domain   || source;
+      const age    = n.age_str  || n.age    || '';
+      const link   = n.link     || n.url    || '#';
+      const sent   = n.sentiment|| '';
+
+      return `
+        <div class="dd-news-item" onclick="window.open('${link}','_blank')">
+          <div class="dd-news-meta">
+            <img class="dd-news-favicon" src="https://www.google.com/s2/favicons?sz=32&domain=${domain}" onerror="this.style.display='none'">
+            <span class="dd-news-source">${source}</span>
+            <span class="dd-news-age">${age}</span>
+            <span class="dd-news-open">↗</span>
+          </div>
+          <div class="dd-news-title-row">
+            ${sentimentIcon(sent)}
+            <div class="dd-news-headline">${title}</div>
+          </div>
+          ${summary ? `<div class="dd-news-summary">${summary}</div>` : ''}
+        </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="padding:16px;font-size:0.58rem;color:var(--muted)">Could not load news</div>';
+  }
+}
