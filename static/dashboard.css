@@ -464,7 +464,7 @@ footer {
   grid-template-columns: 1fr 400px;
   gap: 12px;
   padding: 0 32px;
-  align-items: start;
+  align-items: stretch;  /* ← both panels grow to match the taller one */
 }
 
 #cstrength-panel,
@@ -544,8 +544,8 @@ footer {
   display: flex;
   flex-direction: column;
   min-height: 280px;
-  max-height: 280px;
-  height: 280px;
+  max-height: unset;   /* ← remove fixed height cap so it stretches */
+  height: 100%;        /* ← fill the grid row height */
   overflow: hidden;
 }
 
