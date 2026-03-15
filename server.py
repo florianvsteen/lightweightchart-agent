@@ -114,10 +114,12 @@ class PairServer:
         if not self.ticker:
             raise ValueError(f"[{pair_id}] No ticker configured for provider '{_provider}'")
 
-        self._alerted_file = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            f".alerted_{pair_id}.json"
-        )
+        # Store alert state in /app/data so it persists across container redeploys.
+        # The docker-compose volume mount is ./data:/app/data — files written to
+        # /app (the default) are inside the container layer and wiped on redeploy.
+        _data_dir = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+        os.makedirs(_data_dir, exist_ok=True)
+        self._alerted_file = os.path.join(_data_dir, f".alerted_{pair_id}.json")
         self.last_alerted: dict[str, int] = self._load_alerted()
         self.last_active_zone: dict[str, dict] = {}
 
