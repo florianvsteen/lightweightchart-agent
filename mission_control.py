@@ -511,14 +511,14 @@ def api_macro_all():
  
 @app.route("/api/macro/news")
 def api_macro_news():
-    """Live news headlines from RSS feeds."""
+    """Global macro headlines for the Macro Desk overview."""
     try:
+        from tools.news_macro import get_headlines as get_macro_headlines, format_age as fmt
         limit = int(request.args.get("limit", 30))
         force = request.args.get("refresh") == "1"
-        items = get_headlines(limit=limit, force=force)
-        # Add human-readable age
+        items = get_macro_headlines(limit=limit, force=force)
         for item in items:
-            item["age_str"] = format_age(item.get("age_min", 0))
+            item["age_str"] = fmt(item.get("age_min", 0))
         return jsonify({"ok": True, "items": items, "count": len(items)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -595,17 +595,30 @@ def api_macro_pair(pair_id):
  
 @app.route("/api/news/<pair_id>")
 def api_pair_news(pair_id):
-    """
-    Expose your existing tools/news.py pair news for the Deep Dive sidebar.
-    Re-uses the same get_news() function used by chart views.
-    """
-    from tools.news   import get_news
-    from tools.market import INSTRUMENTS
+    """Pair-specific news combining RSS relevance scoring + yfinance."""
+    from tools.news_macro import get_pair_headlines, format_age as fmt
+    from tools.news       import get_news
+    from tools.market     import INSTRUMENTS
  
-    pair_id = pair_id.upper()
-    meta    = INSTRUMENTS.get(pair_id, {})
-    articles = get_news(pair_id, yf_ticker=meta.get("sym"))
-    return jsonify({"ok": True, "pair": pair_id, "articles": articles})
+    pair_id  = pair_id.upper()
+    meta     = INSTRUMENTS.get(pair_id, {})
+ 
+    rss_items = get_pair_headlines(pair_id, limit=25)
+    for item in rss_items:
+        item["age_str"] = fmt(item.get("age_min", 0))
+        item["headline"] = item.get("title", "")
+        item["link"]     = item.get("url", "")
+ 
+    yf_items = get_news(pair_id, yf_ticker=meta.get("sym"))
+ 
+    rss_titles = {i["title"].lower()[:60] for i in rss_items}
+    merged = list(rss_items)
+    for item in yf_items:
+        if item.get("headline", "")[:60].lower() not in rss_titles:
+            item["title"] = item.get("headline", "")
+            merged.append(item)
+ 
+    return jsonify({"ok": True, "pair": pair_id, "articles": merged[:30]})
  
  
 @app.route("/api/macro/pair/<pair_id>/modules")
