@@ -5,212 +5,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Macro Desk — The Inner Flows</title>
 <link rel="stylesheet" href="/static/dashboard.css">
-<script>
-const INSTRUMENTS_FROM_CONFIG = {{ instruments_js | safe }};
-</script>
+<script>const INSTRUMENTS_FROM_CONFIG = {{ instruments_js | safe }};</script>
 <style>
-/* ── Page layout ── */
 #main-content { overflow-y: auto; }
 
-/* ── Page header ── */
+/* ── Header ── */
 #macro-header {
-  padding: 24px 32px 20px;
+  padding: 28px 32px 20px;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
   flex-shrink: 0;
-  gap: 16px;
-  flex-wrap: wrap;
 }
-.macro-page-title {
+#macro-title {
   font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 2rem;
-  color: #fff;
-  letter-spacing: -0.01em;
-  line-height: 1;
+  font-weight: 800; font-size: 2.6rem;
+  color: var(--accent); line-height: 1; margin-bottom: 6px;
 }
-.macro-page-sub { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase; margin-top: 4px; }
+#macro-sub { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.04em; }
 
-#macro-refresh-btn {
-  background: none;
+/* ── Summary bar ── */
+#summary-bar {
+  display: flex; align-items: center; gap: 0;
   border: 1px solid var(--border2);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-  font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  padding: 6px 14px;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-#macro-refresh-btn:hover,
-#macro-refresh-btn.loading { color: var(--accent); border-color: rgba(90,240,196,0.4); }
-.spin { animation: spin 0.8s linear infinite; display: inline-block; }
-
-/* ── Ticker strip ── */
-#ticker-strip {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
+  border-radius: var(--radius);
+  margin: 20px 32px;
+  background: var(--surface);
+  overflow: hidden;
   flex-shrink: 0;
 }
-#ticker-strip::-webkit-scrollbar { display: none; }
-.ticker-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 20px;
-  border-right: 1px solid var(--border);
-  white-space: nowrap;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: background 0.15s;
+.summary-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 24px;
+  border-right: 1px solid var(--border2);
+  flex: 1;
 }
-.ticker-item:hover { background: rgba(255,255,255,0.03); }
-.ticker-name { font-size: 0.56rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
-.ticker-price { font-size: 0.8rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-.ticker-chg { font-size: 0.6rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
-.ticker-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.1); }
-.ticker-chg.down { color: var(--accent2); background: rgba(240,90,126,0.1); }
-.ticker-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
+.summary-item:last-child { border-right: none; }
+.summary-label { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.08em; white-space: nowrap; }
+.summary-value {
+  font-size: 0.75rem; font-weight: 700; padding: 2px 10px;
+  border-radius: 20px; border: 1px solid; white-space: nowrap;
+}
+.summary-value.bullish  { color: var(--accent);  border-color: rgba(90,240,196,0.4); background: rgba(90,240,196,0.08); }
+.summary-value.bearish  { color: var(--accent2); border-color: rgba(240,90,126,0.4); background: rgba(240,90,126,0.08); }
+.summary-value.neutral  { color: var(--muted);   border-color: var(--border2); background: none; }
+.summary-value.number   { color: var(--accent);  border-color: rgba(90,240,196,0.4); background: rgba(90,240,196,0.08); }
+.summary-value.time     { color: var(--blue);    border-color: rgba(90,158,240,0.4); background: rgba(90,158,240,0.08); }
 
-/* ── Main two-column grid ── */
-#macro-grid {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 1px;
-  background: var(--border);
-}
-#macro-left  { display: flex; flex-direction: column; background: var(--bg); border-right: 1px solid var(--border); }
-#macro-right { display: flex; flex-direction: column; background: var(--bg); }
-
-/* ── Chart panel ── */
-#chart-panel { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-#chart-symbol-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-#chart-symbol-name { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.5rem; color: #fff; line-height: 1; }
-#chart-symbol-chg { font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
-#chart-symbol-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.1); }
-#chart-symbol-chg.down { color: var(--accent2); background: rgba(240,90,126,0.1); }
-#chart-symbol-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
-.chart-period-btn {
-  background: none; border: 1px solid var(--border2); border-radius: var(--radius-sm);
-  color: var(--muted); cursor: pointer; font-family: 'Space Mono', monospace;
-  font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em;
-  padding: 2px 8px; margin-left: auto; transition: all 0.15s;
-}
-.chart-period-btn:hover { color: #ccc; border-color: #555; }
-.chart-period-btn.active { color: var(--accent); border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
-#chart-symbol-selector { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
-.sym-btn {
-  background: none; border: 1px solid var(--border2); border-radius: var(--radius-sm);
-  color: var(--muted); cursor: pointer; font-family: 'Space Mono', monospace;
-  font-size: 0.52rem; font-weight: 700; letter-spacing: 0.06em;
-  padding: 2px 8px; transition: all 0.15s;
-}
-.sym-btn:hover { color: #bbb; border-color: #555; }
-.sym-btn.active { color: var(--accent); border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
-#chart-wrap { height: 180px; position: relative; }
-#chart-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
-
-/* ── News panel ── */
-#news-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-#news-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 20px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-#news-title { font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 800; color: #fff; }
-#news-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
-#news-list::-webkit-scrollbar { width: 3px; }
-#news-list::-webkit-scrollbar-thumb { background: var(--border2); }
-.news-item { padding: 10px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px; }
-.news-item:hover { background: rgba(255,255,255,0.03); }
-.news-meta { display: flex; align-items: center; gap: 6px; }
-.news-domain { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.06em; display: flex; align-items: center; gap: 4px; }
-.news-favicon { width: 11px; height: 11px; border-radius: 2px; }
-.news-age { font-size: 0.48rem; color: #333; letter-spacing: 0.06em; margin-left: auto; }
-.news-headline { font-size: 0.68rem; font-weight: 700; color: var(--text); line-height: 1.4; }
-.news-summary { font-size: 0.58rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-/* ── AI Overview ── */
-#overview-panel {
-  padding: 18px 24px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-shrink: 0;
-}
-#overview-label {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 0.56rem; font-weight: 700; color: var(--accent);
-  letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 8px;
-}
-#overview-text { font-size: 0.7rem; color: var(--text); line-height: 1.7; opacity: 0.9; }
-#overview-age { font-size: 0.5rem; color: var(--muted); margin-top: 5px; letter-spacing: 0.08em; }
-
-/* ── Module row: Mood + Policy ── */
-#module-row {
-  display: grid; grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.module-panel { padding: 16px 20px; border-right: 1px solid var(--border); position: relative; }
-.module-panel:last-child { border-right: none; }
-.module-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 10px; }
-.module-age { position: absolute; top: 14px; right: 16px; font-size: 0.48rem; color: #333; letter-spacing: 0.06em; }
-.gauge-wrap { display: flex; align-items: center; gap: 14px; }
-.gauge-svg-wrap { flex-shrink: 0; width: 90px; height: 52px; }
-.gauge-reading { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; line-height: 1.1; }
-.gauge-desc { font-size: 0.62rem; color: var(--text); line-height: 1.55; opacity: 0.8; margin-top: 5px; }
-.policy-word { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.08em; margin-bottom: 7px; }
-
-/* ── Bottom row: Flow / Bearing / Pulse ── */
-#bottom-row { display: grid; grid-template-columns: 1fr 1fr 1fr; flex-shrink: 0; }
-.bottom-panel { padding: 14px 18px; border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
-.bottom-panel:last-child { border-right: none; }
-.bearing-sparkline { width: 100%; height: 55px; margin: 5px 0; display: block; }
-.bearing-label { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.06em; margin: 4px 0; }
-.slider-wrap { margin: 5px 0 6px; }
-.slider-track { height: 4px; border-radius: 2px; position: relative; }
-.slider-thumb { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); transition: left 0.4s ease; }
-.slider-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.46rem; color: var(--muted); letter-spacing: 0.06em; }
-.track-flow  { background: linear-gradient(90deg, #3a3a50 0%, var(--accent) 50%, #f0a028 100%); }
-.track-pulse { background: linear-gradient(90deg, var(--border2) 0%, var(--accent) 35%, #f0a028 65%, #f05050 100%); }
-.bullet-list { list-style: none; display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
-.bullet-list li { font-size: 0.58rem; color: var(--muted); line-height: 1.4; display: flex; gap: 5px; }
-.bullet-list li::before { content: '·'; color: var(--border2); }
-
-/* ── Pair cards section ── */
-#pairs-section { padding: 24px 32px 32px; }
-#pairs-section-title {
-  font-size: 0.58rem; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase;
-  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
-}
-#pairs-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+/* ── Pair cards grid ── */
 #pairs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+  padding: 0 32px 32px;
 }
 
-/* Pair card — uses dashboard.css .card style as base */
+/* ── Pair card ── */
 .pair-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition: background 0.2s, border-color 0.2s;
-  position: relative;
-  overflow: hidden;
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 14px;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative; overflow: hidden;
 }
 .pair-card:hover { background: #13131a; border-color: var(--border2); }
-
-/* Left accent bar by sentiment */
 .pair-card::before {
   content: '';
   position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
@@ -220,75 +78,95 @@ const INSTRUMENTS_FROM_CONFIG = {{ instruments_js | safe }};
 .pair-card.bearish::before { background: var(--accent2); }
 .pair-card.neutral::before { background: var(--muted); }
 
-.pair-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.pair-card-name {
+/* Card top row */
+.pc-top { display: flex; align-items: center; gap: 10px; }
+.pc-name {
   font-family: 'Syne', sans-serif; font-weight: 800;
-  font-size: 1.3rem; color: #fff; letter-spacing: 0.03em; line-height: 1;
+  font-size: 1.4rem; color: #fff; letter-spacing: 0.02em;
 }
-.pair-card-price { font-size: 0.85rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-.pair-card-chg { font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: var(--radius-sm); }
-.pair-card-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.08); }
-.pair-card-chg.down { color: var(--accent2); background: rgba(240,90,126,0.08); }
-.pair-card-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
-.pair-card-sentiment {
-  font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 2px 8px; border-radius: 20px; border: 1px solid;
-  margin-left: auto;
+.pc-chg { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm); }
+.pc-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.1); }
+.pc-chg.down { color: var(--accent2); background: rgba(240,90,126,0.1); }
+.pc-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
+.pc-bias {
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2px 9px; border-radius: 20px; border: 1px solid; margin-left: auto;
 }
-.pair-card-sentiment.Bullish { border-color: rgba(90,240,196,0.4);  color: var(--accent);  background: rgba(90,240,196,0.05); }
-.pair-card-sentiment.Bearish { border-color: rgba(240,90,126,0.4);  color: var(--accent2); background: rgba(240,90,126,0.05); }
-.pair-card-sentiment.Neutral { border-color: var(--border2); color: var(--muted); }
+.pc-bias.Bullish { color: var(--accent);  border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
+.pc-bias.Bearish { color: var(--accent2); border-color: rgba(240,90,126,0.5); background: rgba(240,90,126,0.06); }
+.pc-bias.Neutral { color: var(--muted);   border-color: var(--border2); }
 
-/* AI box — same as .cal-ai-box */
-.pair-ai-box {
+/* Confidence bar */
+.pc-conf-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.pc-conf-label { font-size: 0.58rem; font-weight: 700; color: var(--text); }
+.pc-conf-pct   { font-size: 0.58rem; font-weight: 700; color: var(--text); }
+.pc-conf-track {
+  height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden;
+}
+.pc-conf-fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width 0.5s ease;
+}
+.pc-updated { font-size: 0.52rem; color: var(--muted); letter-spacing: 0.06em; display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+
+/* AI box */
+.pc-ai {
   background: rgba(90,240,196,0.03);
   border: 1px solid rgba(90,240,196,0.1);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 12px 14px;
 }
-.pair-ai-label {
-  display: flex; align-items: center; gap: 5px;
+.pc-ai-label {
   font-size: 0.52rem; font-weight: 700; color: var(--accent);
-  letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 5px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 5px;
 }
-.pair-ai-text { font-size: 0.68rem; color: var(--text); line-height: 1.65; opacity: 0.85; }
-
-/* News preview */
-.pair-news-preview { display: flex; flex-direction: column; gap: 4px; }
-.pair-news-item { font-size: 0.6rem; color: var(--muted); line-height: 1.45; display: flex; gap: 6px; }
-.pair-news-item::before { content: '·'; color: var(--border2); flex-shrink: 0; margin-top: 1px; }
+.pc-ai-text { font-size: 0.68rem; color: var(--text); line-height: 1.65; opacity: 0.88; }
+.pc-ai-more { font-size: 0.62rem; color: var(--accent); cursor: pointer; margin-top: 4px; display: inline-block; }
+.pc-ai-more:hover { text-decoration: underline; }
 
 /* Action buttons */
-.pair-card-actions { display: flex; gap: 8px; }
-.pair-btn {
-  flex: 1; padding: 7px 12px; border-radius: var(--radius-sm);
+.pc-actions { display: flex; gap: 8px; }
+.pc-btn {
+  flex: 1; padding: 8px 12px; border-radius: var(--radius-sm);
   cursor: pointer; font-family: 'Space Mono', monospace;
   font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
   transition: all 0.15s; display: flex; align-items: center;
   justify-content: center; gap: 6px;
   border: 1px solid var(--border2); background: none; color: var(--muted);
 }
-.pair-btn:hover { border-color: #666; color: #ccc; }
-.pair-btn.primary {
-  background: var(--accent); border-color: var(--accent);
-  color: #000; font-weight: 700;
+.pc-btn:hover { border-color: #666; color: #ccc; }
+.pc-btn.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+.pc-btn.primary:hover { background: #7ff8d8; }
+
+/* News bullets */
+.pc-news { display: flex; flex-direction: column; gap: 5px; padding-top: 4px; }
+.pc-news-item {
+  font-size: 0.6rem; color: var(--muted); line-height: 1.45;
+  display: flex; gap: 7px;
 }
-.pair-btn.primary:hover { background: #7ff8d8; border-color: #7ff8d8; }
+.pc-news-item::before { content: '·'; color: rgba(90,240,196,0.5); flex-shrink: 0; margin-top: 1px; }
+
+/* Quick overview expansion */
+.pc-quick {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.pc-quick-stat { display: flex; flex-direction: column; gap: 2px; }
+.pc-quick-stat-label { font-size: 0.46rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+.pc-quick-stat-val   { font-size: 0.8rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 
 /* Loading skeleton */
-.skel {
-  background: linear-gradient(90deg, var(--border) 0%, var(--border2) 50%, var(--border) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: 4px; display: block;
-}
+.skel { background: linear-gradient(90deg, var(--border) 0%, var(--border2) 50%, var(--border) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; display: block; }
 @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- Side Nav -->
   <nav id="side-nav">
     <div id="side-nav-logo">
       <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
@@ -329,433 +207,198 @@ const INSTRUMENTS_FROM_CONFIG = {{ instruments_js | safe }};
   <div id="nav-tooltip"></div>
 
   <div id="main-content">
-
     <div id="macro-header">
-      <div>
-        <div class="macro-page-title">Macro Desk</div>
-        <div class="macro-page-sub">AI-powered market intelligence</div>
-      </div>
-      <button id="macro-refresh-btn" onclick="refreshAll()">
-        <svg id="refresh-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        Refresh All
-      </button>
+      <div id="macro-title">AI Market Bias Dashboard</div>
+      <div id="macro-sub">Where deep institutional analysis meets AI-driven clarity</div>
     </div>
 
-    <div id="ticker-strip"></div>
-
-    <div id="macro-grid">
-
-      <!-- LEFT: Chart + News -->
-      <div id="macro-left">
-        <div id="chart-panel">
-          <div id="chart-symbol-row">
-            <div id="chart-symbol-name">—</div>
-            <div id="chart-symbol-chg" class="flat">—</div>
-            <button class="chart-period-btn active" data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
-            <button class="chart-period-btn"        data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
-            <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
-          </div>
-          <div id="chart-symbol-selector"></div>
-          <div id="chart-wrap"><canvas id="chart-canvas"></canvas></div>
-        </div>
-        <div id="news-panel">
-          <div id="news-header">
-            <div id="news-title">News Stories</div>
-            <div class="live-badge"><div class="ldot"></div> LIVE</div>
-          </div>
-          <div id="news-list">
-            <div style="padding:20px;font-size:0.6rem;color:var(--muted);display:flex;gap:8px;align-items:center">
-              <div class="cal-spinner"></div> Loading headlines…
-            </div>
-          </div>
-        </div>
+    <div id="summary-bar">
+      <div class="summary-item">
+        <span class="summary-label">Overall market sentiment:</span>
+        <span class="summary-value neutral" id="summary-sentiment">Loading…</span>
       </div>
-
-      <!-- RIGHT: AI modules -->
-      <div id="macro-right">
-        <div id="overview-panel">
-          <div id="overview-label">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-            AI overview
-          </div>
-          <div id="overview-text"><span class="skel" style="width:100%;height:13px;margin-bottom:5px"></span><span class="skel" style="width:80%;height:13px"></span></div>
-          <div id="overview-age"></div>
-        </div>
-
-        <div id="module-row">
-          <div class="module-panel">
-            <div class="module-label">Market Mood</div>
-            <div class="module-age" id="mood-age"></div>
-            <div class="gauge-wrap">
-              <div class="gauge-svg-wrap">
-                <svg viewBox="0 0 90 52" width="90" height="52">
-                  <path d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#1e1e28" stroke-width="8" stroke-linecap="round"/>
-                  <path id="mood-arc" d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#4a4a60" stroke-width="8" stroke-linecap="round" stroke-dasharray="113" stroke-dashoffset="113"/>
-                  <line id="mood-needle" x1="45" y1="46" x2="45" y2="14" stroke="#fff" stroke-width="1.5" stroke-linecap="round" style="transform-origin:45px 46px;transform:rotate(-90deg);transition:transform 0.6s ease"/>
-                  <circle cx="45" cy="46" r="3" fill="#fff"/>
-                </svg>
-              </div>
-              <div>
-                <div class="gauge-reading" id="mood-label">—</div>
-                <div class="gauge-desc" id="mood-desc"><span class="skel" style="width:150px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:110px;height:9px;display:block"></span></div>
-              </div>
-            </div>
-          </div>
-          <div class="module-panel">
-            <div class="module-label">Market Policy</div>
-            <div class="module-age" id="policy-age"></div>
-            <div class="policy-word" id="policy-label">—</div>
-            <div class="gauge-desc" id="policy-desc"><span class="skel" style="width:150px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:110px;height:9px;display:block"></span></div>
-            <div style="margin-top:7px;font-size:0.57rem;color:var(--muted);line-height:1.5" id="policy-outlook"></div>
-          </div>
-        </div>
-
-        <div id="bottom-row">
-          <div class="bottom-panel">
-            <div class="module-label">Flow</div>
-            <div class="module-age" id="flow-age"></div>
-            <canvas id="flow-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="flow-label">—</div>
-            <div class="slider-wrap">
-              <div class="slider-track track-flow"><div class="slider-thumb" id="flow-thumb" style="left:50%"></div></div>
-              <div class="slider-labels"><span>Thin</span><span>Healthy</span><span>Crowded</span></div>
-            </div>
-            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="flow-desc"></div>
-          </div>
-          <div class="bottom-panel">
-            <div class="module-label">Bearing</div>
-            <div class="module-age" id="bearing-age"></div>
-            <canvas id="bearing-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="bearing-label">—</div>
-            <ul class="bullet-list" id="bearing-bullets"></ul>
-          </div>
-          <div class="bottom-panel">
-            <div class="module-label">Pulse</div>
-            <div class="module-age" id="pulse-age"></div>
-            <canvas id="pulse-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="pulse-label">—</div>
-            <div class="slider-wrap">
-              <div class="slider-track track-pulse"><div class="slider-thumb" id="pulse-thumb" style="left:20%"></div></div>
-              <div class="slider-labels"><span>Quiet</span><span>Tradeable</span><span>Wild</span></div>
-            </div>
-            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="pulse-desc"></div>
-          </div>
-        </div>
+      <div class="summary-item">
+        <span class="summary-label">Confidence index:</span>
+        <span class="summary-value number" id="summary-confidence">—</span>
       </div>
-    </div><!-- /#macro-grid -->
-
-    <!-- Pair cards -->
-    <div id="pairs-section">
-      <div id="pairs-section-title">Pair Overview</div>
-      <div id="pairs-grid">
-        <div style="font-size:0.6rem;color:var(--muted);padding:10px;letter-spacing:0.1em;display:flex;gap:8px;align-items:center">
-          <div class="cal-spinner"></div> Loading pair analysis…
-        </div>
+      <div class="summary-item" style="flex:0;white-space:nowrap">
+        <span class="summary-label">Page update:</span>
+        <span class="summary-value time" id="summary-updated">—</span>
       </div>
     </div>
 
-  </div><!-- /#main-content -->
+    <div id="pairs-grid">
+      <div style="grid-column:1/-1;padding:20px;font-size:0.6rem;color:var(--muted);display:flex;gap:8px;align-items:center">
+        <div class="cal-spinner"></div> Loading pair analysis…
+      </div>
+    </div>
+  </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-const MACRO_EXTRAS  = new Set(['VIX','DXY','US10Y','OIL']);
-const CONFIG_PAIRS  = INSTRUMENTS_FROM_CONFIG.filter(k => !MACRO_EXTRAS.has(k));
-const TICKER_KEYS   = INSTRUMENTS_FROM_CONFIG;
+const MACRO_EXTRAS = new Set(['VIX','DXY','US10Y','OIL']);
+const CONFIG_PAIRS = INSTRUMENTS_FROM_CONFIG.filter(k => !MACRO_EXTRAS.has(k));
 
 let _snap      = {};
 let _analyses  = {};
-let _chartInst = null;
-let _chartSym  = TICKER_KEYS[0] || 'US30';
-let _chartP    = '1d';
-let _chartI    = '5m';
+let _updateTs  = null;
 
-// ── Helpers ──
 function fmtPrice(v, k) {
   if (v == null) return '—';
-  const fx4 = ['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'];
-  const fx3 = ['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'];
-  if (fx4.includes(k)) return v.toFixed(4);
-  if (fx3.includes(k)) return v.toFixed(3);
-  if (['US10Y','VIX'].includes(k)) return v.toFixed(2);
+  if (['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(k)) return v.toFixed(4);
+  if (['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'].includes(k)) return v.toFixed(3);
   if (v > 1000) return v.toFixed(2);
   return v.toFixed(2);
 }
-function ageStr(m) {
-  if (!m || m >= 999) return '';
-  if (m < 1)  return 'just now';
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m/60)}h ago`;
-}
-function drawSparkline(id, trend, color) {
-  const c = document.getElementById(id);
-  if (!c) return;
-  const w = c.offsetWidth||200, h = c.offsetHeight||55;
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  ctx.clearRect(0,0,w,h);
-  const n=30, data=[];
-  let v=0.5;
-  for(let i=0;i<n;i++){ v+=((Math.random()-0.5)*0.1+trend*0.02); v=Math.max(.05,Math.min(.95,v)); data.push(v); }
-  const xs=w/(n-1);
-  const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,color+'33'); g.addColorStop(1,color+'00');
-  ctx.beginPath();
-  data.forEach((d,i)=>{ const x=i*xs,y=h-d*h; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
-  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
-  ctx.lineTo(w,h); ctx.lineTo(0,h); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
 }
 
-// ── Ticker ──
-function renderTicker(data) {
-  const s = document.getElementById('ticker-strip');
-  s.innerHTML = '';
-  TICKER_KEYS.forEach(k => {
-    const d = data[k]; if (!d || d.last == null) return;
-    const chg = d.change_p||0, cls = chg>0?'up':chg<0?'down':'flat', sign=chg>=0?'+':'';
-    const el = document.createElement('div');
-    el.className = 'ticker-item' + (k===_chartSym?' active':'');
-    el.innerHTML = `<span class="ticker-name">${d.label}</span><span class="ticker-price">${fmtPrice(d.last,k)}</span><span class="ticker-chg ${cls}">${sign}${chg.toFixed(2)}%</span>`;
-    el.onclick = () => { _chartSym=k; document.querySelectorAll('.sym-btn').forEach(b=>b.classList.toggle('active',b.dataset.sym===k)); document.querySelectorAll('.ticker-item').forEach(t=>t.classList.remove('active')); el.classList.add('active'); loadChart(); };
-    s.appendChild(el);
-  });
+function updateSummaryBar() {
+  const sentiments = Object.values(_analyses).map(a => a.sentiment||'Neutral');
+  const bullCount  = sentiments.filter(s => s === 'Bullish').length;
+  const bearCount  = sentiments.filter(s => s === 'Bearish').length;
+  const total      = sentiments.length || 1;
+
+  let overall, cls;
+  if (bullCount / total > 0.6)      { overall = 'Moderately bullish'; cls = 'bullish'; }
+  else if (bearCount / total > 0.6) { overall = 'Moderately bearish'; cls = 'bearish'; }
+  else                               { overall = 'Mixed / Neutral';    cls = 'neutral'; }
+
+  const confidences = Object.values(_analyses).map(a => a.confidence||70);
+  const avgConf     = Math.round(confidences.reduce((a,b)=>a+b,0) / (confidences.length||1));
+
+  document.getElementById('summary-sentiment').textContent  = overall;
+  document.getElementById('summary-sentiment').className    = `summary-value ${cls}`;
+  document.getElementById('summary-confidence').textContent = `${avgConf}%`;
+  document.getElementById('summary-updated').textContent    = _updateTs ? timeAgo(_updateTs) : '—';
 }
 
-// ── Chart ──
-function buildSymSelector() {
-  const sel = document.getElementById('chart-symbol-selector');
-  sel.innerHTML = '';
-  TICKER_KEYS.forEach((k,i) => {
-    const b = document.createElement('button');
-    b.className = 'sym-btn'+(i===0?' active':'');
-    b.dataset.sym = k;
-    b.textContent = k.replace('=X','').replace('-USD','');
-    b.onclick = () => { _chartSym=k; document.querySelectorAll('.sym-btn').forEach(x=>x.classList.toggle('active',x===b)); document.getElementById('chart-symbol-name').textContent=k; loadChart(); };
-    sel.appendChild(b);
-  });
-  document.getElementById('chart-symbol-name').textContent = _chartSym;
-}
-function setPeriod(btn) {
-  document.querySelectorAll('.chart-period-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); _chartP=btn.dataset.p; _chartI=btn.dataset.i; loadChart();
-}
-async function loadChart() {
-  try {
-    const r = await fetch(`/api/macro/chart/${_chartSym}?period=${_chartP}&interval=${_chartI}`);
-    const d = await r.json();
-    if (!d.ok||!d.candles?.length) return;
-    const snap = _snap[_chartSym]||{};
-    const chg  = snap.change_p||0;
-    const color= chg>=0?'#5af0c4':'#f05a7e';
-    document.getElementById('chart-symbol-name').textContent = _chartSym;
-    const ce = document.getElementById('chart-symbol-chg');
-    ce.textContent = snap.last!=null?`${chg>=0?'+':''}${chg.toFixed(2)}%`:'—';
-    ce.className = `chart-symbol-chg ${chg>=0?'up':'down'}`;
-    const labels = d.candles.map(c=>{ const dt=new Date(c.time*1000); return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}); });
-    const prices = d.candles.map(c=>c.close);
-    const ctx = document.getElementById('chart-canvas').getContext('2d');
-    if (_chartInst) { _chartInst.destroy(); _chartInst=null; }
-    _chartInst = new Chart(ctx, {
-      type:'line', data:{labels, datasets:[{data:prices, borderColor:color, backgroundColor:color+'14', borderWidth:1.5, pointRadius:0, tension:0.3, fill:true}]},
-      options:{responsive:true, maintainAspectRatio:false, animation:{duration:300},
-        plugins:{legend:{display:false}, tooltip:{backgroundColor:'rgba(17,17,22,0.95)',borderColor:'#2a2a38',borderWidth:1,titleColor:'#4a4a60',bodyColor:'#c8c8d8',titleFont:{family:'Space Mono',size:9},bodyFont:{family:'Space Mono',size:11},callbacks:{label:c=>` ${c.parsed.y.toFixed(4)}`}}},
-        scales:{x:{grid:{color:'rgba(255,255,255,0.03)',drawTicks:false},border:{display:false},ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:6,maxRotation:0}}, y:{position:'right',grid:{color:'rgba(255,255,255,0.03)',drawTicks:false},border:{display:false},ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:5}}}}
-    });
-  } catch(e) { console.error('chart',e); }
-}
-
-// ── Module renderers ──
-function renderOverview(d) {
-  document.getElementById('overview-text').textContent = d.text||'—';
-  document.getElementById('overview-age').textContent  = d.age_min>0?`Updated ${ageStr(d.age_min)}`:'';
-}
-function renderMood(d) {
-  const label=d.label||'NEUTRAL', score=d.score||0;
-  document.getElementById('mood-needle').style.transform = `rotate(${score*90}deg)`;
-  const arc=document.getElementById('mood-arc');
-  arc.style.strokeDashoffset = 113-(((score+1)/2)*113);
-  const mc={'RISK-ON':'#50c840','NEUTRAL':'#4a4a60','RISK-OFF':'#f05050','EXTREME FEAR':'#e74c3c','EUPHORIA':'#50c840'};
-  arc.style.stroke = mc[label]||'#4a4a60';
-  document.getElementById('mood-label').textContent = label;
-  document.getElementById('mood-label').style.color  = mc[label]||'var(--muted)';
-  document.getElementById('mood-desc').textContent   = d.explanation||'';
-  document.getElementById('mood-age').textContent    = ageStr(d.age_min);
-}
-function renderPolicy(d) {
-  const label=d.label||'NEUTRAL';
-  const pc={'HAWKISH':'#f05050','SLIGHTLY HAWKISH':'#f0a028','NEUTRAL':'var(--muted)','SLIGHTLY DOVISH':'#6060f0','DOVISH':'var(--blue)'};
-  const el=document.getElementById('policy-label'); el.textContent=label; el.style.color=pc[label]||'var(--muted)';
-  document.getElementById('policy-desc').textContent    = d.explanation||'';
-  document.getElementById('policy-outlook').textContent = d.outlook?`→ ${d.outlook}`:'';
-  document.getElementById('policy-age').textContent     = ageStr(d.age_min);
-}
-function renderFlow(d) {
-  const label=d.label||'HEALTHY', score=d.score||0.5;
-  const fc={'THIN':'#4a4a60','HEALTHY':'#5af0c4','CROWDED':'#f0a028'};
-  const el=document.getElementById('flow-label'); el.textContent=label; el.style.color=fc[label]||'var(--muted)';
-  document.getElementById('flow-thumb').style.left=(score*100)+'%';
-  document.getElementById('flow-desc').textContent=d.explanation||'';
-  document.getElementById('flow-age').textContent=ageStr(d.age_min);
-  drawSparkline('flow-sparkline', score>0.5?.3:-.3, fc[label]||'#4a4a60');
-}
-function renderBearing(d) {
-  const label=d.label||'NEUTRAL';
-  const bc={'STRONG UP':'#5af0c4','UP':'#5af0c4','NEUTRAL':'#4a4a60','DOWN':'#f05050','STRONG DOWN':'#f05050'};
-  const el=document.getElementById('bearing-label'); el.textContent=label; el.style.color=bc[label]||'var(--muted)';
-  document.getElementById('bearing-bullets').innerHTML=(d.bullets||[]).map(b=>`<li>${b}</li>`).join('');
-  document.getElementById('bearing-age').textContent=ageStr(d.age_min);
-  drawSparkline('bearing-sparkline', label.includes('UP')?1:label.includes('DOWN')?-1:0, bc[label]||'#4a4a60');
-}
-function renderPulse(d) {
-  const label=d.label||'TRADEABLE', score=d.score||0.5;
-  const vc={'QUIET':'#4a4a60','TRADEABLE':'#5af0c4','WILD':'#f05050'};
-  const el=document.getElementById('pulse-label'); el.textContent=label; el.style.color=vc[label]||'var(--muted)';
-  document.getElementById('pulse-thumb').style.left=(score*100)+'%';
-  document.getElementById('pulse-desc').textContent=d.explanation||'';
-  document.getElementById('pulse-age').textContent=ageStr(d.age_min);
-  drawSparkline('pulse-sparkline',(score-.5)*.5, vc[label]||'#4a4a60');
-}
-
-// ── Pair cards ──
-function renderPairCards() {
+function renderCards() {
   const grid = document.getElementById('pairs-grid');
-  if (!CONFIG_PAIRS.length) { grid.innerHTML = '<div style="font-size:0.6rem;color:var(--muted)">No pairs configured.</div>'; return; }
+  if (!CONFIG_PAIRS.length) { grid.innerHTML = '<div style="font-size:0.6rem;color:var(--muted)">No pairs in config.</div>'; return; }
+
   grid.innerHTML = '';
   CONFIG_PAIRS.forEach(k => {
-    const d    = _snap[k]||{};
-    const anal = _analyses[k]||{};
-    const chg  = d.change_p||0;
-    const cls  = chg>0?'up':chg<0?'down':'flat';
-    const sign = chg>=0?'+':'';
-    const sent = anal.sentiment||'Neutral';
-    const sentC= sent.charAt(0).toUpperCase()+sent.slice(1).toLowerCase();
+    const d    = _snap[k] || {};
+    const anal = _analyses[k] || {};
+    const chg  = d.change_p || 0;
+    const chgCls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+    const sign   = chg >= 0 ? '+' : '';
+    const sent   = anal.sentiment || 'Neutral';
+    const sentC  = sent.charAt(0).toUpperCase() + sent.slice(1).toLowerCase();
+    const conf   = anal.confidence || 0;
 
     const card = document.createElement('div');
     card.className = `pair-card ${sent.toLowerCase()}`;
     card.innerHTML = `
-      <div class="pair-card-top">
-        <div class="pair-card-name">${k}</div>
-        ${d.last!=null?`<span class="pair-card-price">${fmtPrice(d.last,k)}</span>`:''}
-        <span class="pair-card-chg ${cls}">${sign}${chg.toFixed(2)}%</span>
-        <span class="pair-card-sentiment ${sentC}">${sentC}</span>
+      <div class="pc-top">
+        <div class="pc-name">${k}</div>
+        <span class="pc-chg ${chgCls}">${sign}${Math.abs(chg).toFixed(2)}%</span>
+        <span class="pc-bias ${sentC}">${sentC}</span>
       </div>
-      ${anal.text?`
-      <div class="pair-ai-box">
-        <div class="pair-ai-label">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+
+      <div>
+        <div class="pc-conf-row">
+          <span class="pc-conf-label">Confidence</span>
+          <span class="pc-conf-pct">${conf}%</span>
+        </div>
+        <div class="pc-conf-track">
+          <div class="pc-conf-fill" style="width:${conf}%"></div>
+        </div>
+        <div class="pc-updated">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Last update: ${_updateTs ? timeAgo(_updateTs) : '—'}
+        </div>
+      </div>
+
+      ${anal.text ? `
+      <div class="pc-ai">
+        <div class="pc-ai-label">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
           AI Analysis
         </div>
-        <div class="pair-ai-text">${anal.text}</div>
-      </div>` : `<div style="font-size:0.58rem;color:var(--muted);font-style:italic;padding:4px 0">Analysis loading…</div>`}
-      ${anal.news?.length?`
-      <div class="pair-news-preview">
-        ${anal.news.slice(0,3).map(n=>`<div class="pair-news-item">${n.headline}</div>`).join('')}
-      </div>`:''}
-      <div class="pair-card-actions">
-        <button class="pair-btn" onclick="event.stopPropagation();showQuickOverview('${k}',this)">Quick Overview ∨</button>
-        <button class="pair-btn primary" onclick="event.stopPropagation();openDeepDive('${k}')">Deep Dive ↗</button>
+        <div class="pc-ai-text">${anal.text.length > 220 ? anal.text.slice(0,220) + '…' : anal.text}</div>
+        ${anal.text.length > 220 ? `<span class="pc-ai-more" onclick="event.stopPropagation();this.previousElementSibling.textContent='${anal.text.replace(/'/g,"\\'")}';this.remove()">Read more</span>` : ''}
+      </div>` : `<div style="font-size:0.58rem;color:var(--muted);font-style:italic">Analysis loading…</div>`}
+
+      <div class="pc-actions">
+        <button class="pc-btn" onclick="event.stopPropagation();toggleQuick('${k}',this)">Quick Overview ∨</button>
+        <button class="pc-btn primary" onclick="window.location.href='/macro/${k}'">Deep Dive ↗</button>
       </div>
+
+      ${anal.news?.length ? `
+      <div class="pc-news">
+        ${anal.news.slice(0,3).map(n=>`<div class="pc-news-item">${n.headline}</div>`).join('')}
+      </div>` : ''}
     `;
     grid.appendChild(card);
   });
+
+  updateSummaryBar();
 }
 
-function showQuickOverview(k, btn) {
+function toggleQuick(k, btn) {
   const card = btn.closest('.pair-card');
-  let   quick = card.querySelector('.pair-quick');
-  if (quick) { quick.remove(); btn.textContent='Quick Overview ∨'; return; }
-  const d = _snap[k]||{};
-  quick = document.createElement('div');
-  quick.className = 'pair-quick';
-  quick.style.cssText = 'background:rgba(255,255,255,0.02);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;font-size:0.62rem;color:var(--muted);line-height:1.6';
-  quick.innerHTML = `
-    <div style="display:flex;gap:20px;flex-wrap:wrap">
-      ${d.last!=null?`<div><div style="font-size:0.48rem;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:2px">Last</div><div style="color:#fff;font-weight:700">${fmtPrice(d.last,k)}</div></div>`:''}
-      ${d.prev!=null?`<div><div style="font-size:0.48rem;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:2px">Prev Close</div><div style="color:var(--text);font-weight:700">${fmtPrice(d.prev,k)}</div></div>`:''}
-      ${d.change_p!=null?`<div><div style="font-size:0.48rem;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:2px">Day Change</div><div style="color:${d.change_p>=0?'var(--accent)':'var(--accent2)'};font-weight:700">${d.change_p>=0?'+':''}${d.change_p.toFixed(2)}%</div></div>`:''}
-    </div>`;
-  btn.closest('.pair-card-actions').before(quick);
+  const existing = card.querySelector('.pc-quick');
+  if (existing) { existing.remove(); btn.textContent = 'Quick Overview ∨'; return; }
+
+  const d = _snap[k] || {};
+  const el = document.createElement('div');
+  el.className = 'pc-quick';
+  el.innerHTML = `
+    ${d.last!=null?`<div class="pc-quick-stat"><div class="pc-quick-stat-label">Price</div><div class="pc-quick-stat-val">${fmtPrice(d.last,k)}</div></div>`:''}
+    ${d.prev!=null?`<div class="pc-quick-stat"><div class="pc-quick-stat-label">Prev Close</div><div class="pc-quick-stat-val">${fmtPrice(d.prev,k)}</div></div>`:''}
+    ${d.change!=null?`<div class="pc-quick-stat"><div class="pc-quick-stat-label">Change</div><div class="pc-quick-stat-val" style="color:${(d.change_p||0)>=0?'var(--accent)':'var(--accent2)'}">${(d.change_p||0)>=0?'+':''}${(d.change_p||0).toFixed(2)}%</div></div>`:''}
+  `;
+  btn.closest('.pc-actions').after(el);
   btn.textContent = 'Quick Overview ∧';
 }
 
-function openDeepDive(k) {
-  // Navigate to macro detail page for this pair
-  window.location.href = `/macro/${k}`;
-}
-
-// ── News ──
-function renderNews(items) {
-  const list = document.getElementById('news-list');
-  if (!items?.length) { list.innerHTML='<div style="padding:20px;font-size:0.6rem;color:var(--muted)">No headlines available</div>'; return; }
-  list.innerHTML = items.slice(0,40).map(item=>`
-    <div class="news-item" onclick="window.open('${item.url||item.link||'#'}','_blank')">
-      <div class="news-meta">
-        <span class="news-domain">
-          <img class="news-favicon" src="https://www.google.com/s2/favicons?sz=16&domain=${item.domain||''}" onerror="this.style.display='none'">
-          ${item.domain||item.source||''}
-        </span>
-        <span class="news-age">${item.age_str||item.age||''}</span>
-      </div>
-      <div class="news-headline">${item.title||item.headline||''}</div>
-      ${item.summary?`<div class="news-summary">${item.summary}</div>`:''}
-    </div>`).join('');
-}
-
-// ── Load ──
 async function loadSnapshot() {
   try {
-    const r=await fetch('/api/macro/snapshot'); const d=await r.json();
-    if(d.ok){ _snap=d.data; renderTicker(d.data); renderPairCards(); }
-  } catch(e){}
+    const r = await fetch('/api/macro/snapshot');
+    const d = await r.json();
+    if (d.ok) { _snap = d.data; renderCards(); }
+  } catch(e) {}
 }
-async function loadAllModules(force=false) {
-  try {
-    const r=await fetch('/api/macro/all'+(force?'?refresh=1':'')); const d=await r.json();
-    if(!d.ok) return;
-    const m=d.modules||{};
-    if(m.overview) renderOverview(m.overview);
-    if(m.mood)     renderMood(m.mood);
-    if(m.policy)   renderPolicy(m.policy);
-    if(m.flow)     renderFlow(m.flow);
-    if(m.bearing)  renderBearing(m.bearing);
-    if(m.pulse)    renderPulse(m.pulse);
-    if(d.market){ _snap=d.market; renderTicker(d.market); renderPairCards(); }
-  } catch(e){}
-}
-async function loadNews() {
-  try {
-    const r=await fetch('/api/macro/news?limit=40'); const d=await r.json();
-    if(d.ok) renderNews(d.items);
-  } catch(e){}
-}
+
 async function loadPairAnalyses() {
   await Promise.all(CONFIG_PAIRS.map(async k => {
     try {
-      const r=await fetch(`/api/macro/pair/${k}`); const d=await r.json();
-      if(d.ok){ _analyses[k]=d.data; renderPairCards(); }
-    } catch(e){}
+      const r = await fetch(`/api/macro/pair/${k}`);
+      const d = await r.json();
+      if (d.ok) {
+        _analyses[k] = d.data;
+        _updateTs = Date.now();
+        renderCards();
+      }
+    } catch(e) {}
   }));
 }
-async function refreshAll() {
-  const btn=document.getElementById('macro-refresh-btn'), ico=document.getElementById('refresh-icon');
-  btn.classList.add('loading'); ico.classList.add('spin');
-  await Promise.all([loadSnapshot(),loadAllModules(true),loadNews(),loadPairAnalyses()]);
-  loadChart();
-  btn.classList.remove('loading'); ico.classList.remove('spin');
-}
 
-// ── Side nav ──
+// Side nav
 { const nav=document.getElementById('side-nav'),tip=document.getElementById('nav-tooltip'),btn=document.getElementById('nav-collapse-btn');
   if(localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
   btn.addEventListener('click',()=>{ nav.classList.toggle('collapsed'); localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0'); });
-  document.querySelectorAll('.nav-item').forEach(item=>{ item.addEventListener('mouseenter',e=>{ if(!nav.classList.contains('collapsed')) return; tip.textContent=item.dataset.label||''; tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px'; tip.classList.add('visible'); }); item.addEventListener('mouseleave',()=>tip.classList.remove('visible')); });
+  document.querySelectorAll('.nav-item').forEach(i=>{ i.addEventListener('mouseenter',e=>{ if(!nav.classList.contains('collapsed')) return; tip.textContent=i.dataset.label||''; tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px'; tip.classList.add('visible'); }); i.addEventListener('mouseleave',()=>tip.classList.remove('visible')); });
   const path=window.location.pathname.replace(/\/$/,'')||'/';
-  document.querySelectorAll('.nav-item').forEach(item=>{ const href=(item.getAttribute('href')||'').replace(/\/$/,'')||'/'; item.classList.toggle('active',href===path); }); }
+  document.querySelectorAll('.nav-item').forEach(i=>{ const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/'; i.classList.toggle('active',h===path); }); }
 
-// ── Init ──
-(async()=>{ buildSymSelector(); await loadSnapshot(); loadChart(); loadAllModules(); loadNews(); loadPairAnalyses(); })();
-setInterval(loadSnapshot,   5*60*1000);
-setInterval(loadNews,       3*60*1000);
-setInterval(loadAllModules,30*60*1000);
+// Update the "Xs ago" counter every second
+setInterval(() => { document.getElementById('summary-updated').textContent = _updateTs ? timeAgo(_updateTs) : '—'; }, 1000);
+
+(async () => {
+  await loadSnapshot();
+  loadPairAnalyses();
+})();
+setInterval(loadSnapshot,       5*60*1000);
+setInterval(loadPairAnalyses,  30*60*1000);
 </script>
 </body>
 </html>
