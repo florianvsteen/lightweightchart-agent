@@ -20,7 +20,7 @@ import requests
 from datetime import datetime, timezone
 
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-AI_PROVIDER  = os.environ.get("CALENDAR_AI_PROVIDER", "gemini").lower()
+AI_PROVIDER  = os.environ.get("AI_PROVIDER", "gemini").lower()
 GEMINI_URL   = ("https://generativelanguage.googleapis.com/v1beta/models"
                 "/gemini-2.0-flash-lite:generateContent")
 OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
