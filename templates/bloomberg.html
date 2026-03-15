@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bloomberg TV — The Inner Flows</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0a0a0c;
+    --surface: #111116;
+    --border:  #1e1e28;
+    --border2: #2a2a38;
+    --text:    #c8c8d8;
+    --muted:   #4a4a60;
+    --accent:  #5af0c4;
+    --red:     #f05a7e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+
+  .back-link {
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    border: 1px solid var(--border2);
+    padding: 4px 10px;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .back-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  .header-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: #fff;
+    letter-spacing: 0.05em;
+  }
+
+  .header-sub {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* Live dot */
+  #live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    padding: 3px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+  }
+  #live-indicator .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  #live-indicator.playing { border-color: rgba(240,90,126,0.5); color: var(--red); }
+  #live-indicator.playing .live-dot {
+    background: var(--red);
+    box-shadow: 0 0 6px rgba(240,90,126,0.7);
+    animation: livepulse 1.4s ease-in-out infinite;
+  }
+  @keyframes livepulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Region selector */
+  .region-bar {
+    display: flex;
+    gap: 3px;
+    margin-left: auto;
+  }
+  .region-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.68rem;
+    font-family: 'Space Mono', monospace;
+    padding: 4px 10px;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+  }
+  .region-btn:hover { border-color: #888; color: #bbb; }
+  .region-btn.active { border-color: var(--red); color: var(--red); background: rgba(240,90,126,0.06); font-weight: 700; }
+
+  /* Volume / mute */
+  #mute-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    padding: 4px 10px;
+    transition: all 0.15s;
+  }
+  #mute-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Video area ── */
+  #video-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Loading / error overlay */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(10,10,12,0.92);
+    z-index: 10;
+    transition: opacity 0.4s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  #overlay-icon {
+    font-size: 2.2rem;
+    opacity: 0.4;
+  }
+  #overlay-msg {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  #overlay-detail {
+    font-size: 0.6rem;
+    color: #333;
+    max-width: 360px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  #retry-btn {
+    margin-top: 6px;
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: none;
+  }
+  #retry-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #retry-btn.visible { display: block; }
+
+  /* Spinner */
+  .spinner {
+    width: 28px; height: 28px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Status bar ── */
+  #status-bar {
+    padding: 5px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+    font-size: 0.58rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    background: var(--surface);
+  }
+  #status-bar span { white-space: nowrap; }
+  #stream-quality { color: var(--accent); }
+  .status-dot-sep { color: #2a2a38; }
+
+  /* PiP button */
+  #pip-btn {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    transition: all 0.15s;
+  }
+  #pip-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #pip-btn.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back-link" href="/dashboard">← Mission Control</a>
+  <div>
+    <div class="header-title">Bloomberg TV</div>
+    <div class="header-sub">Live Stream</div>
+  </div>
+  <div id="live-indicator">
+    <div class="live-dot"></div>
+    <span id="live-label">CONNECTING</span>
+  </div>
+  <div class="region-bar" id="region-bar">
+    <button class="region-btn" data-stream="eu"         title="Bloomberg Europe">EU</button>
+    <button class="region-btn" data-stream="phoenix-us" title="Bloomberg TV+ (US)">US</button>
+    <button class="region-btn" data-stream="asia"       title="Bloomberg Asia">ASIA</button>
+    <button class="region-btn" data-stream="aus"        title="Bloomberg Australia">AUS</button>
+  </div>
+  <button id="mute-btn" title="Toggle mute">🔊</button>
+</header>
+
+<div id="video-wrap">
+  <video id="video" playsinline></video>
+
+  <div id="overlay">
+    <div class="spinner" id="spinner"></div>
+    <div id="overlay-icon" style="display:none">📡</div>
+    <div id="overlay-msg">Loading stream…</div>
+    <div id="overlay-detail"></div>
+    <button id="retry-btn" onclick="retryStream()">↻ Retry</button>
+  </div>
+</div>
+
+<div id="status-bar">
+  <span>Bloomberg Television</span>
+  <span class="status-dot-sep">·</span>
+  <span id="stream-region">—</span>
+  <span class="status-dot-sep">·</span>
+  <span id="stream-quality">—</span>
+  <span class="status-dot-sep">·</span>
+  <span id="stream-time">—</span>
+  <button id="pip-btn" class="hidden" onclick="togglePip()">⬛ Picture-in-Picture</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+<script>
+  const STREAMS = {
+    'eu':         { url: 'https://www.bloomberg.com/media-manifest/streams/eu.m3u8',         label: 'Bloomberg Europe' },
+    'phoenix-us': { url: 'https://www.bloomberg.com/media-manifest/streams/phoenix-us.m3u8', label: 'Bloomberg TV+ (US)' },
+    'asia':       { url: 'https://www.bloomberg.com/media-manifest/streams/asia.m3u8',        label: 'Bloomberg Asia' },
+    'aus':        { url: 'https://www.bloomberg.com/media-manifest/streams/aus.m3u8',         label: 'Bloomberg Australia' },
+  };
+
+  // Default to EU since user is in Belgium
+  const DEFAULT_REGION = 'eu';
+
+  const video      = document.getElementById('video');
+  const overlay    = document.getElementById('overlay');
+  const overlayMsg = document.getElementById('overlay-msg');
+  const overlayDet = document.getElementById('overlay-detail');
+  const overlayIcon= document.getElementById('overlay-icon');
+  const spinner    = document.getElementById('spinner');
+  const retryBtn   = document.getElementById('retry-btn');
+  const liveInd    = document.getElementById('live-indicator');
+  const liveLabel  = document.getElementById('live-label');
+  const regionEl   = document.getElementById('stream-region');
+  const qualityEl  = document.getElementById('stream-quality');
+  const timeEl     = document.getElementById('stream-time');
+  const muteBtn    = document.getElementById('mute-btn');
+  const pipBtn     = document.getElementById('pip-btn');
+
+  let hls = null;
+  let currentRegion = DEFAULT_REGION;
+  let muted = false;
+
+  // Clock
+  setInterval(() => {
+    const now = new Date();
+    timeEl.textContent = now.toUTCString().slice(17, 25) + ' UTC';
+  }, 1000);
+
+  function setOverlay(state, msg, detail) {
+    spinner.style.display  = state === 'loading' ? '' : 'none';
+    overlayIcon.style.display = state === 'error' ? '' : 'none';
+    overlayMsg.textContent = msg || '';
+    overlayDet.textContent = detail || '';
+    retryBtn.classList.toggle('visible', state === 'error');
+    overlay.classList.toggle('hidden', state === 'hidden');
+  }
+
+  function setLive(playing) {
+    liveInd.className = playing ? 'playing' : '';
+    liveLabel.textContent = playing ? 'LIVE' : 'BUFFERING';
+  }
+
+  function loadStream(region) {
+    currentRegion = region;
+
+    // Update region buttons
+    document.querySelectorAll('.region-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.stream === region);
+    });
+
+    const { url, label } = STREAMS[region];
+    regionEl.textContent = label;
+    qualityEl.textContent = '…';
+
+    setOverlay('loading', 'Connecting to stream…', url);
+    setLive(false);
+
+    // Destroy previous instance
+    if (hls) { hls.destroy(); hls = null; }
+
+    if (!Hls.isSupported()) {
+      // Safari native HLS
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        video.play().catch(() => {});
+        setOverlay('hidden');
+        setLive(true);
+      } else {
+        setOverlay('error', 'HLS not supported', 'Your browser does not support HLS streaming. Try Chrome or Firefox.');
+      }
+      return;
+    }
+
+    hls = new Hls({
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: 6,
+      enableWorker: true,
+      lowLatencyMode: false,
+      xhrSetup: (xhr) => {
+        // Bloomberg requires a Referer header — set it so the CDN accepts the request
+        xhr.setRequestHeader('Referer', 'https://www.bloomberg.com/');
+      }
+    });
+
+    hls.loadSource(url);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+      const levels = data.levels || [];
+      const best   = levels.reduce((a, b) => (b.height > a.height ? b : a), levels[0] || {});
+      qualityEl.textContent = best.height ? `${best.height}p` : 'HLS';
+      video.play().catch(() => {});
+    });
+
+    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+      const level = hls.levels[data.level];
+      if (level) qualityEl.textContent = `${level.height}p`;
+    });
+
+    hls.on(Hls.Events.FRAG_LOADED, () => {
+      setOverlay('hidden');
+      setLive(true);
+    });
+
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      if (!data.fatal) return;
+      console.error('HLS fatal error:', data.type, data.details);
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        setOverlay('error',
+          'Stream unavailable',
+          `Could not reach Bloomberg's CDN. This may be a CORS restriction from your browser, or the stream URL has changed. Try a different region or open bloomberg.com/live directly.\n\nError: ${data.details}`
+        );
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      } else {
+        setOverlay('error', 'Playback error', data.details);
+      }
+      setLive(false);
+    });
+
+    // PiP button visibility
+    if ('pictureInPictureEnabled' in document) {
+      pipBtn.classList.remove('hidden');
+    }
+  }
+
+  function retryStream() {
+    loadStream(currentRegion);
+  }
+
+  async function togglePip() {
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        pipBtn.textContent = '⬛ Picture-in-Picture';
+      } else {
+        await video.requestPictureInPicture();
+        pipBtn.textContent = '✕ Exit PiP';
+      }
+    } catch(e) { console.warn('PiP failed:', e); }
+  }
+
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    video.muted = muted;
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  });
+
+  document.querySelectorAll('.region-btn').forEach(btn => {
+    btn.addEventListener('click', () => loadStream(btn.dataset.stream));
+  });
+
+  // Start with EU (best for Belgium)
+  loadStream(DEFAULT_REGION);
+</script>
+</body>
+</html>
