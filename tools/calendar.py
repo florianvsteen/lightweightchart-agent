@@ -163,6 +163,7 @@ def _build_prompt(events: list[dict]) -> str:
 
 def _parse_batch_response(text: str, count: int) -> list[str]:
     """Extract numbered lines from a batch AI response into a list of strings."""
+    import re
     results = [""] * count
     for line in text.strip().splitlines():
         line = line.strip()
@@ -170,13 +171,19 @@ def _parse_batch_response(text: str, count: int) -> list[str]:
             continue
         for i in range(count, 0, -1):
             if line.startswith(f"{i}.") or line.startswith(f"{i})"):
-                results[i - 1] = line.split(".", 1)[-1].strip().lstrip(")").strip()
+                analysis = line.split(".", 1)[-1].strip().lstrip(")").strip()
+                # Strip markdown bold/italic
+                analysis = re.sub(r"\*{1,2}(.*?)\*{1,2}", r"\1", analysis)
+                # Discard if model just echoed the event name (no real analysis)
+                if len(analysis) < 30 or analysis.count(" ") < 5:
+                    analysis = ""
+                results[i - 1] = analysis
                 break
     return results
 
 
 # ── AI enrichment ────────────────────────────────────────────────────────────────
-_CHUNK_SIZE = 5   # events per AI call (keeps prompts small, works well with Ollama)
+_CHUNK_SIZE = 3   # smaller chunks = model stays focused, fewer formatting failures
 
 
 def _run_ai_analysis(events: list[dict]) -> None:
