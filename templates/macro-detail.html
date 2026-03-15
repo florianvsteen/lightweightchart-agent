@@ -522,7 +522,10 @@ async function loadChart() {
 // ── Snapshot (price + stat boxes) ──
 async function loadSnapshot() {
   try {
-    const r=await fetch('/api/macro/snapshot'); const d=await r.json(); if(!d.ok) return;
+    const r=await fetch('/api/macro/snapshot');
+    if(!r.ok){ console.error('snapshot HTTP', r.status); return; }
+    const d=await r.json();
+    if(!d.ok){ console.error('snapshot API error', d.error); return; }
     const s=d.data[PAIR_ID]; if(!s||s.last==null) return;
     document.getElementById('dd-pair-label').textContent=s.label||'';
     document.getElementById('dd-price').textContent=fmtPrice(s.last,PAIR_ID);
@@ -556,7 +559,10 @@ function setPairIcon(pairId) {
 
 async function loadAnalysis() {
   try {
-    const r=await fetch(`/api/macro/pair/${PAIR_ID}`); const d=await r.json(); if(!d.ok) return;
+    const r=await fetch(`/api/macro/pair/${PAIR_ID}`);
+    if(!r.ok){ console.error('analysis HTTP', r.status); return; }
+    const d=await r.json();
+    if(!d.ok){ console.error('analysis API error', d.error); return; }
     const data=d.data;
     const sent=(data.sentiment||'Neutral');
     const sentC=sent.charAt(0).toUpperCase()+sent.slice(1).toLowerCase();
@@ -577,9 +583,10 @@ async function loadAnalysis() {
 // ── Macro modules ──
 async function loadModules() {
   try {
-    // Use pair-specific endpoint so all analysis is focused on THIS pair only
     const r=await fetch(`/api/macro/pair/${PAIR_ID}/modules`);
-    const d=await r.json(); if(!d.ok) return;
+    if(!r.ok){ console.error('modules HTTP', r.status); return; }
+    const d=await r.json();
+    if(!d.ok){ console.error('modules API error', d.error); return; }
     const m=d.modules||{};
     if(m.mood)    renderMood(m.mood);
     if(m.policy)  renderPolicy(m.policy);
