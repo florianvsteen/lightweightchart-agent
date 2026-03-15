@@ -1,0 +1,42 @@
+services:
+  lightweightchart-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lightweightchart-agent
+    restart: unless-stopped
+    ports:
+      - "6767:6767"   # Mission Control dashboard
+
+    environment:
+      # ── Data provider ─────────────────────────────────────────────
+      # "yahoo" (default) or "metatrader"
+      - DATA_PROVIDER=${DATA_PROVIDER:-yahoo}
+
+      # ── MetaTrader (only needed if DATA_PROVIDER=metatrader) ──────
+      - MT5_API_URL=${MT5_API_URL:-}
+      - MT5_BROKER_UTC_OFFSET=${MT5_BROKER_UTC_OFFSET:-3}
+
+      # ── Discord alerts ─────────────────────────────────────────────
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+
+      # ── Calendar AI provider ───────────────────────────────────────
+      # "gemini" (default, free) or "openai"
+      - PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+
+      # ── Timezone ───────────────────────────────────────────────────
+      - TZ=${TZ:-Europe/Brussels}
+
+    volumes:
+      # Persist alert state and calendar cache across restarts
+      - ./data:/app/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6767/dashboard"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
