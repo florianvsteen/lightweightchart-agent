@@ -570,13 +570,7 @@
             <button class="chart-period-btn"        data-p="1mo" data-i="1d" onclick="setPeriod(this)">1M</button>
           </div>
           <div id="chart-symbol-selector">
-            <button class="sym-btn active" data-sym="SPX"    onclick="setChartSym(this)">SPX</button>
-            <button class="sym-btn"        data-sym="NDX"    onclick="setChartSym(this)">NDX</button>
-            <button class="sym-btn"        data-sym="GOLD"   onclick="setChartSym(this)">GOLD</button>
-            <button class="sym-btn"        data-sym="OIL"    onclick="setChartSym(this)">OIL</button>
-            <button class="sym-btn"        data-sym="DXY"    onclick="setChartSym(this)">DXY</button>
-            <button class="sym-btn"        data-sym="US10Y"  onclick="setChartSym(this)">10Y</button>
-            <button class="sym-btn"        data-sym="VIX"    onclick="setChartSym(this)">VIX</button>
+            <!-- Populated dynamically from TICKER_KEYS -->
           </div>
           <div id="chart-wrap">
             <canvas id="chart-canvas"></canvas>
@@ -694,12 +688,21 @@
   </div><!-- /#main-content -->
 </div><!-- /#app -->
 
+<script>
+// Injected by Flask from config.PAIRS + macro extras
+const INSTRUMENTS_FROM_CONFIG = {{ instruments_js | safe }};
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════════
 //  TICKER STRIP
 // ════════════════════════════════════════════════════════════════
-const TICKER_KEYS = ['SPX','NDX','VIX','DXY','GOLD','OIL','US10Y','EURUSD','USDJPY'];
+// Keys come from config.PAIRS + macro extras — injected by Flask
+// Flask should pass: {{ instruments_js | safe }}
+// Fallback to a hardcoded list if not injected
+const TICKER_KEYS = (typeof INSTRUMENTS_FROM_CONFIG !== 'undefined')
+  ? INSTRUMENTS_FROM_CONFIG
+  : ['US30','US100','XAUUSD','EURUSD','EURGBP','USDJPY','GBPUSD','BTCUSD','VIX','DXY','US10Y','OIL'];
 
 function renderTicker(data) {
   const strip = document.getElementById('ticker-strip');
@@ -739,7 +742,21 @@ function fmtPrice(v, key) {
 //  CHART
 // ════════════════════════════════════════════════════════════════
 let _chartInst = null;
-let _chartSym  = 'SPX';
+let _chartSym  = TICKER_KEYS[0] || 'US30';
+
+// Build symbol selector buttons from config keys
+function buildSymSelector() {
+  const sel = document.getElementById('chart-symbol-selector');
+  sel.innerHTML = '';
+  TICKER_KEYS.forEach((k, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'sym-btn' + (i === 0 ? ' active' : '');
+    btn.dataset.sym = k;
+    btn.textContent = k.replace('USD','').replace('=X','').replace('-USD','') || k;
+    btn.onclick = () => setChartSym(btn);
+    sel.appendChild(btn);
+  });
+}
 let _chartPeriod = '1d';
 let _chartInterval = '5m';
 
@@ -1078,6 +1095,7 @@ async function refreshAll() {
 // ════════════════════════════════════════════════════════════════
 (async () => {
   // Load fast data first
+  buildSymSelector();
   await loadSnapshot();
   loadChart();
   // Then AI modules + news in parallel
