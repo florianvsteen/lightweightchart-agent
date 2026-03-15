@@ -30,31 +30,26 @@ _events_cache: dict = {}
 _ai_cache: dict     = {}
 _cache_lock = threading.Lock()
 
-
 def _fetch_raw() -> list:
-    """Download the FF CDN JSON and return the raw list."""
+    """Download FF CDN JSON with caching headers to avoid rate limits."""
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/122.0.0.0 Safari/537.36"
         ),
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.forexfactory.com/",
+        "Accept": "application/json",
+        "Cache-Control": "max-age=3600",
     }
     resp = requests.get(CALENDAR_URL, headers=headers, timeout=15)
     resp.raise_for_status()
 
-    # Guard: FF sometimes returns HTML "Request Denied" page
     ct = resp.headers.get("content-type", "")
     if "html" in ct.lower():
-        raise ValueError(f"Got HTML instead of JSON — possible rate limit. Content-Type: {ct}")
+        raise ValueError(f"Got HTML instead of JSON (rate limited)")
 
     data = resp.json()
-    print(f"[calendar] Fetched {len(data)} raw events from FF CDN")
-    if data:
-        print(f"[calendar] Sample event fields: {list(data[0].keys())}")
-        print(f"[calendar] Sample event: {data[0]}")
+    print(f"[calendar] Fetched {len(data)} raw events")
     return data
  
 def _parse_ff_date(date_str: str) -> datetime | None:
