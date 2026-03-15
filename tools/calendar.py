@@ -141,18 +141,22 @@ def _build_prompt(events: list[dict]) -> str:
     event_block = "\n".join(lines)
 
     return (
-        f"Analyze these {len(events)} economic events for forex traders.\n\n"
+        f"You are a professional forex trader. Analyze these {len(events)} economic events.\n\n"
         f"{event_block}\n\n"
-        "For EACH event write ONE short sentence (max 20 words) covering: higher = X for currency, lower = Y.\n"
+        "For EACH event write 2 sentences maximum:\n"
+        "- Sentence 1: What a BEAT means for the currency (above forecast / previous)\n"
+        "- Sentence 2: What a MISS means for the currency (below forecast / previous)\n\n"
         "Rules:\n"
         "- Number each response to match the event number\n"
-        "- Format: 'Higher [currency] [bullish/bearish], lower [currency] [bullish/bearish].'\n"
-        "- Use concrete direction words: bullish, bearish, strengthens, weakens, supports, pressures\n"
-        "- No intro, no explanation, no disclaimers — pure impact only\n\n"
-        "Examples:\n"
-        "1. Higher = USD bullish (inflation stays hot); lower = USD bearish (disinflation confirmed).\n"
-        "2. Beat strengthens EUR vs USD; miss pressures EUR as ECB rate cut bets rise.\n"
-        "3. Above forecast signals expansion, lifting GBP; below signals contraction, weighing on GBP.\n\n"
+        "- Use the actual numbers from previous/forecast in your answer\n"
+        "- Be specific: name the currency pair impact (e.g. USD/JPY, EUR/USD)\n"
+        "- Use words like: rallies, sells off, strengthens, weakens, pressures, lifts\n"
+        "- No fluff, no disclaimers, no intro text\n\n"
+        "Examples of good responses:\n"
+        "1. Beat above 0.3% forecast keeps Fed hawkish — USD rallies, EUR/USD likely tests lower. "
+        "Miss below 0.3% signals disinflation, USD sells off and rate cut bets accelerate.\n"
+        "2. Above -0.8% prior signals housing recovery, supporting USD and risk appetite. "
+        "Another miss deepens housing slump fears, pressuring USD and weighing on AUD/USD.\n\n"
         "Now analyze:"
     )
 
