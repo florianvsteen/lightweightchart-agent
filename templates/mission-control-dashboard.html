@@ -663,47 +663,49 @@ document.querySelectorAll('.cal-filter').forEach(btn => {
   });
 });
  
-// Countdown: how long until event time
-function calCountdown(dateStr, timeStr) {
-  if (!timeStr || timeStr.toLowerCase().includes('all day') || timeStr === '') {
-    return { label: 'All Day', cls: '' };
-  }
+// The FF CDN JSON gives ISO datetimes already stored in event_time (UTC).
+// Replace the old calCountdown(dateStr, timeStr) with this:
  
-  // Parse "10:30am" or "2:00pm" style FF times into UTC today/tomorrow
-  const ampm = /(\d{1,2}):(\d{2})(am|pm)/i.exec(timeStr);
-  if (!ampm) return { label: timeStr, cls: '' };
+function calCountdown(eventIsoUtc) {
+  if (!eventIsoUtc) return { label: '—', cls: '' };
  
-  let h = parseInt(ampm[1]);
-  const m = parseInt(ampm[2]);
-  const period = ampm[3].toLowerCase();
-  if (period === 'pm' && h !== 12) h += 12;
-  if (period === 'am' && h === 12) h = 0;
+  const eventMs = new Date(eventIsoUtc).getTime();
+  if (isNaN(eventMs))  return { label: '—', cls: '' };
  
-  // Build event datetime assuming FF shows Eastern time (UTC-4 or UTC-5)
-  // FF uses EST/EDT, approximate as UTC-5 conservatively
-  const eventDate = new Date(dateStr + 'T00:00:00Z');
-  eventDate.setUTCHours(h + 5, m, 0, 0);   // convert EST → UTC (approx)
- 
-  const nowMs   = Date.now();
-  const eventMs = eventDate.getTime();
-  const diffMs  = eventMs - nowMs;
+  const diffMs   = eventMs - Date.now();
+  const totalMin = Math.floor(Math.abs(diffMs) / 60000);
  
   if (diffMs < 0) {
-    // Past
-    const minAgo = Math.floor(-diffMs / 60000);
-    if (minAgo < 60)  return { label: `${minAgo}m ago`, cls: 'past' };
-    const hAgo = Math.floor(minAgo / 60);
-    return { label: `${hAgo}h ago`, cls: 'past' };
+    // Past event
+    if (totalMin < 60)  return { label: `${totalMin}m ago`,                  cls: 'past' };
+    return               { label: `${Math.floor(totalMin/60)}h ago`,          cls: 'past' };
   }
  
-  const totalMin = Math.floor(diffMs / 60000);
-  if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
-  if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
-  const hours = Math.floor(totalMin / 60);
-  const mins  = totalMin % 60;
-  return { label: `in ${hours}h ${mins}m`, cls: '' };
+  // Future
+  if (totalMin < 30) return { label: `in ${totalMin}m`,                       cls: 'soon' };
+  if (totalMin < 60) return { label: `in ${totalMin}m`,                       cls: '' };
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  return               { label: `in ${h}h ${m > 0 ? m+'m' : ''}`.trim(),     cls: '' };
 }
  
+// ── REPLACEMENT renderCalendar() — uses event.event_time instead of date+time ─
+// In the renderCalendar() function, replace:
+//   const cd = calCountdown(ev.date, ev.time);
+// with:
+//   const cd = calCountdown(ev.event_time);
+//
+// Also replace the date separator logic since FF gives full ISO dates:
+// Replace:
+//   const today    = new Date().toISOString().slice(0, 10);
+//   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+// The ev.date from FF CDN is already like "2026-03-16T10:30:00" so:
+ 
+function getEventDateStr(ev) {
+  // Extract just YYYY-MM-DD from the full ISO date string
+  return (ev.date || '').slice(0, 10);
+}
+ 
+// ── FULL UPDATED renderCalendar() — paste this over the old one ───────────────
 function renderCalendar() {
   const list = document.getElementById('cal-list');
   if (!list) return;
@@ -717,32 +719,43 @@ function renderCalendar() {
     return;
   }
  
-  // Group by date
+  // Group by date (YYYY-MM-DD)
   const byDate = {};
   filtered.forEach(ev => {
-    if (!byDate[ev.date]) byDate[ev.date] = [];
-    byDate[ev.date].push(ev);
+    const d = getEventDateStr(ev);
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(ev);
   });
  
-  const today    = new Date().toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  const dateLabel = d => d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : d;
+  const todayStr    = new Date().toISOString().slice(0, 10);
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const dateLabel   = d => d === todayStr ? 'Today' : d === tomorrowStr ? 'Tomorrow' : d;
  
   let html = '';
   for (const [date, events] of Object.entries(byDate)) {
-    html += `<div class="cal-date-sep">${dateLabel(date)} · ${new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })}</div>`;
+    const displayDate = new Date(date + 'T12:00:00Z')
+      .toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+    html += `<div class="cal-date-sep">${dateLabel(date)} · ${displayDate}</div>`;
  
     events.forEach(ev => {
-      const cd = calCountdown(ev.date, ev.time);
-      const hasActual  = ev.actual && ev.actual !== '';
+      const cd = calCountdown(ev.event_time);
+      const hasActual   = ev.actual   && ev.actual   !== '';
       const hasForecast = ev.forecast && ev.forecast !== '';
-      const hasPrev    = ev.previous && ev.previous !== '';
+      const hasPrev     = ev.previous && ev.previous !== '';
+ 
+      // Format event time for display
+      let timeDisplay = '';
+      if (ev.event_time) {
+        timeDisplay = new Date(ev.event_time)
+          .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+      }
  
       const dataRow = (hasActual || hasForecast || hasPrev) ? `
         <div class="cal-data-row">
-          ${hasPrev    ? `<div class="cal-data-item"><span class="cal-data-label">Previous</span><span class="cal-data-val">${ev.previous}</span></div>` : ''}
+          ${hasPrev     ? `<div class="cal-data-item"><span class="cal-data-label">Previous</span><span class="cal-data-val">${ev.previous}</span></div>` : ''}
           ${hasForecast ? `<div class="cal-data-item"><span class="cal-data-label">Forecast</span><span class="cal-data-val">${ev.forecast}</span></div>` : ''}
           ${hasActual   ? `<div class="cal-data-item"><span class="cal-data-label">Actual</span><span class="cal-data-val actual">${ev.actual}</span></div>` : ''}
+          ${timeDisplay ? `<div class="cal-data-item" style="margin-left:auto"><span class="cal-data-label">Time</span><span class="cal-data-val" style="font-size:0.65rem;color:var(--muted)">${timeDisplay}</span></div>` : ''}
         </div>` : '';
  
       const aiBox = ev.analysis ? `
@@ -758,7 +771,7 @@ function renderCalendar() {
             <span class="cal-currency ${ev.currency}">${ev.currency}</span>
             <span class="cal-countdown ${cd.cls}">🕐 ${cd.label}</span>
           </div>
-          <div class="cal-event-name">${ev.event}</div>
+          <div class="cal-event-name">${ev.title}</div>
           ${aiBox}
           ${dataRow}
         </div>`;
@@ -767,7 +780,7 @@ function renderCalendar() {
  
   list.innerHTML = html;
 }
- 
+  
 // Refresh countdowns every minute without re-fetching
 function startCalCountdownTimer() {
   if (_calTimer) clearInterval(_calTimer);
