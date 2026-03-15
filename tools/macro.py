@@ -137,9 +137,11 @@ def get_market_mood(force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age("mood"), "cached": True}
 
     ctx = _market_context()
+    pairs  = _pair_list()
     prompt = (
         "You are a market sentiment analyst. Based on current market data:\n\n"
         f"{ctx}\n\n"
+        f"The trader is watching: {pairs}.\n\n"
         "Respond ONLY with valid JSON (no markdown, no extra text):\n"
         '{\n'
         '  "label": "<one of: RISK-ON | NEUTRAL | RISK-OFF | EXTREME FEAR | EUPHORIA>",\n'
@@ -268,9 +270,11 @@ def get_bearing(force: bool = False) -> dict:
         return {**cached, "age_min": _cache_age("bearing"), "cached": True}
 
     ctx = _market_context()
+    pairs  = _pair_list()
     prompt = (
         "You are a technical analyst. Based on current market data:\n\n"
         f"{ctx}\n\n"
+        f"Focus on the trend relevant to: {pairs}.\n\n"
         "Assess the primary market trend direction. Respond ONLY with valid JSON:\n"
         '{\n'
         '  "label": "<one of: STRONG UP | UP | NEUTRAL | DOWN | STRONG DOWN>",\n'
@@ -371,3 +375,17 @@ def get_all(force: bool = False) -> dict:
         t.join(timeout=45)
 
     return {"modules": results, "errors": errors, "market": get_market_snapshot()}
+
+
+# ── Config-aware pair list for prompt context ─────────────────────────────────
+def _pair_list() -> str:
+    """
+    Returns a comma-separated string of the pairs from config.PAIRS,
+    used to make AI prompts specific to the instruments you actually trade.
+    e.g. "US30, US100, XAUUSD, EURUSD, EURGBP, USDJPY, GBPUSD, BTCUSD"
+    """
+    try:
+        from config import PAIRS
+        return ", ".join(PAIRS.keys())
+    except ImportError:
+        return "your tracked instruments"
