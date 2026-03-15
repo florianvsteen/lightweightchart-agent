@@ -85,13 +85,9 @@ def _event_key(ev: dict) -> str:
 
 
 def _call_claude_analysis(ev: dict) -> str:
-    """
-    Call Claude Haiku for a short trader-focused analysis of this event.
-    Returns empty string if ANTHROPIC_API_KEY is not set or the call fails.
-    """
-    api_key_present = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
-    print(f"[calendar] AI enrichment: {len(filtered)} events, API key present: {api_key_present}")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
+        print("[calendar] ANTHROPIC_API_KEY not set — skipping AI analysis")
         return ""
 
     parts = [f"{ev.get('currency', '')} {ev.get('title', '')}"]
@@ -113,23 +109,22 @@ def _call_claude_analysis(ev: dict) -> str:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key":          api_key,
-                "anthropic-version":  "2023-06-01",
-                "content-type":       "application/json",
+                "x-api-key":         api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
             },
             json={
-                "model":      "claude-haiku-4-5-20251001",
+                "model":    "claude-haiku-4-5-20251001",
                 "max_tokens": 150,
-                "messages":   [{"role": "user", "content": prompt}],
+                "messages": [{"role": "user", "content": prompt}],
             },
             timeout=20,
         )
+        print(f"[calendar] Claude API status: {resp.status_code}")
         blocks = resp.json().get("content", [])
         return " ".join(b["text"] for b in blocks if b.get("type") == "text").strip()
     except Exception as e:
-        print(f"[calendar] Claude analysis error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[calendar] Claude error: {type(e).__name__}: {e}")
         return ""
 
 
