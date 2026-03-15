@@ -26,6 +26,7 @@ import requests
 from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
 from tools.sessions import get_sessions_for_js, FOREX
+from tools.calendar import get_calendar
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
@@ -230,6 +231,21 @@ def proxy_debug_fvg(pair_id):
 @app.route("/bloomberg")
 def bloomberg_tv():
     return render_template("bloomberg-tv.html")
+
+@app.route("/api/calendar")
+def api_calendar():
+    """
+    Returns today's + tomorrow's high/medium impact economic events
+    for EUR, GBP, USD, JPY — with Claude AI analysis per event.
+    """
+    try:
+        force = request.args.get("refresh") == "1"
+        events = get_calendar(force_refresh=force)
+        return jsonify({"events": events, "count": len(events)})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e), "events": []}), 500
 
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
