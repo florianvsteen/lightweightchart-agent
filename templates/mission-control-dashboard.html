@@ -285,6 +285,148 @@
   .refresh-indicator { display: flex; align-items: center; gap: 6px; }
   .refresh-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
   .refresh-dot.active { background: var(--accent); animation: pulse 0.5s ease-in-out; }
+
+  /* ── Bottom intel row ── */
+  #intel-row {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 1px;
+    background: var(--border);
+    border-top: 1px solid var(--border);
+  }
+ 
+  /* Currency strength panel */
+  #cstrength-panel {
+    background: var(--surface);
+    padding: 20px 24px 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 260px;
+  }
+ 
+  .intel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+  }
+  .intel-title-group { display: flex; align-items: center; gap: 10px; }
+  .intel-icon { font-size: 1rem; opacity: 0.5; }
+  .intel-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: #fff;
+    letter-spacing: 0.04em;
+  }
+  .intel-sub {
+    font-size: 0.58rem;
+    color: var(--muted);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 1px;
+  }
+ 
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    border: 1px solid rgba(90,240,196,0.3);
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: rgba(90,240,196,0.05);
+  }
+  .live-badge .ldot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+ 
+  /* Currency legend pills */
+  #cs-legend {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+  }
+  .cs-pill {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    border: 1px solid transparent;
+  }
+  .cs-pill.hidden-curr { opacity: 0.25; }
+  .cs-pill[data-curr="USD"] { background: rgba(90,90,240,0.15); color: #6060f0; border-color: rgba(90,90,240,0.3); }
+  .cs-pill[data-curr="EUR"] { background: rgba(90,200,80,0.12); color: #50c840; border-color: rgba(90,200,80,0.3); }
+  .cs-pill[data-curr="GBP"] { background: rgba(240,50,80,0.12);  color: #f03050; border-color: rgba(240,50,80,0.3); }
+  .cs-pill[data-curr="JPY"] { background: rgba(240,180,40,0.12); color: #f0b428; border-color: rgba(240,180,40,0.3); }
+ 
+  /* Current values row */
+  #cs-values {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+  }
+  .cs-val-item { display: flex; flex-direction: column; gap: 2px; }
+  .cs-val-label { font-size: 0.52rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+  .cs-val-num { font-size: 0.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cs-val-num.USD { color: #6060f0; }
+  .cs-val-num.EUR { color: #50c840; }
+  .cs-val-num.GBP { color: #f03050; }
+  .cs-val-num.JPY { color: #f0b428; }
+  .cs-val-num.positive::before { content: "+"; }
+ 
+  #cs-chart-wrap { flex: 1; position: relative; min-height: 160px; }
+  #cs-canvas { width: 100%; height: 100%; }
+ 
+  #cs-error {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+ 
+  /* FinancialJuice panel */
+  #fj-panel {
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-height: 260px;
+  }
+ 
+  #fj-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+ 
+  #fj-iframe-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+ 
+  #fj-iframe-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    min-height: 220px;
+  }
+  
 </style>
 </head>
 <body>
@@ -320,6 +462,80 @@
 </div>
 
 <div class="grid" id="grid"></div>
+<div id="intel-row">
+  <!-- Left: Currency Strength Chart -->
+  <div id="cstrength-panel">
+    <div class="intel-header">
+      <div class="intel-title-group">
+        <span class="intel-icon">⟳</span>
+        <div>
+          <div class="intel-title">Currency Strength</div>
+          <div class="intel-sub">Real-time performance vs majors</div>
+        </div>
+      </div>
+      <div class="live-badge"><div class="ldot"></div> LIVE</div>
+    </div>
+ 
+    <div id="cs-legend">
+      <span class="cs-pill" data-curr="USD" onclick="toggleCurr('USD')">USD</span>
+      <span class="cs-pill" data-curr="EUR" onclick="toggleCurr('EUR')">EUR</span>
+      <span class="cs-pill" data-curr="GBP" onclick="toggleCurr('GBP')">GBP</span>
+      <span class="cs-pill" data-curr="JPY" onclick="toggleCurr('JPY')">JPY</span>
+    </div>
+ 
+    <div id="cs-values">
+      <div class="cs-val-item">
+        <span class="cs-val-label">USD</span>
+        <span class="cs-val-num USD" id="cv-USD">—</span>
+      </div>
+      <div class="cs-val-item">
+        <span class="cs-val-label">EUR</span>
+        <span class="cs-val-num EUR" id="cv-EUR">—</span>
+      </div>
+      <div class="cs-val-item">
+        <span class="cs-val-label">GBP</span>
+        <span class="cs-val-num GBP" id="cv-GBP">—</span>
+      </div>
+      <div class="cs-val-item">
+        <span class="cs-val-label">JPY</span>
+        <span class="cs-val-num JPY" id="cv-JPY">—</span>
+      </div>
+    </div>
+ 
+    <div id="cs-chart-wrap">
+      <canvas id="cs-canvas"></canvas>
+      <div id="cs-error">No data — market may be closed</div>
+    </div>
+  </div>
+  <!-- Right: FinancialJuice Live Feed -->
+  <div id="fj-panel">
+    <div id="fj-header" class="intel-header" style="margin-bottom:0">
+      <div class="intel-title-group">
+        <span class="intel-icon">📰</span>
+        <div>
+          <div class="intel-title">FinancialJuice</div>
+          <div class="intel-sub">Live market headlines</div>
+        </div>
+      </div>
+      <a href="https://www.financialjuice.com" target="_blank" style="
+        font-size:0.6rem;color:var(--muted);letter-spacing:0.1em;
+        border:1px solid var(--border2);padding:2px 8px;border-radius:2px;
+        text-decoration:none;transition:all 0.2s;
+      " onmouseover="this.style.color='var(--accent)';this.style.borderColor='rgba(90,240,196,0.4)'"
+         onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border2)'">
+        ↗ Open
+      </a>
+    </div>
+    <div id="fj-iframe-wrap">
+      <iframe
+        src="https://www.financialjuice.com/widgets/headlines.aspx?z=dark&exclude=&t=1&r=1&w=380&h=100%25&background=111116&font=ffffff&fade=111116"
+        scrolling="yes"
+        allowtransparency="true"
+        title="FinancialJuice Headlines"
+      ></iframe>
+    </div>
+  </div>
+</div>
 
 <footer>
   <span id="last-update">Waiting for data...</span>
@@ -683,6 +899,146 @@ function applyWeekendStandby() {
     metaEl.textContent   = '⏸ HALTED';
   });
   document.getElementById('last-update').textContent = 'Polling suspended for weekend';
+}
+
+// ── Currency Strength Chart ───────────────────────────────────────────────────
+let csChart = null;
+const CS_COLORS = {
+  USD: { line: '#6060f0', fill: 'rgba(90,90,240,0.08)' },
+  EUR: { line: '#50c840', fill: 'rgba(90,200,80,0.06)'  },
+  GBP: { line: '#f03050', fill: 'rgba(240,50,80,0.06)'  },
+  JPY: { line: '#f0b428', fill: 'rgba(240,180,40,0.06)' },
+};
+const CS_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY'];
+let csHidden = {};  // { USD: false, EUR: false, ... }
+ 
+function toggleCurr(curr) {
+  csHidden[curr] = !csHidden[curr];
+  const pill = document.querySelector(`.cs-pill[data-curr="${curr}"]`);
+  if (pill) pill.classList.toggle('hidden-curr', csHidden[curr]);
+  if (csChart) {
+    const idx = CS_CURRENCIES.indexOf(curr);
+    if (idx >= 0) {
+      csChart.data.datasets[idx].hidden = !!csHidden[curr];
+      csChart.update('none');
+    }
+  }
+}
+ 
+async function loadCurrencyStrength() {
+  try {
+    const res = await fetch('/api/currency-strength');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error || !data.points || !data.points.length) {
+      document.getElementById('cs-error').style.display = 'flex';
+      document.getElementById('cs-canvas').style.display = 'none';
+      return;
+    }
+ 
+    document.getElementById('cs-error').style.display = 'none';
+    document.getElementById('cs-canvas').style.display = '';
+ 
+    const pts = data.points;
+ 
+    // Update live value badges
+    const last = pts[pts.length - 1];
+    CS_CURRENCIES.forEach(c => {
+      const el = document.getElementById('cv-' + c);
+      if (!el) return;
+      const v = last[c];
+      el.textContent = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+      el.classList.toggle('positive', v > 0);
+    });
+ 
+    const labels = pts.map(p => {
+      const d = new Date(p.time * 1000);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    });
+ 
+    const datasets = CS_CURRENCIES.map(c => ({
+      label: c,
+      data: pts.map(p => p[c]),
+      borderColor: CS_COLORS[c].line,
+      backgroundColor: CS_COLORS[c].fill,
+      borderWidth: 1.8,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+      hidden: !!csHidden[c],
+    }));
+ 
+    if (csChart) {
+      csChart.data.labels = labels;
+      csChart.data.datasets = datasets;
+      csChart.update('none');
+    } else {
+      const ctx = document.getElementById('cs-canvas').getContext('2d');
+      csChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          animation: { duration: 400 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(17,17,22,0.95)',
+              borderColor: '#2a2a38',
+              borderWidth: 1,
+              titleColor: '#4a4a60',
+              bodyColor: '#c8c8d8',
+              titleFont: { family: 'Space Mono', size: 10 },
+              bodyFont:  { family: 'Space Mono', size: 11 },
+              callbacks: {
+                label: ctx => ` ${ctx.dataset.label}  ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(3)}%`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.03)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: '#4a4a60',
+                font: { family: 'Space Mono', size: 9 },
+                maxTicksLimit: 8,
+                maxRotation: 0,
+              },
+            },
+            y: {
+              grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: '#4a4a60',
+                font: { family: 'Space Mono', size: 9 },
+                callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
+                maxTicksLimit: 7,
+              },
+            },
+          },
+        },
+      });
+    }
+  } catch (e) {
+    console.error('Currency strength error:', e);
+    document.getElementById('cs-error').style.display = 'flex';
+    document.getElementById('cs-canvas').style.display = 'none';
+  }
+}
+ 
+// Load Chart.js dynamically if not already loaded
+if (typeof Chart === 'undefined') {
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+  s.onload = () => { loadCurrencyStrength(); setInterval(loadCurrencyStrength, 5 * 60 * 1000); };
+  document.head.appendChild(s);
+} else {
+  loadCurrencyStrength();
+  setInterval(loadCurrencyStrength, 5 * 60 * 1000);
 }
 
 buildGrid();
