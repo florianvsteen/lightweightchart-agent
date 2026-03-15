@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 # Switch AI provider: "gemini" (default, free) or "openai"
-AI_PROVIDER  = os.environ.get("AI_PROVIDER", "gemini").lower()
+AI_PROVIDER  = os.environ.get("CALENDAR_AI_PROVIDER", "gemini").lower()
 
 # Gemini — free tier, set GEMINI_API_KEY (aistudio.google.com)
 GEMINI_URL   = (
@@ -315,36 +315,46 @@ def get_calendar(force_refresh: bool = False) -> list:
     filtered.sort(key=lambda e: e["event_time"] or e["date"])
     print(f"[calendar] {len(filtered)} events after filtering ({len(raw)} raw)")
 
-    # Split into cached vs needs-analysis
-    cached_events   = []
+    # Apply cached AI analyses where available
     uncached_events = []
-
     for ev in filtered:
         key = _event_key(ev)
         with _cache_lock:
             cached_ai = _ai_cache.get(key)
         if cached_ai and (now - cached_ai["at"]) < AI_TTL:
             ev["analysis"] = cached_ai["analysis"]
-            cached_events.append(ev)
         else:
             uncached_events.append(ev)
 
-    # Single batch call for all uncached events
-    if uncached_events:
-        print(f"[calendar] Fetching AI for {len(uncached_events)} events (1 API call)")
-        analyses = _call_ai_batch(uncached_events)
-        for ev in uncached_events:
-            key = _event_key(ev)
-            ev["analysis"] = analyses.get(key, "")
-            with _cache_lock:
-                _ai_cache[key] = {"analysis": ev["analysis"], "at": now}
-
-    enriched = cached_events + uncached_events
-    enriched.sort(key=lambda e: e["event_time"] or e["date"])
-
+    # Return immediately — don't block the HTTP request on AI calls
+    enriched = sorted(filtered, key=lambda e: e["event_time"] or e["date"])
     with _cache_lock:
         _events_cache["data"] = enriched
         _events_cache["at"]   = now
-
     _save_cache(enriched)
+
+    # Fetch missing AI analyses in a background thread
+    if uncached_events:
+        def _bg_ai(events_snapshot, ts):
+            print(f"[calendar] Background AI fetch for {len(events_snapshot)} events")
+            analyses = _call_ai_batch(events_snapshot)
+            if not analyses:
+                return
+            with _cache_lock:
+                current = _events_cache.get("data", [])
+                for ev in current:
+                    key = _event_key(ev)
+                    if key in analyses:
+                        ev["analysis"] = analyses[key]
+                        _ai_cache[key] = {"analysis": analyses[key], "at": ts}
+            _save_cache(_events_cache.get("data", []))
+            print(f"[calendar] Background AI complete: {len(analyses)} analyses saved")
+
+        threading.Thread(
+            target=_bg_ai,
+            args=(uncached_events, now),
+            daemon=True,
+            name="calendar-ai-bg"
+        ).start()
+
     return enriched
