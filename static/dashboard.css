@@ -30,6 +30,8 @@ body {
   font-family: 'Space Mono', monospace;
   min-height: 100vh;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: row;
 }
 
 /* scanline grain */
@@ -768,10 +770,12 @@ body {
 }
  
 /* All existing page content gets wrapped in .main-content */
-.main-content {
+#main-content {
   flex: 1;
   min-width: 0;
+  height: 100vh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
  
 /* ── Nav shell ── */
@@ -789,7 +793,8 @@ body {
   z-index: 200;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
+  overflow: visible; /* ← was 'hidden' which clipped the collapse button */
+  flex-shrink: 0;
 }
  
 #side-nav.collapsed {
@@ -807,9 +812,7 @@ body {
   overflow: hidden;
 }
  
-#side-nav-logo svg {
-  flex-shrink: 0;
-}
+#side-nav-logo svg { flex-shrink: 0; }
  
 #side-nav-logo-text {
   font-family: 'Space Mono', monospace;
@@ -818,7 +821,6 @@ body {
   letter-spacing: 0.2em;
   color: var(--accent);
   text-transform: uppercase;
-  opacity: 1;
   transition: opacity 0.15s;
 }
  
@@ -827,11 +829,13 @@ body {
   pointer-events: none;
 }
  
-/* ── Divider ── */
+/* ── Dividers ── */
+.nav-divider,
 #side-nav-divider {
   height: 1px;
   background: var(--border);
   margin: 0 16px 12px;
+  flex-shrink: 0;
 }
  
 /* ── Nav links ── */
@@ -843,6 +847,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow: hidden;
 }
  
 .nav-item {
@@ -861,19 +866,16 @@ body {
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
   position: relative;
+  overflow: hidden;
 }
  
-.nav-item:hover {
-  background: rgba(255,255,255,0.04);
-  color: #ccc;
-}
+.nav-item:hover { background: rgba(255,255,255,0.04); color: #ccc; }
  
 .nav-item.active {
   background: rgba(90, 240, 196, 0.08);
   color: var(--accent);
 }
  
-/* Active left-edge indicator */
 .nav-item.active::before {
   content: '';
   position: absolute;
@@ -908,22 +910,38 @@ body {
 }
  
 /* ── Bottom section ── */
-#side-nav-bottom {
-  padding: 0 8px;
-}
+#side-nav-bottom { padding: 0 8px; }
  
-.nav-item--bottom {
-  font-size: 0.6rem;
-  opacity: 0.6;
+.nav-item--bottom { font-size: 0.6rem; opacity: 0.6; }
+.nav-item--bottom:hover { opacity: 1; }
+ 
+/* ── Collapse toggle button ── */
+#nav-collapse-btn {
+  position: absolute;
+  bottom: 80px;
+  right: -13px;         /* ← half outside the nav edge */
+  width: 26px;
+  height: 26px;
+  background: #1a1a24;
+  border: 1px solid var(--border2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s, background 0.15s;
+  z-index: 201;
+  flex-shrink: 0;
 }
-.nav-item--bottom:hover {
-  opacity: 1;
-}
+#nav-collapse-btn:hover { color: var(--accent); background: #222230; }
+#nav-collapse-btn svg { transition: transform 0.25s; }
+#side-nav.collapsed #nav-collapse-btn svg { transform: rotate(180deg); }
  
 /* ── Tooltip (collapsed mode) ── */
 #nav-tooltip {
   position: fixed;
-  left: 68px;
+  left: 70px;
   background: #1a1a24;
   border: 1px solid var(--border2);
   border-radius: 6px;
@@ -941,35 +959,4 @@ body {
   z-index: 999;
 }
  
-#nav-tooltip.visible {
-  opacity: 1;
-}
- 
-/* ── Collapse toggle button ── */
-#nav-collapse-btn {
-  position: absolute;
-  bottom: 80px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  background: #1a1a24;
-  border: 1px solid var(--border2);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--muted);
-  transition: color 0.15s, background 0.15s;
-  z-index: 201;
-}
-#nav-collapse-btn:hover {
-  color: var(--accent);
-  background: #222230;
-}
-#nav-collapse-btn svg {
-  transition: transform 0.25s;
-}
-#side-nav.collapsed #nav-collapse-btn svg {
-  transform: rotate(180deg);
-}
+#nav-tooltip.visible { opacity: 1; }
