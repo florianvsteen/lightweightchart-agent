@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 CALENDAR_URL  = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-GEMINI_URL    = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+GEMINI_URL    = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
 CURRENCIES    = {"EUR", "GBP", "USD", "JPY"}
 IMPACTS       = {"High", "Medium"}
 EVENTS_TTL    = 2 * 60 * 60   # 2 hours — FF updates once/hour
@@ -267,6 +267,8 @@ def get_calendar(force_refresh: bool = False) -> list[dict]:
             ev["analysis"] = _call_gemini_analysis(ev)
             with _cache_lock:
                 _ai_cache[key] = {"analysis": ev["analysis"], "at": now}
+            # Stay well under free tier rate limit (30 RPM for Flash-Lite)
+            time.sleep(2)
 
         enriched.append(ev)
 
