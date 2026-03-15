@@ -22,6 +22,8 @@ Central hub Flask app. Serves:
 import os
 import json
 import requests
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
 
 from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
