@@ -7,14 +7,14 @@
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
- 
+
 <div id="app">
- 
+
   <!-- ══════════════════════════════════════════════════════════
        SIDE NAV
        ══════════════════════════════════════════════════════════ -->
   <nav id="side-nav">
- 
+
     <div id="side-nav-logo">
       <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
         <rect x="1" y="1" width="26" height="26" rx="6" stroke="var(--accent)" stroke-width="1.5"/>
@@ -25,13 +25,13 @@
       </svg>
       <span id="side-nav-logo-text">Inner Flows</span>
     </div>
- 
+
     <div class="nav-divider"></div>
- 
+
     <ul id="side-nav-links">
- 
+
       <li>
-        <a href="/" class="nav-item active" data-label="Dashboard">
+        <a href="/" class="nav-item" data-label="Dashboard">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="12 2 2 7 12 12 22 7 12 2"/>
@@ -42,7 +42,7 @@
           <span class="nav-label">Dashboard</span>
         </a>
       </li>
- 
+
       <li>
         <a href="/macro" class="nav-item" data-label="Macro Desk">
           <span class="nav-icon">
@@ -54,7 +54,7 @@
           <span class="nav-label">Macro Desk</span>
         </a>
       </li>
- 
+
       <li>
         <a href="/calendar-page" class="nav-item" data-label="Calendar">
           <span class="nav-icon">
@@ -68,9 +68,9 @@
           <span class="nav-label">Calendar</span>
         </a>
       </li>
- 
+
     </ul>
- 
+
     <div id="side-nav-bottom">
       <div class="nav-divider"></div>
       <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
@@ -83,24 +83,22 @@
         <span class="nav-label">Bloomberg TV</span>
       </a>
     </div>
- 
-    <!-- Collapse toggle -->
+
     <button id="nav-collapse-btn" aria-label="Toggle nav">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
         <polyline points="15 18 9 12 15 6"/>
       </svg>
     </button>
- 
+
   </nav>
- 
-  <!-- Tooltip (collapsed hover) -->
+
   <div id="nav-tooltip"></div>
- 
+
   <!-- ══════════════════════════════════════════════════════════
        MAIN CONTENT
        ══════════════════════════════════════════════════════════ -->
   <div id="main-content">
- 
+
     <header>
       <div class="logo">
         <span class="logo-title">The Inner Flows</span>
@@ -111,7 +109,7 @@
         <span id="clock">--:--:--</span>
       </div>
     </header>
- 
+
     <div id="weekend-banner">
       <div class="wk-inner">
         <div class="wk-icon">⏸</div>
@@ -121,11 +119,10 @@
         <div class="wk-hint">Resumes Sunday 22:00 UTC &nbsp;·&nbsp; Fri 23:00 → Sun 22:00 UTC</div>
       </div>
     </div>
- 
+
     <div class="grid" id="grid"></div>
- 
+
     <div id="intel-row">
-      <!-- Currency Strength Chart -->
       <div id="cstrength-panel">
         <div class="intel-header">
           <div class="intel-title-group">
@@ -137,28 +134,24 @@
           </div>
           <div class="live-badge"><div class="ldot"></div> LIVE</div>
         </div>
- 
         <div id="cs-legend">
           <span class="cs-pill" data-curr="USD" onclick="toggleCurr('USD')">USD</span>
           <span class="cs-pill" data-curr="EUR" onclick="toggleCurr('EUR')">EUR</span>
           <span class="cs-pill" data-curr="GBP" onclick="toggleCurr('GBP')">GBP</span>
           <span class="cs-pill" data-curr="JPY" onclick="toggleCurr('JPY')">JPY</span>
         </div>
- 
         <div id="cs-values">
           <div class="cs-val-item"><span class="cs-val-label">USD</span><span class="cs-val-num USD" id="cv-USD">—</span></div>
           <div class="cs-val-item"><span class="cs-val-label">EUR</span><span class="cs-val-num EUR" id="cv-EUR">—</span></div>
           <div class="cs-val-item"><span class="cs-val-label">GBP</span><span class="cs-val-num GBP" id="cv-GBP">—</span></div>
           <div class="cs-val-item"><span class="cs-val-label">JPY</span><span class="cs-val-num JPY" id="cv-JPY">—</span></div>
         </div>
- 
         <div id="cs-chart-wrap">
           <canvas id="cs-canvas"></canvas>
           <div id="cs-error">No data — market may be closed</div>
         </div>
       </div>
- 
-      <!-- FinancialJuice Live Feed -->
+
       <div id="fj-panel">
         <div id="fj-header" class="intel-header" style="margin-bottom:0">
           <div class="intel-title-group">
@@ -187,7 +180,7 @@
         </div>
       </div>
     </div>
- 
+
     <div id="calendar-row">
       <div id="calendar-panel">
         <div id="cal-header">
@@ -208,7 +201,6 @@
             </div>
           </div>
         </div>
- 
         <div id="cal-list">
           <div class="cal-loading">
             <div class="cal-spinner"></div>
@@ -217,7 +209,7 @@
         </div>
       </div>
     </div>
- 
+
     <footer>
       <span id="last-update">Waiting for data...</span>
       <div class="refresh-indicator">
@@ -225,14 +217,12 @@
         <span id="refresh-label">LIVE · 5s</span>
       </div>
     </footer>
- 
+
   </div><!-- /#main-content -->
 </div><!-- /#app -->
 
 <script>
 const PAIRS = {{ pairs_js | safe }};
-
-// Session windows from sessions.py (passed via Python backend)
 const SESSION_WINDOWS = {{ sessions_js | safe }};
 
 function getCurrentSession() {
@@ -337,24 +327,19 @@ function buildGrid() {
   });
 }
 
-// Bias cache: keyed by pair.id, stores { data, fetchedAt (ms) }
 const _biasCache = {};
-const BIAS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const BIAS_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function fetchBias(pairId) {
   const cached = _biasCache[pairId];
-  if (cached && (Date.now() - cached.fetchedAt) < BIAS_TTL_MS) {
-    return cached.data;
-  }
+  if (cached && (Date.now() - cached.fetchedAt) < BIAS_TTL_MS) return cached.data;
   try {
     const res = await fetch(`/proxy/${pairId}/api/bias`);
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
     if (data) _biasCache[pairId] = { data, fetchedAt: Date.now() };
     return data;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function fetchPair(pair) {
@@ -365,17 +350,14 @@ async function fetchPair(pair) {
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-
     const candles = data.candles || [];
     const last = candles[candles.length - 1];
     const prev = candles[candles.length - 2];
     const price = last?.close;
-
     const dotEl    = document.getElementById(`dot-${pair.id}`);
     const statusEl = document.getElementById(`status-${pair.id}`);
     const extraEl  = document.getElementById(`extra-${pair.id}`);
     const metaEl   = document.getElementById(`meta-${pair.id}`);
-
     if (!last) {
       dotEl.className      = 'status-dot standby';
       statusEl.textContent = pair.always_open ? 'No data — waiting for feed' : 'Markets closed';
@@ -384,38 +366,29 @@ async function fetchPair(pair) {
       metaEl.textContent   = pair.always_open ? '⏳ WAITING' : '⛔ CLOSED';
       return;
     }
-
     document.getElementById(`price-${pair.id}`).textContent = formatPrice(price, pair.id);
-
     if (prev?.close && price) {
       const chg = ((price - prev.close) / prev.close) * 100;
       const el = document.getElementById(`change-${pair.id}`);
       el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(3) + '%';
       el.className = 'price-change ' + (chg >= 0 ? 'up' : 'down');
     }
-
     const det = data.detectors || {};
 
-    // ── Accumulation ──────────────────────────────────────────────────
     if (pair.type === 'accumulation') {
       let z = det.accumulation;
       const biasHtml = renderBiasRow(biasInfo);
-
-      // --- NEW MTF Logic: Pick the best timeframe to show ---
       let tfLabel = '';
       if (z && !z.status && typeof z === 'object') {
-          // It's a dictionary like {"1m": {...}, "3m": {...}}
-          const tfs = Object.keys(z);
-          // Priority: confirmed > found > active > cooldown
-          const bestTf = tfs.find(t => z[t]?.status === 'confirmed') || 
-                         tfs.find(t => z[t]?.status === 'found') || 
-                         tfs.find(t => z[t]?.status === 'active') || 
-                         tfs.find(t => z[t]?.status === 'cooldown') ||
-                         tfs[0];
-          tfLabel = `[${bestTf}] `;
-          z = z[bestTf];
+        const tfs = Object.keys(z);
+        const bestTf = tfs.find(t => z[t]?.status === 'confirmed') ||
+                       tfs.find(t => z[t]?.status === 'found') ||
+                       tfs.find(t => z[t]?.status === 'active') ||
+                       tfs.find(t => z[t]?.status === 'cooldown') ||
+                       tfs[0];
+        tfLabel = `[${bestTf}] `;
+        z = z[bestTf];
       }
-
       if (!z || z.status === 'looking' || z.status === 'weekend' || z.status === 'out_of_session') {
         const isOOS = !z || z.status === 'weekend' || z.status === 'out_of_session';
         dotEl.className      = 'status-dot looking';
@@ -463,25 +436,21 @@ async function fetchPair(pair) {
       }
     }
 
-    // ── Supply & Demand ───────────────────────────────────────────────
     if (pair.type === 'supply_demand') {
       const result       = det.supply_demand;
       const bias         = result?.bias || biasInfo || {};
       const zones        = (result?.zones || []).filter(z => z.is_active);
       const isMisaligned = bias.bias === 'misaligned';
       const biasHtml     = renderBiasRow(bias);
-
       if      (bias.bias === 'strong_bullish' || bias.bias === 'bullish')  dotEl.className = 'status-dot bullish';
       else if (bias.bias === 'strong_bearish' || bias.bias === 'bearish')  dotEl.className = 'status-dot bearish';
       else                                                                   dotEl.className = 'status-dot misaligned';
-
       if (isMisaligned && zones.length > 0) {
         statusEl.textContent = `${zones.length} zone${zones.length > 1 ? 's' : ''} (bias misaligned ⚡)`;
         statusEl.className   = 'status-text';
       } else if (isMisaligned) {
-        // Dynamically figure out what the backend is actually scanning for based on the weekly bias
         const weeklyBias = (bias.weekly_bias || '').toLowerCase();
-        const seeking = weeklyBias.includes('bull') ? 'demand zones' : 
+        const seeking = weeklyBias.includes('bull') ? 'demand zones' :
                         weeklyBias.includes('bear') ? 'supply zones' : 'weekly direction';
         statusEl.textContent = `Bias misaligned — seeking ${seeking}`;
         statusEl.className   = 'status-text dim';
@@ -492,7 +461,6 @@ async function fetchPair(pair) {
         statusEl.textContent = bias.bias?.includes('bullish') ? 'Seeking demand zones' : 'Seeking supply zones';
         statusEl.className   = 'status-text dim';
       }
-
       extraEl.innerHTML = biasHtml;
       metaEl.textContent = '';
     }
@@ -512,10 +480,8 @@ async function fetchPair(pair) {
 
 function updateClock() {
   const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
   document.getElementById('clock').textContent =
     now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-
   const badge = document.getElementById('session-global');
   if (isWeekendHalt()) {
     const cd = getWeekendCountdown();
@@ -530,7 +496,6 @@ function updateClock() {
   document.getElementById('weekend-banner').style.display = 'none';
   const lbl = document.getElementById('refresh-label');
   if (lbl) lbl.textContent = 'LIVE · 60s';
-
   const sess = getCurrentSession();
   if (sess) {
     badge.textContent = sess.label || sess.name;
@@ -585,7 +550,7 @@ function applyWeekendStandby() {
   document.getElementById('last-update').textContent = 'Polling suspended for weekend';
 }
 
-// ── Currency Strength Chart ───────────────────────────────────────────────────
+// ── Currency Strength ─────────────────────────────────────────────────────────
 let csChart = null;
 const CS_COLORS = {
   USD: { line: '#6060f0', fill: 'rgba(90,90,240,0.08)' },
@@ -594,21 +559,18 @@ const CS_COLORS = {
   JPY: { line: '#f0b428', fill: 'rgba(240,180,40,0.06)' },
 };
 const CS_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY'];
-let csHidden = {};  // { USD: false, EUR: false, ... }
- 
+let csHidden = {};
+
 function toggleCurr(curr) {
   csHidden[curr] = !csHidden[curr];
   const pill = document.querySelector(`.cs-pill[data-curr="${curr}"]`);
   if (pill) pill.classList.toggle('hidden-curr', csHidden[curr]);
   if (csChart) {
     const idx = CS_CURRENCIES.indexOf(curr);
-    if (idx >= 0) {
-      csChart.data.datasets[idx].hidden = !!csHidden[curr];
-      csChart.update('none');
-    }
+    if (idx >= 0) { csChart.data.datasets[idx].hidden = !!csHidden[curr]; csChart.update('none'); }
   }
 }
- 
+
 async function loadCurrencyStrength() {
   try {
     const res = await fetch('/api/currency-strength');
@@ -619,13 +581,9 @@ async function loadCurrencyStrength() {
       document.getElementById('cs-canvas').style.display = 'none';
       return;
     }
- 
     document.getElementById('cs-error').style.display = 'none';
     document.getElementById('cs-canvas').style.display = '';
- 
     const pts = data.points;
- 
-    // Update live value badges
     const last = pts[pts.length - 1];
     CS_CURRENCIES.forEach(c => {
       const el = document.getElementById('cv-' + c);
@@ -634,12 +592,10 @@ async function loadCurrencyStrength() {
       el.textContent = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
       el.classList.toggle('positive', v > 0);
     });
- 
     const labels = pts.map(p => {
       const d = new Date(p.time * 1000);
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     });
- 
     const datasets = CS_CURRENCIES.map(c => ({
       label: c,
       data: pts.map(p => p[c]),
@@ -652,7 +608,6 @@ async function loadCurrencyStrength() {
       fill: false,
       hidden: !!csHidden[c],
     }));
- 
     if (csChart) {
       csChart.data.labels = labels;
       csChart.data.datasets = datasets;
@@ -677,31 +632,19 @@ async function loadCurrencyStrength() {
               bodyColor: '#c8c8d8',
               titleFont: { family: 'Space Mono', size: 10 },
               bodyFont:  { family: 'Space Mono', size: 11 },
-              callbacks: {
-                label: ctx => ` ${ctx.dataset.label}  ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(3)}%`,
-              },
+              callbacks: { label: ctx => ` ${ctx.dataset.label}  ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(3)}%` },
             },
           },
           scales: {
             x: {
               grid: { color: 'rgba(255,255,255,0.03)', drawTicks: false },
               border: { display: false },
-              ticks: {
-                color: '#4a4a60',
-                font: { family: 'Space Mono', size: 9 },
-                maxTicksLimit: 8,
-                maxRotation: 0,
-              },
+              ticks: { color: '#4a4a60', font: { family: 'Space Mono', size: 9 }, maxTicksLimit: 8, maxRotation: 0 },
             },
             y: {
               grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)', drawTicks: false },
               border: { display: false },
-              ticks: {
-                color: '#4a4a60',
-                font: { family: 'Space Mono', size: 9 },
-                callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
-                maxTicksLimit: 7,
-              },
+              ticks: { color: '#4a4a60', font: { family: 'Space Mono', size: 9 }, callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%', maxTicksLimit: 7 },
             },
           },
         },
@@ -713,8 +656,7 @@ async function loadCurrencyStrength() {
     document.getElementById('cs-canvas').style.display = 'none';
   }
 }
- 
-// Load Chart.js dynamically if not already loaded
+
 if (typeof Chart === 'undefined') {
   const s = document.createElement('script');
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
@@ -725,16 +667,12 @@ if (typeof Chart === 'undefined') {
   setInterval(loadCurrencyStrength, 5 * 60 * 1000);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ECONOMIC CALENDAR
-// ═══════════════════════════════════════════════════════════════════════════
-
+// ── Economic Calendar ─────────────────────────────────────────────────────────
 let _calEvents = [];
 let _calFilter = 'ALL';
 let _calCountdownTimer = null;
 let _calRefreshTimer   = null;
 
-// ── Filter buttons ────────────────────────────────────────────────────────
 document.querySelectorAll('.cal-filter').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.cal-filter').forEach(b => b.classList.remove('active'));
@@ -744,73 +682,47 @@ document.querySelectorAll('.cal-filter').forEach(btn => {
   });
 });
 
-// ── Countdown ─────────────────────────────────────────────────────────────
 function calCountdown(eventIsoUtc) {
   if (!eventIsoUtc) return { label: '—', cls: '' };
   const eventMs = new Date(eventIsoUtc).getTime();
   if (isNaN(eventMs)) return { label: '—', cls: '' };
-
   const diffMs   = eventMs - Date.now();
   const totalMin = Math.floor(Math.abs(diffMs) / 60000);
-
   if (diffMs < 0) {
     if (totalMin < 60) return { label: `${totalMin}m ago`, cls: 'past' };
     const h = Math.floor(totalMin / 60);
     if (h < 24) return { label: `${h}h ago`, cls: 'past' };
     return { label: `${Math.floor(h / 24)}d ago`, cls: 'past' };
   }
-
   if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
   if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
   const h = Math.floor(totalMin / 60), m = totalMin % 60;
   return { label: `in ${h}h${m > 0 ? ' ' + m + 'm' : ''}`, cls: '' };
 }
 
-// ── Time formatting ───────────────────────────────────────────────────────
 function formatEventTime(eventIsoUtc) {
   if (!eventIsoUtc) return null;
   const d = new Date(eventIsoUtc);
   if (isNaN(d.getTime())) return null;
-
-  // Local time in browser's timezone
-  const local = d.toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  });
-
-  // Friendly timezone name — strip continent prefix
+  const local = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const tzFull = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localTz = tzFull.includes('/') ? tzFull.split('/').pop().replace(/_/g, ' ') : tzFull;
-
-  // UTC time
-  const utc = d.toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
-  });
-
+  const utc = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' });
   return { local, utc, localTz };
 }
 
-// ── Date helpers ──────────────────────────────────────────────────────────
 function getEventDateStr(ev) {
-  // event_time is ISO UTC like "2026-03-17T13:30:00+00:00"
-  // Slice the UTC date portion for grouping
   return (ev.event_time || '').slice(0, 10);
 }
 
-// ── Render ────────────────────────────────────────────────────────────────
 function renderCalendar() {
   const list = document.getElementById('cal-list');
   if (!list) return;
-
-  const filtered = _calFilter === 'ALL'
-    ? _calEvents
-    : _calEvents.filter(e => e.currency === _calFilter);
-
+  const filtered = _calFilter === 'ALL' ? _calEvents : _calEvents.filter(e => e.currency === _calFilter);
   if (!filtered.length) {
     list.innerHTML = '<div class="cal-empty">No events found for the selected filter.</div>';
     return;
   }
-
-  // Group events by UTC date
   const byDate = {};
   filtered.forEach(ev => {
     const d = getEventDateStr(ev);
@@ -818,55 +730,36 @@ function renderCalendar() {
     if (!byDate[d]) byDate[d] = [];
     byDate[d].push(ev);
   });
-
   const todayStr    = new Date().toISOString().slice(0, 10);
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-
-  const dateLabel = d => {
-    if (d === todayStr)    return 'Today';
-    if (d === tomorrowStr) return 'Tomorrow';
-    return d;
-  };
-
+  const dateLabel = d => { if (d === todayStr) return 'Today'; if (d === tomorrowStr) return 'Tomorrow'; return d; };
   let html = '';
-
   for (const [date, events] of Object.entries(byDate).sort()) {
-    const displayDate = new Date(date + 'T12:00:00Z')
-      .toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-
+    const displayDate = new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
     html += `<div class="cal-date-sep">${dateLabel(date)} · ${displayDate}</div>`;
-
     events.forEach(ev => {
       const cd   = calCountdown(ev.event_time);
       const time = formatEventTime(ev.event_time);
-
       const hasActual   = ev.actual   && ev.actual   !== '';
       const hasForecast = ev.forecast && ev.forecast !== '';
       const hasPrev     = ev.previous && ev.previous !== '';
-
-      // Time block: local time + UTC
       const timeHtml = time ? `
         <div class="cal-time-block">
           <span class="cal-time-local">${time.local}</span>
           <span class="cal-time-tz">${time.localTz}</span>
           <span class="cal-time-utc">${time.utc} UTC</span>
         </div>` : '';
-
-      // Prev / Forecast / Actual row
       const dataRow = (hasActual || hasForecast || hasPrev) ? `
         <div class="cal-data-row">
           ${hasPrev     ? `<div class="cal-data-item"><span class="cal-data-label">Previous</span><span class="cal-data-val">${ev.previous}</span></div>` : ''}
           ${hasForecast ? `<div class="cal-data-item"><span class="cal-data-label">Forecast</span><span class="cal-data-val">${ev.forecast}</span></div>` : ''}
           ${hasActual   ? `<div class="cal-data-item"><span class="cal-data-label">Actual</span><span class="cal-data-val actual">${ev.actual}</span></div>` : ''}
         </div>` : '';
-
-      // AI analysis box
       const aiBox = ev.analysis ? `
         <div class="cal-ai-box">
           <div class="cal-ai-label">✦ AI Analysis</div>
           <div class="cal-ai-text">${ev.analysis}</div>
         </div>` : '';
-
       html += `
         <div class="cal-event-card">
           <div class="cal-event-top">
@@ -881,19 +774,13 @@ function renderCalendar() {
         </div>`;
     });
   }
-
   list.innerHTML = html;
 }
 
-// ── Countdown-only refresh (updates badges in-place, no full re-render) ──
 function updateCountdownBadges() {
   if (!_calEvents.length) return;
-
   const cards = document.querySelectorAll('.cal-event-card');
-  const filtered = _calFilter === 'ALL'
-    ? _calEvents
-    : _calEvents.filter(e => e.currency === _calFilter);
-
+  const filtered = _calFilter === 'ALL' ? _calEvents : _calEvents.filter(e => e.currency === _calFilter);
   cards.forEach((card, i) => {
     const ev = filtered[i];
     if (!ev) return;
@@ -907,28 +794,21 @@ function updateCountdownBadges() {
 
 function startCalCountdownTimer() {
   if (_calCountdownTimer) clearInterval(_calCountdownTimer);
-  // Update countdown badges every 30 seconds (lightweight — no full re-render)
   _calCountdownTimer = setInterval(updateCountdownBadges, 30 * 1000);
 }
 
-// ── Data loading ──────────────────────────────────────────────────────────
 async function loadCalendar(forceRefresh = false) {
   const list = document.getElementById('cal-list');
   if (!list) return;
-
-  // Only show loading spinner on first load, not on background refreshes
   if (!_calEvents.length) {
     list.innerHTML = '<div class="cal-loading"><div class="cal-spinner"></div><span>Loading calendar events…</span></div>';
   }
-
   try {
     const url = '/api/calendar' + (forceRefresh ? '?refresh=1' : '');
     const res  = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-
     if (data.error) throw new Error(data.error);
-
     _calEvents = data.events || [];
     renderCalendar();
     startCalCountdownTimer();
@@ -937,66 +817,22 @@ async function loadCalendar(forceRefresh = false) {
     if (!_calEvents.length) {
       list.innerHTML = `<div class="cal-empty">Could not load calendar — ${e.message}</div>`;
     }
-    // If we already have data, silently fail and keep showing old data
   }
 }
 
-async function triggerAiAnalysis() {
-  const btn = document.getElementById('cal-refresh-btn');
-  btn.textContent = '⏳ Running…';
-  btn.disabled = true;
-
-  try {
-    // Force refresh — clears FF cache and re-runs AI batch
-    const res  = await fetch('/api/calendar?refresh=1');
-    const data = await res.json();
-    _calEvents = data.events || [];
-    renderCalendar();
-
-    // Poll every 5s for up to 60s waiting for background AI to finish
-    let attempts = 0;
-    const poll = setInterval(async () => {
-      attempts++;
-      const r    = await fetch('/api/calendar');
-      const d    = await r.json();
-      const done = (d.events || []).filter(e => e.analysis).length;
-      const total = d.events.length;
-
-      btn.textContent = `✦ AI ${done}/${total}`;
-      _calEvents = d.events || [];
-      renderCalendar();
-
-      if (done >= total || attempts >= 12) {
-        clearInterval(poll);
-        btn.textContent = '✦ Run AI Analysis';
-        btn.disabled = false;
-      }
-    }, 5000);
-
-  } catch (e) {
-    console.error('AI analysis error:', e);
-    btn.textContent = '✦ Run AI Analysis';
-    btn.disabled = false;
-  }
-}
-
-(function() {
+// ── Side nav ──────────────────────────────────────────────────────────────────
+{
   const nav     = document.getElementById('side-nav');
   const tooltip = document.getElementById('nav-tooltip');
-  const btn     = document.getElementById('nav-collapse-btn'); // already in HTML
- 
-  // Restore collapsed state from last visit
-  if (localStorage.getItem('nav-collapsed') === '1') {
-    nav.classList.add('collapsed');
-  }
- 
-  // Toggle collapse
+  const btn     = document.getElementById('nav-collapse-btn');
+
+  if (localStorage.getItem('nav-collapsed') === '1') nav.classList.add('collapsed');
+
   btn.addEventListener('click', () => {
     nav.classList.toggle('collapsed');
     localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
   });
- 
-  // Tooltip on hover when collapsed
+
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('mouseenter', (e) => {
       if (!nav.classList.contains('collapsed')) return;
@@ -1006,22 +842,18 @@ async function triggerAiAnalysis() {
     });
     item.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
   });
- 
-  // Set active link from current path
+
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('.nav-item').forEach(item => {
     const href = (item.getAttribute('href') || '').replace(/\/$/, '') || '/';
     item.classList.toggle('active', href === path);
   });
-})();
+}
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 loadCalendar();
-
-// Refresh data every 30 minutes (calendar data doesn't change often)
 if (_calRefreshTimer) clearInterval(_calRefreshTimer);
-_calRefreshTimer = setInterval(() => loadCalendar(), 2 * 60 * 60 * 1000);  // 2 hours
-
+_calRefreshTimer = setInterval(() => loadCalendar(), 2 * 60 * 60 * 1000);
 buildGrid();
 setInterval(updateClock, 1000);
 updateClock();
