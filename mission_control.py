@@ -425,7 +425,6 @@ def api_currency_strength():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/macro")
 def macro_page():
     import json
@@ -435,6 +434,17 @@ def macro_page():
     instruments_js = json.dumps(list(INSTRUMENTS.keys()))
     return render_template("macro.html", instruments_js=instruments_js)
  
+ 
+ 
+ 
+@app.route("/macro/<pair_id>")
+def macro_detail_page(pair_id):
+    """Detail page for a specific pair — no pair selector bar."""
+    from tools.market import INSTRUMENTS
+    pair_id = pair_id.upper()
+    if pair_id not in INSTRUMENTS:
+        return redirect('/macro')
+    return render_template("macro-detail.html", pair_id=pair_id)
  
 @app.route("/api/macro/snapshot")
 def api_macro_snapshot():
@@ -596,6 +606,7 @@ def api_pair_news(pair_id):
     meta    = INSTRUMENTS.get(pair_id, {})
     articles = get_news(pair_id, yf_ticker=meta.get("sym"))
     return jsonify({"ok": True, "pair": pair_id, "articles": articles})
+
 
 # ── Run ─────────────────────────────────────────────────────────────────
 
