@@ -429,17 +429,11 @@ def api_currency_strength():
 def macro_page():
     import json
     from tools.market import INSTRUMENTS
-    # Pass instrument keys to the template so the JS ticker strip
-    # and chart selector are always in sync with config.PAIRS
     instruments_js = json.dumps(list(INSTRUMENTS.keys()))
     return render_template("macro.html", instruments_js=instruments_js)
- 
- 
- 
- 
+
 @app.route("/macro/<pair_id>")
 def macro_detail_page(pair_id):
-    """Detail page for a specific pair — no pair selector bar."""
     from tools.market import INSTRUMENTS
     pair_id = pair_id.upper()
     if pair_id not in INSTRUMENTS:
