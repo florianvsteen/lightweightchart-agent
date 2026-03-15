@@ -696,3 +696,52 @@ footer {
   margin-bottom: 4px;
 }
 
+/* ── Add these rules to dashboard.css (inside the calendar section) ── */
+
+/* Time block: sits between currency badge and countdown */
+.cal-time-block {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+}
+
+.cal-time-local {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.cal-time-tz {
+  font-size: 0.6rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  align-self: flex-end;
+  margin-bottom: 1px;
+}
+
+.cal-time-utc {
+  font-size: 0.58rem;
+  color: #333;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border: 1px solid #222;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Also update cal-event-top to handle the new time block alignment */
+.cal-event-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Push countdown to the right */
+.cal-countdown {
+  margin-left: auto;
+}
