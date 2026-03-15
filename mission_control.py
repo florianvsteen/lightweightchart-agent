@@ -27,8 +27,7 @@ from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
 from tools.sessions import get_sessions_for_js, FOREX
 from tools.calendar import get_calendar
-from tools.macro import get_all, get_ai_overview, get_market_mood, get_market_policy, get_flow_analysis, get_bearing, get_pulse
-from tools.market import get_market_snapshot, get_chart_data
+from tools.macro  import get_all, get_ai_overview, get_market_mood, get_market_policy, get_flow_analysis, get_bearing, get_pulsefrom tools.market import get_market_snapshot, get_chart_data
 from tools.macro_news import get_headlines, format_age
 
 # ── Config ─────────────────────────────────────────────────────────────
@@ -424,6 +423,7 @@ def api_currency_strength():
         import traceback
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
 @app.route("/macro")
 def macro_page():
     import json
@@ -509,7 +509,7 @@ def api_macro_all():
 def api_macro_news():
     """Global macro headlines for the Macro Desk overview."""
     try:
-        from tools.news_macro import get_headlines as get_macro_headlines, format_age as fmt
+        from tools.macro_news import get_headlines as get_macro_headlines, format_age as fmt
         limit = int(request.args.get("limit", 30))
         force = request.args.get("refresh") == "1"
         items = get_macro_headlines(limit=limit, force=force)
@@ -592,7 +592,7 @@ def api_macro_pair(pair_id):
 @app.route("/api/news/<pair_id>")
 def api_pair_news(pair_id):
     """Pair-specific news combining RSS relevance scoring + yfinance."""
-    from tools.news_macro import get_pair_headlines, format_age as fmt
+    from tools.macro_news import get_pair_headlines, format_age as fmt
     from tools.news       import get_news
     from tools.market     import INSTRUMENTS
  
