@@ -130,6 +130,14 @@
 #dd-module-row { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .dd-module { padding: 16px 20px; border-right: 1px solid var(--border); position: relative; }
 .dd-module:last-child { border-right: none; }
+/* Rounded card wrapper for mood/policy content */
+.dd-module-card {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 8px;
+}
 .dd-module-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
 .dd-module-age   { font-size: 0.48rem; color: #333; letter-spacing: 0.06em; }
 .gauge-wrap { display: flex; align-items: center; gap: 14px; }
@@ -139,21 +147,66 @@
 .gauge-footer { margin-top: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 0.6rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .policy-word { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.08em; margin-bottom: 7px; }
 
-/* Bottom three: Flow / Bearing / Pulse */
-#dd-bottom-row { display: grid; grid-template-columns: 1fr 1fr 1fr; flex-shrink: 0; }
-.dd-bottom { padding: 14px 18px; border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
-.dd-bottom:last-child { border-right: none; }
-.bearing-sparkline { width: 100%; height: 55px; margin: 5px 0; display: block; }
-.bearing-label { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.06em; margin: 4px 0; }
-.slider-wrap { margin: 5px 0 6px; }
-.slider-track { height: 4px; border-radius: 2px; position: relative; }
-.slider-thumb { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); transition: left 0.4s ease; }
-.slider-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.46rem; color: var(--muted); letter-spacing: 0.06em; }
-.track-flow  { background: linear-gradient(90deg, #3a3a50 0%, var(--accent) 50%, #f0a028 100%); }
+/* Bottom three: Flow / Bearing / Pulse — rounded cards like screenshot */
+#dd-bottom-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px; padding: 16px 24px 20px;
+  border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.dd-bottom {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* Flow — vertical bar chart visual */
+.flow-bars {
+  display: flex; align-items: flex-end; justify-content: center;
+  gap: 3px; height: 60px;
+}
+.flow-bar {
+  width: 6px; border-radius: 3px;
+  transition: height 0.4s ease, background 0.4s ease;
+}
+
+/* Bearing — jagged area chart */
+.bearing-canvas { width: 100%; height: 70px; display: block; }
+
+/* Pulse — heartbeat/flatline SVG */
+.pulse-svg { width: 100%; height: 50px; display: block; }
+
+/* Shared label */
+.module-reading {
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 1.2rem; letter-spacing: 0.04em; text-align: center;
+  margin: 4px 0;
+}
+
+/* Slider (Flow + Pulse) */
+.slider-wrap { margin: 2px 0 4px; }
+.slider-track { height: 6px; border-radius: 3px; position: relative; }
+.slider-thumb {
+  position: absolute; top: 50%; transform: translate(-50%,-50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--accent);
+  box-shadow: 0 0 8px rgba(90,240,196,0.4);
+  transition: left 0.4s ease;
+}
+.slider-labels { display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.5rem; color: var(--muted); letter-spacing: 0.06em; }
+.track-flow  { background: linear-gradient(90deg, #f0a028 0%, var(--accent) 50%, #f0a028 100%); }
 .track-pulse { background: linear-gradient(90deg, var(--border2) 0%, var(--accent) 35%, #f0a028 65%, #f05050 100%); }
-.bullet-list { list-style: none; display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
-.bullet-list li { font-size: 0.58rem; color: var(--muted); line-height: 1.4; display: flex; gap: 5px; }
-.bullet-list li::before { content: '·'; color: var(--border2); }
+
+/* Bullet list (Bearing) */
+.bullet-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.bullet-list li {
+  font-size: 0.62rem; color: var(--text); line-height: 1.5;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.bullet-list li::before { content: '•'; color: var(--accent); flex-shrink: 0; margin-top: 1px; font-size: 0.7rem; }
+
+.module-desc { font-size: 0.62rem; color: var(--muted); line-height: 1.55; }
 
 /* Skeleton */
 .skel { background: linear-gradient(90deg, var(--border) 0%, var(--border2) 50%, var(--border) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; display: block; }
@@ -277,6 +330,7 @@
               Market Mood
               <span class="dd-module-age" id="mood-age"></span>
             </div>
+            <div class="dd-module-card">
             <div class="gauge-wrap">
               <div class="gauge-svg-wrap">
                 <svg viewBox="0 0 90 52" width="90" height="52">
@@ -292,45 +346,60 @@
               </div>
             </div>
             <div class="gauge-footer" id="mood-footer">—</div>
+            </div><!-- /.dd-module-card -->
           </div>
           <div class="dd-module">
             <div class="dd-module-label">
               Market Policy
               <span class="dd-module-age" id="policy-age"></span>
             </div>
+            <div class="dd-module-card">
             <div class="policy-word" id="policy-label">—</div>
             <div class="gauge-desc"  id="policy-desc"><span class="skel" style="width:140px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:100px;height:9px;display:block"></span></div>
             <div class="gauge-footer" id="policy-footer" style="margin-top:10px">—</div>
+            </div><!-- /.dd-module-card -->
           </div>
         </div>
 
         <div id="dd-bottom-row">
+
+          <!-- FLOW -->
           <div class="dd-bottom">
             <div class="dd-module-label">Flow</div>
-            <canvas id="flow-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="flow-label">—</div>
+            <!-- Vertical bar chart — like the screenshot -->
+            <div class="flow-bars" id="flow-bars">
+              <!-- bars injected by JS -->
+            </div>
+            <div class="module-reading" id="flow-label">—</div>
             <div class="slider-wrap">
               <div class="slider-track track-flow"><div class="slider-thumb" id="flow-thumb" style="left:50%"></div></div>
               <div class="slider-labels"><span>Thin</span><span>Healthy</span><span>Crowded</span></div>
             </div>
-            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="flow-desc"></div>
+            <div class="module-desc" id="flow-desc"></div>
           </div>
+
+          <!-- BEARING -->
           <div class="dd-bottom">
             <div class="dd-module-label">Bearing</div>
-            <canvas id="bearing-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="bearing-label">—</div>
+            <!-- Jagged area chart — like the screenshot -->
+            <canvas id="bearing-canvas" class="bearing-canvas"></canvas>
+            <div class="module-reading" id="bearing-label">—</div>
             <ul class="bullet-list" id="bearing-bullets"></ul>
           </div>
+
+          <!-- PULSE -->
           <div class="dd-bottom">
             <div class="dd-module-label">Pulse</div>
-            <canvas id="pulse-sparkline" class="bearing-sparkline"></canvas>
-            <div class="bearing-label" id="pulse-label">—</div>
+            <!-- Heartbeat / flatline SVG -->
+            <canvas id="pulse-canvas" class="bearing-canvas"></canvas>
+            <div class="module-reading" id="pulse-label">—</div>
             <div class="slider-wrap">
               <div class="slider-track track-pulse"><div class="slider-thumb" id="pulse-thumb" style="left:20%"></div></div>
               <div class="slider-labels"><span>Quiet</span><span>Tradeable</span><span>Wild</span></div>
             </div>
-            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="pulse-desc"></div>
+            <div class="module-desc" id="pulse-desc"></div>
           </div>
+
         </div>
 
       </div>
@@ -346,6 +415,7 @@ let _period    = '1d';
 let _interval  = '5m';
 
 // ── Helpers ──
+function drawSparkline(){} // legacy — kept for safety, not used
 function fmtPrice(v, k) {
   if (v == null) return '—';
   if (['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(k)) return v.toFixed(4);
@@ -469,28 +539,138 @@ function renderPolicy(d) {
   document.getElementById('policy-age').textContent=ageStr(d.age_min);
   document.getElementById('policy-footer').innerHTML=`<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> <strong style="color:var(--text)">${label}:</strong> ${d.outlook||''}`;
 }
+// ── Flow: vertical bar chart (like screenshot) ──
 function renderFlow(d) {
-  const label=d.label||'HEALTHY', score=d.score||0.5;
-  const fc={'THIN':'#4a4a60','HEALTHY':'#5af0c4','CROWDED':'#f0a028'};
-  const el=document.getElementById('flow-label'); el.textContent=label; el.style.color=fc[label]||'var(--muted)';
-  document.getElementById('flow-thumb').style.left=(score*100)+'%';
-  document.getElementById('flow-desc').textContent=d.explanation||'';
-  drawSparkline('flow-sparkline',score>.5?.3:-.3,fc[label]||'#4a4a60');
+  const label = d.label || 'HEALTHY';
+  const score = d.score || 0.5;
+  const colors = { 'THIN': '#4a4a60', 'HEALTHY': '#5af0c4', 'CROWDED': '#f0a028' };
+  const color  = colors[label] || '#5af0c4';
+
+  const el = document.getElementById('flow-label');
+  el.textContent = label; el.style.color = color;
+  document.getElementById('flow-thumb').style.left = (score * 100) + '%';
+  document.getElementById('flow-desc').textContent = d.explanation || '';
+
+  // Draw vertical bar chart
+  const container = document.getElementById('flow-bars');
+  container.innerHTML = '';
+  const numBars = 14;
+  // Heights vary around the score — healthier = taller middle bars
+  for (let i = 0; i < numBars; i++) {
+    const center   = (numBars - 1) / 2;
+    const dist     = Math.abs(i - center) / center;
+    const baseH    = (1 - dist * 0.4) * score;
+    const noise    = (Math.random() - 0.5) * 0.25;
+    const heightPct = Math.max(0.1, Math.min(1, baseH + noise));
+    const bar = document.createElement('div');
+    bar.className = 'flow-bar';
+    bar.style.height  = (heightPct * 54) + 'px';
+    bar.style.background = color;
+    bar.style.opacity = 0.5 + heightPct * 0.5;
+    container.appendChild(bar);
+  }
 }
+
+// ── Bearing: jagged area chart (like screenshot) ──
 function renderBearing(d) {
-  const label=d.label||'NEUTRAL';
-  const bc={'STRONG UP':'#5af0c4','UP':'#5af0c4','NEUTRAL':'#4a4a60','DOWN':'#f05050','STRONG DOWN':'#f05050'};
-  const el=document.getElementById('bearing-label'); el.textContent=label; el.style.color=bc[label]||'var(--muted)';
-  document.getElementById('bearing-bullets').innerHTML=(d.bullets||[]).map(b=>`<li>${b}</li>`).join('');
-  drawSparkline('bearing-sparkline',label.includes('UP')?1:label.includes('DOWN')?-1:0,bc[label]||'#4a4a60');
+  const label  = d.label || 'NEUTRAL';
+  const colors = { 'STRONG UP':'#5af0c4', 'UP':'#5af0c4', 'NEUTRAL':'#4a4a60', 'DOWN':'#f05050', 'STRONG DOWN':'#f05050' };
+  const color  = colors[label] || '#4a4a60';
+  const trend  = label.includes('UP') ? 1 : label.includes('DOWN') ? -1 : 0;
+
+  const el = document.getElementById('bearing-label');
+  el.textContent = label; el.style.color = color;
+  document.getElementById('bearing-bullets').innerHTML = (d.bullets || []).map(b => `<li>${b}</li>`).join('');
+
+  // Draw jagged area chart on canvas
+  const canvas = document.getElementById('bearing-canvas');
+  const w = canvas.offsetWidth || 260;
+  const h = 70;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  const pts = 20;
+  const data = [];
+  let v = trend > 0 ? 0.35 : trend < 0 ? 0.65 : 0.5;
+  for (let i = 0; i < pts; i++) {
+    v += (Math.random() - 0.5) * 0.18 + trend * 0.035;
+    v  = Math.max(0.08, Math.min(0.92, v));
+    data.push(v);
+  }
+
+  const xStep = w / (pts - 1);
+  const grad  = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + '55');
+  grad.addColorStop(1, color + '00');
+
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const x = i * xStep, y = h - d * h;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
 }
+
+// ── Pulse: heartbeat or flatline (like screenshot) ──
 function renderPulse(d) {
-  const label=d.label||'TRADEABLE', score=d.score||0.5;
-  const vc={'QUIET':'#4a4a60','TRADEABLE':'#5af0c4','WILD':'#f05050'};
-  const el=document.getElementById('pulse-label'); el.textContent=label; el.style.color=vc[label]||'var(--muted)';
-  document.getElementById('pulse-thumb').style.left=(score*100)+'%';
-  document.getElementById('pulse-desc').textContent=d.explanation||'';
-  drawSparkline('pulse-sparkline',(score-.5)*.5,vc[label]||'#4a4a60');
+  const label  = d.label || 'TRADEABLE';
+  const score  = d.score || 0.5;
+  const colors = { 'QUIET': '#4a4a60', 'TRADEABLE': '#5af0c4', 'WILD': '#f05050' };
+  const color  = colors[label] || '#5af0c4';
+
+  const el = document.getElementById('pulse-label');
+  el.textContent = label; el.style.color = color;
+  document.getElementById('pulse-thumb').style.left = (score * 100) + '%';
+  document.getElementById('pulse-desc').textContent = d.explanation || '';
+
+  // Draw heartbeat/pulse canvas
+  const canvas = document.getElementById('pulse-canvas');
+  const w = canvas.offsetWidth || 260;
+  const h = 55;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  const mid = h / 2;
+  ctx.beginPath();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
+
+  if (label === 'QUIET') {
+    // Flat line with tiny noise
+    const pts = 60;
+    for (let i = 0; i < pts; i++) {
+      const x = (i / (pts-1)) * w;
+      const y = mid + (Math.random() - 0.5) * 4;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  } else if (label === 'WILD') {
+    // Chaotic spikes
+    const pts = 40;
+    for (let i = 0; i < pts; i++) {
+      const x = (i / (pts-1)) * w;
+      const y = mid + (Math.random() - 0.5) * (h * 0.85);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  } else {
+    // Classic heartbeat: flat, sharp spike up, down, up, flat
+    const seg = w / 3;
+    ctx.moveTo(0, mid);
+    ctx.lineTo(seg * 0.3, mid);
+    ctx.lineTo(seg * 0.4, mid - h*0.35);
+    ctx.lineTo(seg * 0.5, mid + h*0.2);
+    ctx.lineTo(seg * 0.6, mid - h*0.15);
+    ctx.lineTo(seg * 0.7, mid);
+    ctx.lineTo(seg * 1.0 + seg * 0.3, mid);
+    ctx.lineTo(seg * 1.0 + seg * 0.4, mid - h*0.35);
+    ctx.lineTo(seg * 1.0 + seg * 0.5, mid + h*0.2);
+    ctx.lineTo(seg * 1.0 + seg * 0.6, mid - h*0.15);
+    ctx.lineTo(seg * 1.0 + seg * 0.7, mid);
+    ctx.lineTo(w, mid);
+  }
+  ctx.stroke();
 }
 
 // ── News ──
