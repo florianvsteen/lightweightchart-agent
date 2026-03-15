@@ -663,49 +663,48 @@ document.querySelectorAll('.cal-filter').forEach(btn => {
   });
 });
  
-// The FF CDN JSON gives ISO datetimes already stored in event_time (UTC).
-// Replace the old calCountdown(dateStr, timeStr) with this:
- 
 function calCountdown(eventIsoUtc) {
   if (!eventIsoUtc) return { label: '—', cls: '' };
- 
   const eventMs = new Date(eventIsoUtc).getTime();
-  if (isNaN(eventMs))  return { label: '—', cls: '' };
- 
+  if (isNaN(eventMs)) return { label: '—', cls: '' };
   const diffMs   = eventMs - Date.now();
   const totalMin = Math.floor(Math.abs(diffMs) / 60000);
- 
   if (diffMs < 0) {
-    // Past event
-    if (totalMin < 60)  return { label: `${totalMin}m ago`,                  cls: 'past' };
-    return               { label: `${Math.floor(totalMin/60)}h ago`,          cls: 'past' };
+    if (totalMin < 60) return { label: `${totalMin}m ago`, cls: 'past' };
+    return { label: `${Math.floor(totalMin / 60)}h ago`, cls: 'past' };
   }
- 
-  // Future
-  if (totalMin < 30) return { label: `in ${totalMin}m`,                       cls: 'soon' };
-  if (totalMin < 60) return { label: `in ${totalMin}m`,                       cls: '' };
+  if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
+  if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
   const h = Math.floor(totalMin / 60), m = totalMin % 60;
-  return               { label: `in ${h}h ${m > 0 ? m+'m' : ''}`.trim(),     cls: '' };
+  return { label: `in ${h}h${m > 0 ? ' ' + m + 'm' : ''}`, cls: '' };
 }
  
-// ── REPLACEMENT renderCalendar() — uses event.event_time instead of date+time ─
-// In the renderCalendar() function, replace:
-//   const cd = calCountdown(ev.date, ev.time);
-// with:
-//   const cd = calCountdown(ev.event_time);
-//
-// Also replace the date separator logic since FF gives full ISO dates:
-// Replace:
-//   const today    = new Date().toISOString().slice(0, 10);
-//   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-// The ev.date from FF CDN is already like "2026-03-16T10:30:00" so:
+function formatEventTime(eventIsoUtc) {
+  if (!eventIsoUtc) return null;
+  const d = new Date(eventIsoUtc);
+  if (isNaN(d.getTime())) return null;
+ 
+  // Browser local time (user's timezone)
+  const local = d.toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    .replace('Europe/', '')
+    .replace('America/', '')
+    .replace('Asia/', '');
+ 
+  // UTC time
+  const utc = d.toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
+  });
+ 
+  return { local, utc, localTz };
+}
  
 function getEventDateStr(ev) {
-  // Extract just YYYY-MM-DD from the full ISO date string
-  return (ev.date || '').slice(0, 10);
+  return (ev.event_time || '').slice(0, 10);
 }
  
-// ── FULL UPDATED renderCalendar() — paste this over the old one ───────────────
 function renderCalendar() {
   const list = document.getElementById('cal-list');
   if (!list) return;
@@ -719,7 +718,7 @@ function renderCalendar() {
     return;
   }
  
-  // Group by date (YYYY-MM-DD)
+  // Group by UTC date
   const byDate = {};
   filtered.forEach(ev => {
     const d = getEventDateStr(ev);
@@ -733,29 +732,32 @@ function renderCalendar() {
  
   let html = '';
   for (const [date, events] of Object.entries(byDate)) {
+    if (!date) continue;
     const displayDate = new Date(date + 'T12:00:00Z')
-      .toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+      .toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
     html += `<div class="cal-date-sep">${dateLabel(date)} · ${displayDate}</div>`;
  
     events.forEach(ev => {
-      const cd = calCountdown(ev.event_time);
+      const cd   = calCountdown(ev.event_time);
+      const time = formatEventTime(ev.event_time);
+ 
       const hasActual   = ev.actual   && ev.actual   !== '';
       const hasForecast = ev.forecast && ev.forecast !== '';
       const hasPrev     = ev.previous && ev.previous !== '';
  
-      // Format event time for display
-      let timeDisplay = '';
-      if (ev.event_time) {
-        timeDisplay = new Date(ev.event_time)
-          .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
-      }
+      // Time display: local time big, UTC small
+      const timeHtml = time ? `
+        <div class="cal-time-block">
+          <span class="cal-time-local">${time.local}</span>
+          <span class="cal-time-tz">${time.localTz}</span>
+          <span class="cal-time-utc">${time.utc} UTC</span>
+        </div>` : '';
  
       const dataRow = (hasActual || hasForecast || hasPrev) ? `
         <div class="cal-data-row">
           ${hasPrev     ? `<div class="cal-data-item"><span class="cal-data-label">Previous</span><span class="cal-data-val">${ev.previous}</span></div>` : ''}
           ${hasForecast ? `<div class="cal-data-item"><span class="cal-data-label">Forecast</span><span class="cal-data-val">${ev.forecast}</span></div>` : ''}
           ${hasActual   ? `<div class="cal-data-item"><span class="cal-data-label">Actual</span><span class="cal-data-val actual">${ev.actual}</span></div>` : ''}
-          ${timeDisplay ? `<div class="cal-data-item" style="margin-left:auto"><span class="cal-data-label">Time</span><span class="cal-data-val" style="font-size:0.65rem;color:var(--muted)">${timeDisplay}</span></div>` : ''}
         </div>` : '';
  
       const aiBox = ev.analysis ? `
@@ -769,6 +771,7 @@ function renderCalendar() {
           <div class="cal-event-top">
             <span class="cal-impact ${ev.impact}">${ev.impact === 'High' ? '⚠' : '●'} ${ev.impact}</span>
             <span class="cal-currency ${ev.currency}">${ev.currency}</span>
+            ${timeHtml}
             <span class="cal-countdown ${cd.cls}">🕐 ${cd.label}</span>
           </div>
           <div class="cal-event-name">${ev.title}</div>
