@@ -23,7 +23,7 @@ services:
 
       # ── Calendar AI provider ───────────────────────────────────────
       # "gemini" (default, free) or "openai"
-      - PROVIDER=${AI_PROVIDER:-gemini}
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
