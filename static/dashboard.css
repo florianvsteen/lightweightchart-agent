@@ -753,3 +753,223 @@ footer {
 .cal-countdown {
   margin-left: auto;
 }
+
+
+/* ══════════════════════════════════════════════════════════════
+   SIDE NAV
+   ══════════════════════════════════════════════════════════════ */
+ 
+/* Make the page a flex row so nav + content sit side by side */
+body {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+ 
+/* All existing page content gets wrapped in .main-content */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+ 
+/* ── Nav shell ── */
+#side-nav {
+  width: 220px;
+  min-width: 220px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  background: #0d0d11;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0 16px;
+  z-index: 200;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+ 
+#side-nav.collapsed {
+  width: 60px;
+  min-width: 60px;
+}
+ 
+/* ── Logo ── */
+#side-nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 20px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+ 
+#side-nav-logo svg {
+  flex-shrink: 0;
+}
+ 
+#side-nav-logo-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  text-transform: uppercase;
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+ 
+#side-nav.collapsed #side-nav-logo-text {
+  opacity: 0;
+  pointer-events: none;
+}
+ 
+/* ── Divider ── */
+#side-nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 16px 12px;
+}
+ 
+/* ── Nav links ── */
+#side-nav-links {
+  list-style: none;
+  padding: 0 8px;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+ 
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--muted);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+}
+ 
+.nav-item:hover {
+  background: rgba(255,255,255,0.04);
+  color: #ccc;
+}
+ 
+.nav-item.active {
+  background: rgba(90, 240, 196, 0.08);
+  color: var(--accent);
+}
+ 
+/* Active left-edge indicator */
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+ 
+.nav-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+ 
+.nav-label {
+  opacity: 1;
+  transition: opacity 0.15s;
+  overflow: hidden;
+}
+ 
+#side-nav.collapsed .nav-label {
+  opacity: 0;
+  width: 0;
+  pointer-events: none;
+}
+ 
+/* ── Bottom section ── */
+#side-nav-bottom {
+  padding: 0 8px;
+}
+ 
+.nav-item--bottom {
+  font-size: 0.6rem;
+  opacity: 0.6;
+}
+.nav-item--bottom:hover {
+  opacity: 1;
+}
+ 
+/* ── Tooltip (collapsed mode) ── */
+#nav-tooltip {
+  position: fixed;
+  left: 68px;
+  background: #1a1a24;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+  white-space: nowrap;
+  z-index: 999;
+}
+ 
+#nav-tooltip.visible {
+  opacity: 1;
+}
+ 
+/* ── Collapse toggle button ── */
+#nav-collapse-btn {
+  position: absolute;
+  bottom: 80px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  background: #1a1a24;
+  border: 1px solid var(--border2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s, background 0.15s;
+  z-index: 201;
+}
+#nav-collapse-btn:hover {
+  color: var(--accent);
+  background: #222230;
+}
+#nav-collapse-btn svg {
+  transition: transform 0.25s;
+}
+#side-nav.collapsed #nav-collapse-btn svg {
+  transform: rotate(180deg);
+}
