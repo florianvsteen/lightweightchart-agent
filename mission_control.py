@@ -422,6 +422,89 @@ def api_currency_strength():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/macro")
+def macro_page():
+    return render_template("macro.html")
+ 
+ 
+@app.route("/api/macro/snapshot")
+def api_macro_snapshot():
+    """Fast endpoint — returns cached market prices only."""
+    try:
+        force = request.args.get("refresh") == "1"
+        data  = get_market_snapshot(force=force)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+@app.route("/api/macro/chart/<symbol>")
+def api_macro_chart(symbol):
+    """OHLCV candles for a given symbol key (e.g. SPX, GOLD)."""
+    try:
+        period   = request.args.get("period",   "1d")
+        interval = request.args.get("interval", "5m")
+        candles  = get_chart_data(symbol.upper(), period=period, interval=interval)
+        return jsonify({"ok": True, "symbol": symbol, "candles": candles})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+@app.route("/api/macro/module/<name>")
+def api_macro_module(name):
+    """
+    Fetch a single AI module by name.
+    Names: overview | mood | policy | flow | bearing | pulse
+    """
+    from tools.macro import (
+        get_ai_overview, get_market_mood, get_market_policy,
+        get_flow_analysis, get_bearing, get_pulse
+    )
+    fn_map = {
+        "overview": get_ai_overview,
+        "mood":     get_market_mood,
+        "policy":   get_market_policy,
+        "flow":     get_flow_analysis,
+        "bearing":  get_bearing,
+        "pulse":    get_pulse,
+    }
+    fn = fn_map.get(name)
+    if not fn:
+        return jsonify({"ok": False, "error": f"Unknown module: {name}"}), 400
+    try:
+        force = request.args.get("refresh") == "1"
+        data  = fn(force=force)
+        return jsonify({"ok": True, "module": name, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+@app.route("/api/macro/all")
+def api_macro_all():
+    """Fetch all AI modules + market snapshot in one call (parallel)."""
+    try:
+        force = request.args.get("refresh") == "1"
+        data  = get_all(force=force)
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+@app.route("/api/macro/news")
+def api_macro_news():
+    """Live news headlines from RSS feeds."""
+    try:
+        limit = int(request.args.get("limit", 30))
+        force = request.args.get("refresh") == "1"
+        items = get_headlines(limit=limit, force=force)
+        # Add human-readable age
+        for item in items:
+            item["age_str"] = format_age(item.get("age_min", 0))
+        return jsonify({"ok": True, "items": items, "count": len(items)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # ── Run ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
