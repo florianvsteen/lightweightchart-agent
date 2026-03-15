@@ -247,6 +247,10 @@ def api_calendar():
         print(traceback.format_exc())
         return jsonify({"error": str(e), "events": []}), 500
 
+@app.route('/calendar-page')
+def calendar_page():
+    return render_template('calendar-page.html')
+
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
     pair_id = pair_id.upper()
