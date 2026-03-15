@@ -459,6 +459,28 @@
   </div>
 </div>
 
+
+// ── Side nav ──
+{ const nav=document.getElementById('side-nav'),tip=document.getElementById('nav-tooltip'),btn=document.getElementById('nav-collapse-btn');
+  if(localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
+  btn.addEventListener('click',()=>{nav.classList.toggle('collapsed');localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0');});
+  document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('mouseenter',e=>{if(!nav.classList.contains('collapsed'))return;tip.textContent=i.dataset.label||'';tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px';tip.classList.add('visible');});i.addEventListener('mouseleave',()=>tip.classList.remove('visible'));});
+  document.querySelectorAll('.nav-item').forEach(i=>{const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/';i.classList.toggle('active',h==='/macro');});}
+
+// ── Init ──
+(async () => {
+  setPairIcon(PAIR_ID);
+  Promise.all([
+    loadSnapshot(),
+    loadChart(),
+    loadAnalysis(),
+    loadModules(),
+    loadNews(),
+  ]).catch(e => console.error('[macro-detail] init error', e));
+})();
+
+setInterval(loadSnapshot, 5 * 60 * 1000);
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const PAIR_ID  = '{{ pair_id }}';
