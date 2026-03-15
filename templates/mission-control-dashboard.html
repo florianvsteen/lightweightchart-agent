@@ -131,7 +131,7 @@
           <button class="cal-filter" data-curr="USD">USD</button>
           <button class="cal-filter" data-curr="JPY">JPY</button>
         </div>
-        <button id="cal-refresh-btn" class="open-link" onclick="loadCalendar(true)">↻ Refresh</button>
+        <button id="cal-refresh-btn" class="open-link" onclick="triggerAiAnalysis()" style="border-color:rgba(90,240,196,0.4);color:var(--accent)">✦ Run AI Analysis</button>
       </div>
     </div>
  
@@ -861,6 +861,45 @@ async function loadCalendar(forceRefresh = false) {
       list.innerHTML = `<div class="cal-empty">Could not load calendar — ${e.message}</div>`;
     }
     // If we already have data, silently fail and keep showing old data
+  }
+}
+
+async function triggerAiAnalysis() {
+  const btn = document.getElementById('cal-refresh-btn');
+  btn.textContent = '⏳ Running…';
+  btn.disabled = true;
+
+  try {
+    // Force refresh — clears FF cache and re-runs AI batch
+    const res  = await fetch('/api/calendar?refresh=1');
+    const data = await res.json();
+    _calEvents = data.events || [];
+    renderCalendar();
+
+    // Poll every 5s for up to 60s waiting for background AI to finish
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      const r    = await fetch('/api/calendar');
+      const d    = await r.json();
+      const done = (d.events || []).filter(e => e.analysis).length;
+      const total = d.events.length;
+
+      btn.textContent = `✦ AI ${done}/${total}`;
+      _calEvents = d.events || [];
+      renderCalendar();
+
+      if (done >= total || attempts >= 12) {
+        clearInterval(poll);
+        btn.textContent = '✦ Run AI Analysis';
+        btn.disabled = false;
+      }
+    }, 5000);
+
+  } catch (e) {
+    console.error('AI analysis error:', e);
+    btn.textContent = '✦ Run AI Analysis';
+    btn.disabled = false;
   }
 }
 
