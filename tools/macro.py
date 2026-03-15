@@ -643,3 +643,140 @@ def get_pair_all_modules(pair_id: str, force: bool = False) -> dict:
         t.join(timeout=45)
 
     return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PAIR CARD ANALYSIS — used by macro.html overview cards
+#  Cached separately so scheduler can pre-warm it
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_pair_card_analysis(pair_id: str, force: bool = False) -> dict:
+    """
+    Returns AI analysis + sentiment for a pair card on macro.html.
+    Cached for AI_TTL (30 min). Pre-warmed by macro_scheduler.
+
+    Returns:
+        {
+          "text":       str,
+          "sentiment":  "Bullish" | "Bearish" | "Neutral",
+          "confidence": int (0-100),
+          "news":       list[dict]   (from tools.news yfinance)
+        }
+    """
+    cache_key = f"card_{pair_id}"
+    cached = _cached(cache_key)
+    if cached and not force:
+        return {**cached, "age_min": _cache_age(cache_key), "cached": True}
+
+    ctx = _pair_context(pair_id)
+
+    try:
+        from tools.news import get_news
+        from tools.market import INSTRUMENTS
+        meta       = INSTRUMENTS.get(pair_id, {})
+        news_items = get_news(pair_id, yf_ticker=meta.get("sym"))
+        headlines  = "\n".join(f"- {n['headline']}" for n in news_items[:5])
+        news_ctx   = f"\n\nRecent headlines:\n{headlines}" if headlines else ""
+    except Exception:
+        news_items = []
+        news_ctx   = ""
+
+    json_schema = (
+        '{\n'
+        '  "text": "<2-3 sentence analysis of ' + pair_id + ': price action, key driver, what to watch>",\n'
+        '  "sentiment": "<Bullish | Bearish | Neutral>",\n'
+        '  "confidence": <integer 0-100>\n'
+        '}'
+    )
+
+    prompt = (
+        f"You are a macro trading analyst. Analyze {pair_id} right now.\n\n"
+        f"Market data:\n{ctx}{news_ctx}\n\n"
+        f"Be specific to {pair_id} only. Cite the actual price and % change. "
+        "Keep it concise and direct.\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
+    )
+
+    log.info(f"[macro] fetching card analysis for {pair_id}")
+    raw  = ask(prompt, max_tokens=300, temperature=0.2)
+    log.info(f"[macro] card analysis {pair_id}: {raw[:60]}")
+
+    data = _parse_json_response(raw)
+
+    result = {
+        "text":       data.get("text", ""),
+        "sentiment":  data.get("sentiment", "Neutral"),
+        "confidence": int(data.get("confidence", 70)),
+        "news":       news_items[:5],
+    }
+    _set_cache(cache_key, result)
+    return {**result, "age_min": 0, "cached": False}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PAIR CARD ANALYSIS — used by /api/macro/pair/<id> and macro_scheduler
+# ══════════════════════════════════════════════════════════════════════════════
+def get_pair_card_analysis(pair_id: str, force: bool = False) -> dict:
+    """
+    Returns AI analysis + sentiment + confidence for one pair.
+    Used by:
+      - macro.html pair cards  (/api/macro/pair/<id>)
+      - macro-detail.html stat boxes + AI overview
+      - macro_scheduler (pre-warms cache every 60 min)
+
+    Returns:
+        {
+          "text":       str,
+          "sentiment":  "Bullish" | "Bearish" | "Neutral",
+          "confidence": int (0-100),
+          "news":       list[dict]
+        }
+    """
+    cache_key = f"card_{pair_id}"
+    cached = _cached(cache_key)
+    if cached and not force:
+        return {**cached, "age_min": _cache_age(cache_key), "cached": True}
+
+    ctx = _pair_context(pair_id)
+
+    try:
+        from tools.news import get_news
+        from tools.market import INSTRUMENTS
+        meta       = INSTRUMENTS.get(pair_id, {})
+        news_items = get_news(pair_id, yf_ticker=meta.get("sym"))
+        headlines  = "\n".join(f"- {n['headline']}" for n in news_items[:5])
+        news_ctx   = f"\n\nRecent headlines:\n{headlines}" if headlines else ""
+    except Exception:
+        news_items = []
+        news_ctx   = ""
+
+    json_schema = (
+        '{\n'
+        '  "text": "<2-3 sentence analysis of ' + pair_id + ': price action, key driver, what to watch>",\n'
+        '  "sentiment": "<Bullish | Bearish | Neutral>",\n'
+        '  "confidence": <integer 0-100>\n'
+        '}'
+    )
+
+    prompt = (
+        f"You are a macro trading analyst. Analyze {pair_id} right now.\n\n"
+        f"Market data:\n{ctx}{news_ctx}\n\n"
+        f"Be specific to {pair_id} only. Cite the actual price and % change. "
+        "Keep it concise and direct.\n\n"
+        "Respond ONLY with valid JSON:\n" + json_schema
+    )
+
+    log.info(f"[macro] fetching card analysis for {pair_id}")
+    raw  = ask(prompt, max_tokens=300, temperature=0.2)
+    log.info(f"[macro] card analysis {pair_id}: {raw[:60]}")
+
+    data = _parse_json_response(raw)
+
+    result = {
+        "text":       data.get("text", ""),
+        "sentiment":  data.get("sentiment", "Neutral"),
+        "confidence": int(data.get("confidence", 70)),
+        "news":       news_items[:5],
+    }
+    _set_cache(cache_key, result)
+    return {**result, "age_min": 0, "cached": False}
