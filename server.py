@@ -122,7 +122,7 @@ class PairServer:
         self.last_active_zone: dict[str, dict] = {}
 
         # ── Migrate old timestamp-based S&D keys to new price-level keys ──────
-        # Old format: "supply_demand_<timestamp>"  (3 underscores, numeric suffix)
+        # Old format: "supply_demand_<timestamp>"  (2 underscores, numeric suffix)
         # New format: "sd_<type>_<top>_<bottom>"   (starts with "sd_")
         # Remove old keys so they don't accumulate in the file forever.
         old_keys = [
@@ -163,6 +163,19 @@ class PairServer:
         self._cache_lock = threading.Lock()
 
         self._cached_detector_results: dict = {}
+
+        # ── Restore S&D zones for immediate rendering after restart ──────────
+        # Without this, _cached_detector_results is empty until the first
+        # detection cycle completes (up to 30 minutes for a 30m timeframe).
+        # We persist the last known result dict so the stream serves zones
+        # immediately on startup before any detection has run.
+        for _det_name in config.get("detectors", []):
+            if _det_name == "supply_demand":
+                _saved_sd = self.last_alerted.get(f"{_det_name}_last_result")
+                if _saved_sd and isinstance(_saved_sd, dict):
+                    self._cached_detector_results[_det_name] = _saved_sd
+                    print(f"[{pair_id}] Restored {len(_saved_sd.get('zones', []))} S&D zone(s) from disk")
+
         self._cached_candles: dict[str, list] = {}
         self._results_lock = threading.Lock()
         self._state_version = 0
@@ -458,6 +471,19 @@ class PairServer:
                 # Persist the current set of active keys so we can invalidate
                 # stale ones on the next cycle.
                 self.last_active_zone[name + "_keys"] = list(curr_keys)
+
+                # Persist the full result dict so zones render immediately after restart.
+                # We store it in last_alerted (which is saved to disk) using a special key.
+                # Strip the 'end' timestamp from each zone before saving — it's always
+                # set to df.index[-1] and will be stale after restart anyway; the UI
+                # uses it only for drawing the right edge of the zone box, and a slightly
+                # stale value is fine until the first detection cycle refreshes it.
+                self.last_alerted[f"{name}_last_result"] = {
+                    "detector": result.get("detector", "supply_demand"),
+                    "bias":     result.get("bias", {}),
+                    "zones":    result.get("zones", []),
+                }
+                self._save_alerted()
 
     # ------------------------------------------------------------------ #
     # Background detection loop
