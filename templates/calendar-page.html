@@ -6,50 +6,57 @@
 <title>Calendar — The Inner Flows</title>
 <link rel="stylesheet" href="/static/dashboard.css">
 <style>
-/* ══════════════════════════════════════════════════════════════
-   CALENDAR PAGE
-   ══════════════════════════════════════════════════════════════ */
+html, body { height: 100%; overflow: hidden; }
 
-/* Page header */
+#app { height: 100vh; overflow: hidden; }
+
+#main-content {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Page header ── */
 #cal-page-header {
-  padding: 32px 36px 24px;
+  padding: 20px 32px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   flex-shrink: 0;
-  gap: 20px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 #cal-page-title {
   font-family: 'Syne', sans-serif;
   font-weight: 800;
-  font-size: 2.8rem;
+  font-size: 2.4rem;
   color: var(--accent);
   letter-spacing: -0.01em;
   line-height: 1;
 }
 #cal-page-sub {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   color: var(--muted);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 #cal-tz-badge {
   font-family: 'Space Mono', monospace;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--accent);
   border: 1px solid rgba(90,240,196,0.35);
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: var(--radius-sm);
   background: rgba(90,240,196,0.04);
   white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 #cal-tz-badge::before {
   content: '';
@@ -57,19 +64,20 @@
   border-radius: 50%;
   background: var(--accent);
   animation: pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 /* ── Filter bar ── */
 #cal-filter-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 36px;
+  gap: 10px;
+  padding: 10px 32px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-.filter-group { display: flex; align-items: center; gap: 6px; }
+.filter-group { display: flex; align-items: center; gap: 5px; }
 .filter-group-label {
   font-size: 0.55rem;
   color: var(--muted);
@@ -78,7 +86,7 @@
   margin-right: 2px;
   white-space: nowrap;
 }
-.filter-sep { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; }
+.filter-sep { width: 1px; height: 18px; background: var(--border2); flex-shrink: 0; }
 
 .date-btn {
   background: none;
@@ -87,10 +95,10 @@
   color: var(--muted);
   cursor: pointer;
   font-family: 'Space Mono', monospace;
-  font-size: 0.63rem;
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 5px 14px;
+  padding: 4px 12px;
   transition: all 0.15s;
   white-space: nowrap;
 }
@@ -103,11 +111,10 @@
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: 'Space Mono', monospace;
-  font-size: 0.62rem;
-  padding: 5px 10px;
+  font-size: 0.6rem;
+  padding: 4px 10px;
   display: none;
   outline: none;
-  transition: border-color 0.15s;
 }
 #custom-date-input:focus { border-color: var(--accent); }
 #custom-date-input.visible { display: block; }
@@ -119,10 +126,10 @@
   color: var(--muted);
   cursor: pointer;
   font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  padding: 4px 10px;
+  padding: 3px 9px;
   transition: all 0.15s;
   white-space: nowrap;
 }
@@ -132,76 +139,50 @@
 .pill-btn.active-imp-medium { border-color: rgba(240,160,40,0.6); color: #f0a028; background: rgba(240,160,40,0.07); }
 .pill-btn.active-imp-low    { border-color: rgba(140,140,140,0.5);color: #aaa;    background: rgba(140,140,140,0.05); }
 
-/* ── Date tabs (one per date in range) ── */
-#date-tabs {
-  display: flex;
-  gap: 0;
-  padding: 0 36px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-#date-tabs::-webkit-scrollbar { display: none; }
-
-.date-tab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 10px 20px 8px;
-  white-space: nowrap;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.date-tab:hover { color: #ccc; }
-.date-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.date-tab-count {
-  font-size: 0.52rem;
-  background: var(--border2);
-  padding: 1px 6px;
-  border-radius: 20px;
-  color: var(--muted);
-}
-.date-tab.active .date-tab-count {
-  background: rgba(90,240,196,0.15);
-  color: var(--accent);
-}
-
 /* ══════════════════════════════════════════════════════════════
-   HORIZONTAL TIMELINE
+   TIMELINE — fills remaining vertical space
    ══════════════════════════════════════════════════════════════ */
 
 #timeline-outer {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
 }
 
-/* Ruler row — sticky at top, scrolls horizontally with canvas */
+/* Ruler — fixed height, clips overflow, syncs scroll via JS */
 #timeline-ruler-wrap {
   flex-shrink: 0;
-  overflow: hidden;           /* clips ruler to viewport width */
+  height: 34px;
+  overflow: hidden;
   position: relative;
-  height: 36px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  border-bottom: 1px solid var(--border2);
+  background: rgba(10,10,12,0.95);
+  z-index: 10;
 }
-
 #timeline-ruler {
   height: 100%;
   position: relative;
   /* width set by JS */
+}
+
+/* Day separator labels on ruler */
+.ruler-day-label {
+  position: absolute;
+  bottom: 4px;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 1px 6px;
+  background: rgba(90,240,196,0.08);
+  border-radius: 3px;
+  border: 1px solid rgba(90,240,196,0.15);
 }
 
 .ruler-tick {
@@ -210,110 +191,128 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   transform: translateX(-50%);
 }
-.ruler-tick-line { width: 1px; height: 8px; background: var(--border2); }
+.ruler-tick-line { width: 1px; }
 .ruler-tick-label {
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   color: var(--muted);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   font-family: 'Space Mono', monospace;
 }
 
-/* NOW marker */
-#now-marker {
+/* NOW marker on ruler */
+#ruler-now-marker {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 0; bottom: 0;
   width: 1px;
   background: var(--accent);
-  opacity: 0.6;
+  opacity: 0.8;
   pointer-events: none;
   z-index: 5;
 }
-#now-label {
+#ruler-now-label {
   position: absolute;
-  top: 2px;
+  top: 3px;
   font-family: 'Space Mono', monospace;
-  font-size: 0.5rem;
+  font-size: 0.48rem;
   font-weight: 700;
-  color: var(--accent);
-  background: var(--bg);
-  padding: 1px 4px;
+  color: var(--bg);
+  background: var(--accent);
+  padding: 1px 5px;
   border-radius: 3px;
   transform: translateX(-50%);
   white-space: nowrap;
   letter-spacing: 0.1em;
+  z-index: 6;
 }
 
-/* Scrollable canvas */
+/* Scrollable canvas area */
 #timeline-scroll {
   flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
   cursor: grab;
   user-select: none;
+  position: relative;
 }
 #timeline-scroll:active { cursor: grabbing; }
-#timeline-scroll::-webkit-scrollbar { height: 6px; width: 4px; }
+#timeline-scroll::-webkit-scrollbar { height: 5px; width: 4px; }
 #timeline-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
-/* The canvas — wide enough to hold 24h */
+/* The actual wide canvas */
 #timeline-canvas {
   position: relative;
   min-height: 100%;
-  /* width + min-height set by JS */
 }
 
-/* Vertical hour grid lines on canvas */
+/* Vertical grid lines */
 .canvas-vline {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
+  top: 0; bottom: 0;
   pointer-events: none;
 }
-.canvas-vline.major { background: var(--border2); }
+.canvas-vline.hour  { width: 1px; background: var(--border); opacity: 0.6; }
+.canvas-vline.major { width: 1px; background: var(--border2); opacity: 1; }
+.canvas-vline.day   { width: 2px; background: rgba(90,240,196,0.12); }
 
-/* NOW line on canvas (extends full height) */
-#canvas-now-line {
+/* Day label band on canvas */
+.canvas-day-band {
   position: absolute;
   top: 0;
-  bottom: 0;
+  height: 100%;
+  border-left: 2px solid rgba(90,240,196,0.15);
+  pointer-events: none;
+}
+.canvas-day-label {
+  position: absolute;
+  top: 8px;
+  left: 6px;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: rgba(90,240,196,0.3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* NOW line on canvas */
+#canvas-now-line {
+  position: absolute;
+  top: 0; bottom: 0;
   width: 1px;
   background: var(--accent);
-  opacity: 0.4;
+  opacity: 0.35;
   pointer-events: none;
   z-index: 3;
 }
 
-/* Time column — groups of cards at a specific hour position */
+/* Time column — groups cards at same time */
 .time-col {
   position: absolute;
-  top: 16px;
+  top: 28px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  /* left set by JS based on time */
+  gap: 8px;
   transform: translateX(-50%);
-  width: 300px;
   z-index: 2;
 }
 
-/* Connecting dot from ruler to first card */
-.time-col::before {
-  content: '';
+/* Dot connecting ruler to first card */
+.time-col-dot {
   position: absolute;
   top: -16px;
   left: 50%;
   transform: translateX(-50%);
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--border2);
   border: 1px solid var(--border2);
@@ -324,20 +323,22 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.15s, transform 0.1s;
-  animation: fadeUp 0.2s ease both;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  animation: fadeUp 0.18s ease both;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
 }
-.cal-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+.cal-card:hover {
+  border-color: var(--border2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+@keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
-@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-
-/* Left accent bar */
 .cal-card::before {
   content: '';
   position: absolute;
@@ -352,25 +353,24 @@
 .cal-card-top {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   flex-wrap: wrap;
 }
-
 .cal-card-time {
   font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   color: var(--muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  flex-shrink: 0;
 }
-
 .cal-card-cur {
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 2px 7px;
+  letter-spacing: 0.07em;
+  padding: 1px 6px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
@@ -382,29 +382,28 @@
 .cal-card-cur.CAD { background: rgba(220,40,40,0.12);  color: #dc3030; border: 1px solid rgba(220,40,40,0.3); }
 .cal-card-cur.CHF { background: rgba(200,40,240,0.10); color: #c828f0; border: 1px solid rgba(200,40,240,0.25); }
 .cal-card-cur.CNY { background: rgba(240,200,40,0.10); color: #f0c828; border: 1px solid rgba(240,200,40,0.25); }
-.cal-card-cur.NZD { background: rgba(40,180,240,0.10); color: #28b4f0; border: 1px solid rgba(40,180,240,0.25); }
 
 .cal-card-impact {
-  font-size: 0.52rem;
+  font-size: 0.5rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 2px 7px;
+  padding: 1px 6px;
   border-radius: 20px;
   border: 1px solid;
   white-space: nowrap;
 }
 .cal-card-impact.High   { border-color: rgba(240,80,80,0.5);  color: #f05050; background: rgba(240,80,80,0.07); }
 .cal-card-impact.Medium { border-color: rgba(240,160,40,0.5); color: #f0a028; background: rgba(240,160,40,0.07); }
-.cal-card-impact.Low    { border-color: rgba(100,100,120,0.4);color: #666680; background: none; }
+.cal-card-impact.Low    { border-color: rgba(100,100,120,0.4);color: #666680; }
 
 .cal-card-countdown {
   margin-left: auto;
   font-family: 'Space Mono', monospace;
-  font-size: 0.56rem;
+  font-size: 0.54rem;
   font-weight: 700;
   letter-spacing: 0.05em;
-  padding: 2px 8px;
+  padding: 1px 7px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
   border: 1px solid rgba(90,240,196,0.3);
@@ -417,94 +416,62 @@
 .cal-card-name {
   font-family: 'Syne', sans-serif;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: #fff;
   letter-spacing: 0.02em;
-  line-height: 1.25;
+  line-height: 1.2;
 }
-
 .cal-card-ai {
   background: rgba(90,240,196,0.03);
   border: 1px solid rgba(90,240,196,0.1);
   border-radius: var(--radius-sm);
-  padding: 9px 11px;
+  padding: 8px 10px;
 }
 .cal-card-ai-label {
-  font-size: 0.52rem;
+  font-size: 0.5rem;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .cal-card-ai-text {
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--text);
-  line-height: 1.65;
+  line-height: 1.6;
   opacity: 0.85;
 }
-
-.cal-card-data { display: flex; gap: 18px; flex-wrap: wrap; }
-.cal-card-data-item { display: flex; flex-direction: column; gap: 2px; }
-.cal-card-data-label { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
-.cal-card-data-val   { font-size: 0.78rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.cal-card-data { display: flex; gap: 16px; flex-wrap: wrap; }
+.cal-card-data-item { display: flex; flex-direction: column; gap: 1px; }
+.cal-card-data-label { font-size: 0.46rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
+.cal-card-data-val   { font-size: 0.75rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .cal-card-data-val.actual { color: var(--accent); }
 
-/* Empty / loading */
+/* Loading */
 #cal-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 80px 0;
-  font-size: 0.65rem;
-  color: var(--muted);
-  letter-spacing: 0.12em;
+  display: flex; align-items: center; justify-content: center;
+  gap: 14px; padding: 60px 0;
+  font-size: 0.62rem; color: var(--muted); letter-spacing: 0.12em;
+  position: absolute; inset: 0;
 }
 .cal-load-spinner {
-  width: 18px; height: 18px;
+  width: 16px; height: 16px;
   border: 2px solid var(--border2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 #cal-empty {
-  display: none;
-  text-align: center;
-  padding: 80px 0;
-  font-size: 0.65rem;
-  color: var(--muted);
-  letter-spacing: 0.1em;
+  display: none; text-align: center; padding: 60px 0;
+  font-size: 0.62rem; color: var(--muted); letter-spacing: 0.1em;
+  position: absolute; inset: 0; align-items: center; justify-content: center;
 }
-
-/* Scroll hint arrows */
-#scroll-hint-left, #scroll-hint-right {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(90deg, var(--bg) 60%, transparent);
-  color: var(--muted);
-  pointer-events: none;
-  z-index: 10;
-  opacity: 0;
-  transition: opacity 0.2s;
-  font-size: 1rem;
-}
-#scroll-hint-right { right: 0; background: linear-gradient(270deg, var(--bg) 60%, transparent); }
-#scroll-hint-left  { left: 0; }
-#scroll-hint-left.visible, #scroll-hint-right.visible { opacity: 1; }
 </style>
 </head>
 <body>
-
 <div id="app">
 
   <!-- Side Nav -->
@@ -521,54 +488,28 @@
     </div>
     <div class="nav-divider"></div>
     <ul id="side-nav-links">
-      <li>
-        <a href="/" class="nav-item" data-label="Dashboard">
-          <span class="nav-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
-            </svg>
-          </span>
-          <span class="nav-label">Dashboard</span>
-        </a>
-      </li>
-      <li>
-        <a href="/macro" class="nav-item" data-label="Macro Desk">
-          <span class="nav-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-            </svg>
-          </span>
-          <span class="nav-label">Macro Desk</span>
-        </a>
-      </li>
-      <li>
-        <a href="/calendar-page" class="nav-item" data-label="Calendar">
-          <span class="nav-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-          </span>
-          <span class="nav-label">Calendar</span>
-        </a>
-      </li>
+      <li><a href="/" class="nav-item" data-label="Dashboard">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
+        <span class="nav-label">Dashboard</span>
+      </a></li>
+      <li><a href="/macro" class="nav-item" data-label="Macro Desk">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
+        <span class="nav-label">Macro Desk</span>
+      </a></li>
+      <li><a href="/calendar-page" class="nav-item" data-label="Calendar">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+        <span class="nav-label">Calendar</span>
+      </a></li>
     </ul>
     <div id="side-nav-bottom">
       <div class="nav-divider"></div>
       <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
-        <span class="nav-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-          </svg>
-        </span>
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
         <span class="nav-label">Bloomberg TV</span>
       </a>
     </div>
     <button id="nav-collapse-btn" aria-label="Toggle nav">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-        <polyline points="15 18 9 12 15 6"/>
-      </svg>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
   </nav>
   <div id="nav-tooltip"></div>
@@ -584,7 +525,6 @@
       <div id="cal-tz-badge">Timezone (<span id="tz-name">UTC</span>)</div>
     </div>
 
-    <!-- Filter bar -->
     <div id="cal-filter-row">
       <div class="filter-group">
         <button class="date-btn" id="btn-today"    onclick="setDate('today')">Today</button>
@@ -614,60 +554,47 @@
       </div>
     </div>
 
-    <!-- Date tabs -->
-    <div id="date-tabs"></div>
-
-    <!-- Timeline -->
     <div id="timeline-outer">
-      <div id="scroll-hint-left">‹</div>
-      <div id="scroll-hint-right">›</div>
-
-      <!-- Ruler (synced scroll via JS) -->
       <div id="timeline-ruler-wrap">
         <div id="timeline-ruler"></div>
       </div>
-
-      <!-- Scrollable canvas -->
       <div id="timeline-scroll">
-        <div id="cal-loading">
-          <div class="cal-load-spinner"></div>
-          <span>Loading calendar events…</span>
-        </div>
+        <div id="cal-loading"><div class="cal-load-spinner"></div><span>Loading…</span></div>
         <div id="cal-empty">No events match the selected filters.</div>
         <div id="timeline-canvas"></div>
       </div>
     </div>
 
-  </div><!-- /#main-content -->
-</div><!-- /#app -->
+  </div>
+</div>
 
 <script>
-// ════════════════════════════════════════════════════════════════
-//  STATE
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════════════════════
+const PX_PER_HOUR = 200;   // pixels per hour
+const CARD_W      = 280;   // card width px
+const DAY_HOURS   = 24;
+const DAY_PX      = PX_PER_HOUR * DAY_HOURS;
+const LEFT_PAD    = 20;    // padding before 00:00
+
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 document.getElementById('tz-name').textContent = TZ;
 
+// ══════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════
 let _allEvents  = [];
 let _dateMode   = 'week';
 let _customDate = '';
-let _activeDay  = null;   // currently selected date tab (YYYY-MM-DD)
 let _activeCurs = new Set(['EUR','USD','GBP','JPY']);
 let _activeImps = new Set(['High','Medium']);
 
-// Layout constants
-const PX_PER_HOUR = 180;   // pixels per hour — wider = more spread out
-const DAY_START   = 0;     // 00:00 UTC
-const DAY_END     = 24;    // end
-const CARD_WIDTH  = 300;
-const CARD_GAP    = 10;
-const TOP_PAD     = 20;
-
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 //  HELPERS
-// ════════════════════════════════════════════════════════════════
-function todayUTC()    { return new Date().toISOString().slice(0,10); }
-function tomorrowUTC() { return new Date(Date.now()+86400000).toISOString().slice(0,10); }
+// ══════════════════════════════════════════════════════════════
+const todayUTC    = () => new Date().toISOString().slice(0,10);
+const tomorrowUTC = () => new Date(Date.now()+86400000).toISOString().slice(0,10);
 
 function getTargetDates() {
   if (_dateMode === 'today')    return [todayUTC()];
@@ -679,247 +606,247 @@ function getTargetDates() {
   return dates;
 }
 
-function evDateUTC(ev) {
-  return (ev.event_time || '').slice(0,10);
-}
+function evDateUTC(ev) { return (ev.event_time||'').slice(0,10); }
 
-// Returns fractional hours (UTC) from midnight for an event
+// Fractional UTC hours for an event
 function evHoursUTC(ev) {
   if (!ev.event_time) return 0;
   const d = new Date(ev.event_time);
-  if (isNaN(d)) return 0;
-  return d.getUTCHours() + d.getUTCMinutes()/60;
+  return isNaN(d) ? 0 : d.getUTCHours() + d.getUTCMinutes()/60 + d.getUTCSeconds()/3600;
 }
 
-function hToX(h) {
-  return Math.round((h / 24) * PX_PER_HOUR * 24);
+// Date index → pixel offset for a given hour within that day
+function toX(dateIndex, hours) {
+  return LEFT_PAD + dateIndex * DAY_PX + hours * PX_PER_HOUR;
+}
+
+function nowHoursUTC() {
+  const n = new Date();
+  return n.getUTCHours() + n.getUTCMinutes()/60 + n.getUTCSeconds()/3600;
 }
 
 function calCountdown(isoUtc) {
-  if (!isoUtc) return { label: '—', cls: '' };
-  const ms = new Date(isoUtc).getTime();
-  if (isNaN(ms)) return { label: '—', cls: '' };
+  if (!isoUtc) return {label:'—',cls:''};
+  const ms   = new Date(isoUtc).getTime();
+  if (isNaN(ms)) return {label:'—',cls:''};
   const diff = ms - Date.now();
-  const totalMin = Math.floor(Math.abs(diff) / 60000);
+  const min  = Math.floor(Math.abs(diff)/60000);
   if (diff < 0) {
-    if (totalMin < 60) return { label: `${totalMin}m ago`, cls: 'past' };
-    const h = Math.floor(totalMin/60);
-    if (h < 24) return { label: `${h}h ago`, cls: 'past' };
-    return { label: `${Math.floor(h/24)}d ago`, cls: 'past' };
+    if (min < 60) return {label:`${min}m ago`,cls:'past'};
+    const h = Math.floor(min/60);
+    if (h < 24) return {label:`${h}h ago`,cls:'past'};
+    return {label:`${Math.floor(h/24)}d ago`,cls:'past'};
   }
-  if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
-  if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
-  const h = Math.floor(totalMin/60), m = totalMin%60;
-  return { label: `in ${h}h${m>0?' '+m+'m':''}`, cls: '' };
+  if (min < 30) return {label:`in ${min}m`,cls:'soon'};
+  if (min < 60) return {label:`in ${min}m`,cls:''};
+  const h = Math.floor(min/60), m = min%60;
+  return {label:`in ${h}h${m>0?' '+m+'m':''}`,cls:''};
 }
 
-function fmtLocalTime(isoUtc) {
+function fmtTime(isoUtc) {
   if (!isoUtc) return '';
   const d = new Date(isoUtc);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-GB', {
-    month:'short', day:'numeric',
-    hour:'2-digit', minute:'2-digit', hour12:false
-  });
+  return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
 }
 
-// ════════════════════════════════════════════════════════════════
+function fmtDayLabel(dateStr) {
+  const today    = todayUTC();
+  const tomorrow = tomorrowUTC();
+  if (dateStr === today)    return 'Today';
+  if (dateStr === tomorrow) return 'Tomorrow';
+  return new Date(dateStr+'T12:00:00Z')
+    .toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});
+}
+
+// ══════════════════════════════════════════════════════════════
 //  FILTER CONTROLS
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 function setDate(mode) {
   _dateMode = mode;
-  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
-  const map = {today:'btn-today',tomorrow:'btn-tomorrow',week:'btn-week',custom:'btn-custom'};
-  document.getElementById(map[mode])?.classList.add('active');
+  ['today','tomorrow','week','custom'].forEach(m =>
+    document.getElementById('btn-'+m)?.classList.remove('active'));
+  document.getElementById('btn-'+mode)?.classList.add('active');
   document.getElementById('custom-date-input').classList.toggle('visible', mode==='custom');
-  rebuildTabs();
+  buildTimeline();
 }
 function toggleCustomDate() { setDate('custom'); }
-function setCustomDate(val) { _customDate = val; rebuildTabs(); }
+function setCustomDate(v)   { _customDate = v; buildTimeline(); }
 
 function toggleCur(btn) {
-  const cur = btn.dataset.cur;
-  if (_activeCurs.has(cur)) { _activeCurs.delete(cur); btn.classList.remove('active-cur'); }
-  else                       { _activeCurs.add(cur);    btn.classList.add('active-cur'); }
-  renderTimeline();
+  const c = btn.dataset.cur;
+  if (_activeCurs.has(c)) { _activeCurs.delete(c); btn.classList.remove('active-cur'); }
+  else                     { _activeCurs.add(c);    btn.classList.add('active-cur'); }
+  buildTimeline();
 }
-
 function toggleImp(btn) {
   const imp = btn.dataset.imp;
   const cls = {High:'active-imp-high',Medium:'active-imp-medium',Low:'active-imp-low'}[imp];
   if (_activeImps.has(imp)) { _activeImps.delete(imp); btn.classList.remove(cls); }
   else                       { _activeImps.add(imp);    btn.classList.add(cls); }
-  renderTimeline();
+  buildTimeline();
 }
 
-// ════════════════════════════════════════════════════════════════
-//  DATE TABS
-// ════════════════════════════════════════════════════════════════
-function rebuildTabs() {
-  const dates = getTargetDates();
-  const todayStr    = todayUTC();
-  const tomorrowStr = tomorrowUTC();
-
-  const label = d => {
-    if (d === todayStr)    return 'Today';
-    if (d === tomorrowStr) return 'Tomorrow';
-    return new Date(d+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
-  };
-
-  // Count events per date
-  const counts = {};
-  dates.forEach(d => counts[d] = 0);
-  _allEvents.forEach(ev => {
-    const d = evDateUTC(ev);
-    if (counts[d] !== undefined &&
-        _activeCurs.has(ev.currency) &&
-        _activeImps.has(ev.impact)) counts[d]++;
-  });
-
-  const tabs = document.getElementById('date-tabs');
-  tabs.innerHTML = '';
-
-  // If no active day or it's not in the new date set, pick first
-  if (!_activeDay || !dates.includes(_activeDay)) {
-    _activeDay = dates[0] || null;
-  }
-
-  dates.forEach(d => {
-    const btn = document.createElement('button');
-    btn.className = 'date-tab' + (d === _activeDay ? ' active' : '');
-    btn.innerHTML = `${label(d)} <span class="date-tab-count">${counts[d]}</span>`;
-    btn.onclick = () => { _activeDay = d; rebuildTabs(); renderTimeline(); };
-    tabs.appendChild(btn);
-  });
-
-  renderTimeline();
-}
-
-// ════════════════════════════════════════════════════════════════
-//  TIMELINE RENDER
-// ════════════════════════════════════════════════════════════════
-function renderTimeline() {
+// ══════════════════════════════════════════════════════════════
+//  BUILD TIMELINE
+// ══════════════════════════════════════════════════════════════
+function buildTimeline() {
+  const dates   = getTargetDates();
   const loading = document.getElementById('cal-loading');
   const empty   = document.getElementById('cal-empty');
   const canvas  = document.getElementById('timeline-canvas');
   const ruler   = document.getElementById('timeline-ruler');
 
-  if (!_activeDay) {
-    loading.style.display = 'none';
-    empty.style.display = 'block';
-    canvas.innerHTML = '';
-    ruler.innerHTML = '';
-    return;
-  }
+  loading.style.display = 'none';
 
+  // Filter events
   const filtered = _allEvents.filter(ev =>
-    evDateUTC(ev) === _activeDay &&
+    dates.includes(evDateUTC(ev)) &&
     _activeCurs.has(ev.currency) &&
     _activeImps.has(ev.impact)
   );
 
-  loading.style.display = 'none';
-
-  // Total canvas width
-  const totalW = PX_PER_HOUR * 24 + CARD_WIDTH + 60;
-  canvas.style.width  = totalW + 'px';
-  canvas.style.minHeight = '200px';
-  ruler.style.width   = totalW + 'px';
-
-  // ── Build ruler ticks ──
-  ruler.innerHTML = '';
-  for (let h = 0; h <= 24; h += 1) {
-    const x = hToX(h);
-    const tick = document.createElement('div');
-    tick.className = 'ruler-tick';
-    tick.style.left = x + 'px';
-    const isMajor = h % 3 === 0;
-    tick.innerHTML = `
-      <div class="ruler-tick-line" style="height:${isMajor?10:5}px;background:${isMajor?'var(--border2)':'var(--border)'}"></div>
-      ${isMajor ? `<div class="ruler-tick-label">${String(h).padStart(2,'0')}:00</div>` : ''}
-    `;
-    ruler.appendChild(tick);
-  }
-
-  // ── NOW marker on ruler ──
-  const nowH = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
-  const nowX = hToX(nowH);
-  const nowMarker = document.createElement('div');
-  nowMarker.id = 'now-marker';
-  nowMarker.style.left = nowX + 'px';
-  const nowLabel = document.createElement('div');
-  nowLabel.id = 'now-label';
-  nowLabel.style.left = nowX + 'px';
-  nowLabel.textContent = 'NOW';
-  ruler.appendChild(nowMarker);
-  ruler.appendChild(nowLabel);
-
-  // ── Build canvas ──
-  canvas.innerHTML = '';
-
   if (!filtered.length) {
-    empty.style.display = 'block';
-    canvas.style.minHeight = '120px';
+    empty.style.display = 'flex';
+    canvas.innerHTML = '';
+    ruler.innerHTML  = '';
+    canvas.style.width = '100%';
+    ruler.style.width  = '100%';
     return;
   }
   empty.style.display = 'none';
 
-  // Vertical grid lines
-  for (let h = 0; h <= 24; h++) {
-    const line = document.createElement('div');
-    line.className = 'canvas-vline' + (h%3===0?' major':'');
-    line.style.left = hToX(h) + 'px';
-    canvas.appendChild(line);
-  }
+  // Total canvas width
+  const totalW = LEFT_PAD + dates.length * DAY_PX + 60;
+  canvas.style.width = totalW + 'px';
+  ruler.style.width  = totalW + 'px';
 
-  // NOW line on canvas
-  const canvasNow = document.createElement('div');
-  canvasNow.id = 'canvas-now-line';
-  canvasNow.style.left = nowX + 'px';
-  canvas.appendChild(canvasNow);
+  // ── BUILD RULER ──────────────────────────────────────────────
+  ruler.innerHTML = '';
 
-  // ── Group events by their hour-minute bucket (round to nearest 5min) ──
-  const groups = {};
-  filtered.forEach(ev => {
-    const h = evHoursUTC(ev);
-    // Round to nearest 5min for grouping overlapping events
-    const bucket = Math.round(h * 12) / 12;
-    if (!groups[bucket]) groups[bucket] = [];
-    groups[bucket].push(ev);
+  dates.forEach((date, di) => {
+    // Day label
+    const dayLabel = document.createElement('div');
+    dayLabel.className = 'ruler-day-label';
+    dayLabel.textContent = fmtDayLabel(date);
+    dayLabel.style.left = (LEFT_PAD + di * DAY_PX + 8) + 'px';
+    dayLabel.style.top  = '4px';
+    ruler.appendChild(dayLabel);
+
+    // Hour ticks within day
+    for (let h = 0; h <= DAY_HOURS; h++) {
+      const x = toX(di, h);
+      const isMajor = h % 3 === 0;
+      if (!isMajor && h % 1 !== 0) continue;
+      const tick = document.createElement('div');
+      tick.className = 'ruler-tick';
+      tick.style.left = x + 'px';
+      tick.innerHTML = `
+        <div class="ruler-tick-line" style="
+          height:${isMajor?10:5}px;
+          background:${isMajor?'var(--border2)':'var(--border)'};
+          width:1px;
+          margin-top:${isMajor?0:5}px;
+        "></div>
+        ${isMajor && h > 0 ? `<div class="ruler-tick-label">${String(h).padStart(2,'0')}:00</div>` : ''}
+      `;
+      ruler.appendChild(tick);
+    }
   });
 
-  // Track max height for canvas sizing
-  let maxBottom = 200;
+  // NOW marker on ruler
+  const nowDateIdx = dates.indexOf(todayUTC());
+  if (nowDateIdx >= 0) {
+    const nowX = toX(nowDateIdx, nowHoursUTC());
+    const nm = document.createElement('div');
+    nm.id = 'ruler-now-marker';
+    nm.style.left = nowX + 'px';
+    const nl = document.createElement('div');
+    nl.id = 'ruler-now-label';
+    nl.style.left = nowX + 'px';
+    nl.textContent = 'NOW';
+    ruler.appendChild(nm);
+    ruler.appendChild(nl);
+  }
 
-  Object.entries(groups).forEach(([bucket, evs]) => {
-    const h = parseFloat(bucket);
-    const x = hToX(h);
+  // ── BUILD CANVAS ─────────────────────────────────────────────
+  canvas.innerHTML = '';
+
+  dates.forEach((date, di) => {
+    // Day background band
+    const band = document.createElement('div');
+    band.className = 'canvas-day-band';
+    band.style.left  = toX(di, 0) + 'px';
+    band.style.width = DAY_PX + 'px';
+    const bandLabel = document.createElement('div');
+    bandLabel.className = 'canvas-day-label';
+    bandLabel.textContent = fmtDayLabel(date);
+    band.appendChild(bandLabel);
+    canvas.appendChild(band);
+
+    // Hour grid lines
+    for (let h = 0; h <= DAY_HOURS; h++) {
+      const line = document.createElement('div');
+      const isMajor = h % 3 === 0;
+      line.className = `canvas-vline ${h === 0 ? 'day' : isMajor ? 'major' : 'hour'}`;
+      line.style.left = toX(di, h) + 'px';
+      canvas.appendChild(line);
+    }
+  });
+
+  // NOW line on canvas
+  const nowDateIdx2 = dates.indexOf(todayUTC());
+  if (nowDateIdx2 >= 0) {
+    const nowLine = document.createElement('div');
+    nowLine.id = 'canvas-now-line';
+    nowLine.style.left = toX(nowDateIdx2, nowHoursUTC()) + 'px';
+    canvas.appendChild(nowLine);
+  }
+
+  // ── PLACE EVENT CARDS ─────────────────────────────────────────
+  // Group by (dateIndex, rounded time bucket) to stack same-time events
+  const groups = {};
+  filtered.forEach(ev => {
+    const di   = dates.indexOf(evDateUTC(ev));
+    if (di < 0) return;
+    const h    = evHoursUTC(ev);
+    const key  = `${di}_${Math.round(h * 12)}`; // 5-min buckets
+    if (!groups[key]) groups[key] = {di, h, evs:[]};
+    groups[key].evs.push(ev);
+  });
+
+  Object.values(groups).forEach(({di, h, evs}) => {
+    const x = toX(di, h);
 
     const col = document.createElement('div');
     col.className = 'time-col';
-    col.style.left = x + 'px';
+    col.style.left  = x + 'px';
+    col.style.width = CARD_W + 'px';
 
-    let colHeight = TOP_PAD;
+    // Dot
+    const dot = document.createElement('div');
+    dot.className = 'time-col-dot';
+    col.appendChild(dot);
 
     evs.forEach((ev, idx) => {
       const cd = calCountdown(ev.event_time);
-      const timeLabel = fmtLocalTime(ev.event_time);
+      const t  = fmtTime(ev.event_time);
 
-      const hasActual   = ev.actual   && ev.actual   !== '';
-      const hasForecast = ev.forecast && ev.forecast !== '';
-      const hasPrev     = ev.previous && ev.previous !== '';
+      const hasA = ev.actual   && ev.actual   !== '';
+      const hasF = ev.forecast && ev.forecast !== '';
+      const hasP = ev.previous && ev.previous !== '';
 
-      const dataRow = (hasActual || hasForecast || hasPrev) ? `
+      const dataRow = (hasA||hasF||hasP) ? `
         <div class="cal-card-data">
-          ${hasPrev     ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Previous</span><span class="cal-card-data-val">${ev.previous}</span></div>` : ''}
-          ${hasForecast ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Forecast</span><span class="cal-card-data-val">${ev.forecast}</span></div>` : ''}
-          ${hasActual   ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Actual</span><span class="cal-card-data-val actual">${ev.actual}</span></div>` : ''}
+          ${hasP?`<div class="cal-card-data-item"><span class="cal-card-data-label">Prev</span><span class="cal-card-data-val">${ev.previous}</span></div>`:''}
+          ${hasF?`<div class="cal-card-data-item"><span class="cal-card-data-label">Fcst</span><span class="cal-card-data-val">${ev.forecast}</span></div>`:''}
+          ${hasA?`<div class="cal-card-data-item"><span class="cal-card-data-label">Actual</span><span class="cal-card-data-val actual">${ev.actual}</span></div>`:''}
         </div>` : '';
 
       const aiBox = ev.analysis ? `
         <div class="cal-card-ai">
           <div class="cal-card-ai-label">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
             AI Analysis
           </div>
           <div class="cal-card-ai-text">${ev.analysis}</div>
@@ -927,18 +854,18 @@ function renderTimeline() {
 
       const card = document.createElement('div');
       card.className = `cal-card impact-${ev.impact}`;
-      card.style.animationDelay = (idx * 50) + 'ms';
+      card.style.animationDelay = (idx * 40) + 'ms';
       card.innerHTML = `
         <div class="cal-card-top">
           <span class="cal-card-time">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            ${timeLabel}
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${t}
           </span>
           <span class="cal-card-cur ${ev.currency}">${ev.currency}</span>
           <span class="cal-card-impact ${ev.impact}">${ev.impact}</span>
           <span class="cal-card-countdown ${cd.cls}">${cd.label}</span>
         </div>
-        <div class="cal-card-name">${ev.title || ev.event || ''}</div>
+        <div class="cal-card-name">${ev.title||ev.event||''}</div>
         ${aiBox}
         ${dataRow}
       `;
@@ -946,25 +873,24 @@ function renderTimeline() {
     });
 
     canvas.appendChild(col);
-
-    // Measure after append for canvas height
-    requestAnimationFrame(() => {
-      const bottom = col.offsetTop + col.offsetHeight + 40;
-      if (bottom > maxBottom) {
-        maxBottom = bottom;
-        canvas.style.minHeight = maxBottom + 'px';
-      }
-    });
   });
 
-  // Sync ruler scroll with canvas scroll
-  updateScrollHints();
+  // After render — set canvas height to fit tallest column
+  requestAnimationFrame(() => {
+    let maxH = 300;
+    canvas.querySelectorAll('.time-col').forEach(col => {
+      const b = col.offsetTop + col.offsetHeight + 32;
+      if (b > maxH) maxH = b;
+    });
+    canvas.style.height = maxH + 'px';
+    updateScrollHints();
+  });
 }
 
-// ════════════════════════════════════════════════════════════════
-//  SCROLL SYNC: ruler follows horizontal scroll of canvas
-// ════════════════════════════════════════════════════════════════
-const scrollEl = document.getElementById('timeline-scroll');
+// ══════════════════════════════════════════════════════════════
+//  SCROLL SYNC: ruler mirrors canvas horizontal scroll
+// ══════════════════════════════════════════════════════════════
+const scrollEl  = document.getElementById('timeline-scroll');
 const rulerWrap = document.getElementById('timeline-ruler-wrap');
 
 scrollEl.addEventListener('scroll', () => {
@@ -973,90 +899,78 @@ scrollEl.addEventListener('scroll', () => {
 });
 
 function updateScrollHints() {
-  const sl = document.getElementById('scroll-hint-left');
-  const sr = document.getElementById('scroll-hint-right');
-  sl.classList.toggle('visible', scrollEl.scrollLeft > 20);
-  sr.classList.toggle('visible',
-    scrollEl.scrollLeft < scrollEl.scrollWidth - scrollEl.clientWidth - 20);
+  // Could add arrows here if desired
 }
 
 // ── Drag to scroll ────────────────────────────────────────────
-let isDragging = false, dragStartX = 0, dragScrollLeft = 0;
+let _drag = false, _dragX = 0, _dragSL = 0;
 scrollEl.addEventListener('mousedown', e => {
-  isDragging   = true;
-  dragStartX   = e.pageX - scrollEl.offsetLeft;
-  dragScrollLeft = scrollEl.scrollLeft;
+  _drag = true; _dragX = e.pageX; _dragSL = scrollEl.scrollLeft;
 });
-window.addEventListener('mouseup',   () => isDragging = false);
+window.addEventListener('mouseup',   () => _drag = false);
 window.addEventListener('mousemove', e => {
-  if (!isDragging) return;
+  if (!_drag) return;
   e.preventDefault();
-  const x    = e.pageX - scrollEl.offsetLeft;
-  const walk = (x - dragStartX) * 1.2;
-  scrollEl.scrollLeft = dragScrollLeft - walk;
+  scrollEl.scrollLeft = _dragSL - (e.pageX - _dragX) * 1.1;
 });
 
-// ════════════════════════════════════════════════════════════════
-//  SCROLL TO NOW on load
-// ════════════════════════════════════════════════════════════════
+// ── Scroll to NOW ─────────────────────────────────────────────
 function scrollToNow() {
-  const nowH = new Date().getUTCHours() + new Date().getUTCMinutes()/60;
-  const nowX = hToX(nowH);
-  const offset = Math.max(0, nowX - scrollEl.clientWidth / 2);
-  scrollEl.scrollTo({ left: offset, behavior: 'smooth' });
+  const dates = getTargetDates();
+  const di    = dates.indexOf(todayUTC());
+  if (di < 0) return;
+  const nowX  = toX(di, nowHoursUTC());
+  const target = Math.max(0, nowX - scrollEl.clientWidth / 2);
+  scrollEl.scrollTo({left: target, behavior: 'smooth'});
 }
 
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 //  LOAD DATA
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 async function loadCalendar() {
   try {
-    const res = await fetch('/api/calendar');
+    const res  = await fetch('/api/calendar');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     _allEvents = data.events || [];
-    rebuildTabs();
-    setTimeout(scrollToNow, 300);
+    buildTimeline();
+    setTimeout(scrollToNow, 200);
   } catch(e) {
-    console.error('Calendar error:', e);
     document.getElementById('cal-loading').innerHTML =
       `<span style="color:var(--muted)">Could not load — ${e.message}</span>`;
   }
 }
 
-// Refresh countdowns every 30s
-setInterval(() => { if (_allEvents.length) renderTimeline(); }, 30000);
+setInterval(() => { if (_allEvents.length) buildTimeline(); }, 30000);
 
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 //  SIDE NAV
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 {
-  const nav     = document.getElementById('side-nav');
-  const tooltip = document.getElementById('nav-tooltip');
-  const btn     = document.getElementById('nav-collapse-btn');
-
-  if (localStorage.getItem('nav-collapsed') === '1') nav.classList.add('collapsed');
+  const nav = document.getElementById('side-nav');
+  const tip = document.getElementById('nav-tooltip');
+  const btn = document.getElementById('nav-collapse-btn');
+  if (localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
   btn.addEventListener('click', () => {
     nav.classList.toggle('collapsed');
-    localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
+    localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed')?'1':'0');
   });
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('mouseenter', e => {
       if (!nav.classList.contains('collapsed')) return;
-      tooltip.textContent = item.dataset.label || '';
-      tooltip.style.top = (e.currentTarget.getBoundingClientRect().top + 6) + 'px';
-      tooltip.classList.add('visible');
+      tip.textContent = item.dataset.label||'';
+      tip.style.top = (e.currentTarget.getBoundingClientRect().top+6)+'px';
+      tip.classList.add('visible');
     });
-    item.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+    item.addEventListener('mouseleave', () => tip.classList.remove('visible'));
   });
-  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  const path = window.location.pathname.replace(/\/$/,'')||'/';
   document.querySelectorAll('.nav-item').forEach(item => {
-    const href = (item.getAttribute('href')||'').replace(/\/$/,'') || '/';
-    item.classList.toggle('active', href === path);
+    const href = (item.getAttribute('href')||'').replace(/\/$/,'')||'/';
+    item.classList.toggle('active', href===path);
   });
 }
 
-// ── Init ──────────────────────────────────────────────────────
 loadCalendar();
 </script>
 </body>
