@@ -247,44 +247,6 @@ def api_calendar():
         print(traceback.format_exc())
         return jsonify({"error": str(e), "events": []}), 500
 
-@app.route("/api/calendar/debug")
-def api_calendar_debug():
-    """Shows the raw first 3 events from FF CDN so you can verify field names."""
-    import requests as _req
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Referer": "https://www.forexfactory.com/",
-        }
-        resp = _req.get(
-            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-            headers=headers, timeout=15
-        )
-        ct = resp.headers.get("content-type", "")
-        raw_text = resp.text[:2000]  # first 2000 chars
- 
-        try:
-            data = resp.json()
-            sample = data[:3] if isinstance(data, list) else data
-            return jsonify({
-                "status":        resp.status_code,
-                "content_type":  ct,
-                "total_events":  len(data) if isinstance(data, list) else "not a list",
-                "fields":        list(data[0].keys()) if isinstance(data, list) and data else [],
-                "sample_events": sample,
-            })
-        except Exception:
-            return jsonify({
-                "status":       resp.status_code,
-                "content_type": ct,
-                "raw_preview":  raw_text,
-                "parse_error":  "Response is not valid JSON",
-            })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
- 
-
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
     pair_id = pair_id.upper()
