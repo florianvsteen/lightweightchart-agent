@@ -254,6 +254,18 @@ def get_calendar(force_refresh: bool = False) -> list:
       3. Live FF fetch
       4. Stale fallback (if fetch fails)
     """
+    try:
+        return _get_calendar_impl(force_refresh)
+    except Exception as e:
+        import traceback
+        print(f"[calendar] get_calendar crashed: {e}")
+        traceback.print_exc()
+        # Return stale cache rather than propagating and crashing Flask
+        with _cache_lock:
+            return _events_cache.get("data", [])
+
+
+def _get_calendar_impl(force_refresh: bool = False) -> list:
     now = time.time()
 
     # 1. In-memory
@@ -336,23 +348,32 @@ def get_calendar(force_refresh: bool = False) -> list:
     # Fetch missing AI analyses in a background thread
     if uncached_events:
         def _bg_ai(events_snapshot, ts):
-            print(f"[calendar] Background AI fetch for {len(events_snapshot)} events")
-            analyses = _call_ai_batch(events_snapshot)
-            if not analyses:
-                return
-            with _cache_lock:
-                current = _events_cache.get("data", [])
-                for ev in current:
-                    key = _event_key(ev)
-                    if key in analyses:
-                        ev["analysis"] = analyses[key]
-                        _ai_cache[key] = {"analysis": analyses[key], "at": ts}
-            _save_cache(_events_cache.get("data", []))
-            print(f"[calendar] Background AI complete: {len(analyses)} analyses saved")
+            try:
+                print(f"[calendar] Background AI fetch for {len(events_snapshot)} events")
+                analyses = _call_ai_batch(events_snapshot)
+                if not analyses:
+                    print("[calendar] Background AI returned no results")
+                    return
+                # Update in-memory cache — snapshot current data first, release lock before I/O
+                with _cache_lock:
+                    current = _events_cache.get("data", [])
+                    for ev in current:
+                        key = _event_key(ev)
+                        if key in analyses:
+                            ev["analysis"] = analyses[key]
+                            _ai_cache[key] = {"analysis": analyses[key], "at": ts}
+                    data_to_save = list(current)
+                # Save to disk outside the lock
+                _save_cache(data_to_save)
+                print(f"[calendar] Background AI complete: {len(analyses)} analyses saved")
+            except Exception as e:
+                import traceback
+                print(f"[calendar] Background AI thread error: {e}")
+                traceback.print_exc()
 
         threading.Thread(
             target=_bg_ai,
-            args=(uncached_events, now),
+            args=(list(uncached_events), now),
             daemon=True,
             name="calendar-ai-bg"
         ).start()
