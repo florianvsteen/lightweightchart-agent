@@ -8,68 +8,79 @@
 <style>
 #main-content { overflow-y: auto; }
 
-/* ── Header ── */
-#dd-header {
-  padding: 20px 32px;
+/* ── Back link ── */
+#dd-back {
+  padding: 12px 32px;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 16px;
   flex-shrink: 0;
-  flex-wrap: wrap;
 }
-#dd-back-btn {
-  background: none;
-  border: 1px solid var(--border2);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-  font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 5px 12px;
-  transition: all 0.15s;
-  display: flex; align-items: center; gap: 6px;
-  text-decoration: none;
+#dd-back a {
+  font-size: 0.62rem; color: var(--muted); letter-spacing: 0.08em;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  transition: color 0.15s;
 }
-#dd-back-btn:hover { color: var(--accent); border-color: rgba(90,240,196,0.4); }
+#dd-back a:hover { color: var(--accent); }
 
+/* ── Pair header ── */
+#dd-header {
+  display: flex; align-items: center; gap: 20px;
+  padding: 20px 32px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap;
+}
+#dd-icon {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #c8a84b; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; font-size: 1.4rem;
+}
 #dd-pair-name {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800; font-size: 1.6rem; color: #fff; line-height: 1;
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 2rem; color: #fff; line-height: 1;
 }
-#dd-pair-label { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.12em; margin-top: 2px; }
+#dd-pair-label { font-size: 0.65rem; color: var(--muted); margin-top: 3px; letter-spacing: 0.06em; }
 
-#dd-price-block { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-#dd-price { font-size: 1.2rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-#dd-chg { font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-sm); }
-#dd-chg.up   { color: var(--accent);  background: rgba(90,240,196,0.1); }
-#dd-chg.down { color: var(--accent2); background: rgba(240,90,126,0.1); }
-#dd-chg.flat { color: var(--muted);   background: rgba(255,255,255,0.05); }
-
-#dd-sentiment {
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 3px 10px; border-radius: 20px; border: 1px solid;
+/* Stat boxes top right */
+#dd-stat-boxes {
+  display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap;
 }
-#dd-sentiment.Bullish { border-color: rgba(90,240,196,0.4);  color: var(--accent); }
-#dd-sentiment.Bearish { border-color: rgba(240,90,126,0.4);  color: var(--accent2); }
-#dd-sentiment.Neutral { border-color: var(--border2); color: var(--muted); }
+.dd-stat-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  min-width: 120px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dd-stat-box-label { font-size: 0.52rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+.dd-stat-box-val   { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.3rem; }
+.dd-stat-box-val.bullish  { color: var(--accent); }
+.dd-stat-box-val.bearish  { color: var(--accent2); }
+.dd-stat-box-val.sell     { color: var(--accent2); }
+.dd-stat-box-val.buy      { color: var(--accent); }
+.dd-stat-box-val.neutral  { color: var(--muted); }
+.dd-stat-box-val.number   { color: #fff; }
+/* mini gauge under each stat */
+.dd-mini-gauge { margin-top: 4px; }
 
-/* ── Body ── */
+/* ── Body: two columns ── */
 #dd-body {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 420px 1fr;
   gap: 1px;
   background: var(--border);
   flex: 1;
 }
-#dd-main    { background: var(--bg); display: flex; flex-direction: column; }
-#dd-sidebar { background: var(--bg); display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow-y: auto; }
+#dd-left  { background: var(--bg); display: flex; flex-direction: column; }
+#dd-right { background: var(--bg); display: flex; flex-direction: column; }
 
-/* ── Chart ── */
-#dd-chart-panel { padding: 18px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.period-row { display: flex; gap: 4px; margin-bottom: 12px; }
+/* ── Price + chart (left top) ── */
+#dd-chart-panel { padding: 20px 22px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#dd-price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+#dd-price { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2rem; color: #fff; line-height: 1; }
+#dd-price-chg { font-size: 0.85rem; font-weight: 700; }
+#dd-price-chg.up   { color: var(--accent); }
+#dd-price-chg.down { color: var(--accent2); }
+.dd-period-row { display: flex; gap: 4px; margin-bottom: 10px; }
 .chart-period-btn {
   background: none; border: 1px solid var(--border2); border-radius: var(--radius-sm);
   color: var(--muted); cursor: pointer; font-family: 'Space Mono', monospace;
@@ -77,47 +88,72 @@
 }
 .chart-period-btn:hover { color: #ccc; border-color: #555; }
 .chart-period-btn.active { color: var(--accent); border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
-#dd-chart-wrap { height: 260px; position: relative; }
+#dd-chart-wrap { height: 200px; position: relative; }
 #dd-chart-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 
-/* ── AI section ── */
-#dd-ai-section { padding: 18px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.section-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-.section-label svg { color: var(--accent); }
-#dd-ai-text { font-size: 0.7rem; color: var(--text); line-height: 1.7; opacity: 0.88; }
-
-/* ── Macro context section ── */
-#dd-macro-section { padding: 18px 24px; flex-shrink: 0; }
-#dd-macro-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 6px; }
-.macro-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
-.macro-stat-label { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
-.macro-stat-val { font-size: 0.9rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
-.macro-stat-chg { font-size: 0.62rem; font-weight: 700; margin-top: 2px; }
-.macro-stat-chg.up   { color: var(--accent); }
-.macro-stat-chg.down { color: var(--accent2); }
-
-/* ── News sidebar ── */
-#dd-news-title {
-  padding: 14px 18px 10px; border-bottom: 1px solid var(--border);
-  font-family: 'Syne', sans-serif; font-size: 0.78rem; font-weight: 800; color: #fff;
-  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+/* ── News (left bottom) ── */
+#dd-news-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#dd-news-header {
+  padding: 14px 22px 10px; border-bottom: 1px solid var(--border);
+  font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 800; color: #fff;
+  flex-shrink: 0;
 }
-.dd-news-item {
-  padding: 10px 18px; border-bottom: 1px solid var(--border);
-  cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px;
-}
+#dd-news-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+#dd-news-list::-webkit-scrollbar { width: 3px; }
+#dd-news-list::-webkit-scrollbar-thumb { background: var(--border2); }
+.dd-news-item { padding: 10px 22px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; gap: 3px; }
 .dd-news-item:hover { background: rgba(255,255,255,0.03); }
 .dd-news-meta { display: flex; align-items: center; gap: 6px; }
-.dd-news-source { font-size: 0.48rem; color: var(--muted); letter-spacing: 0.06em; }
-.dd-news-age    { font-size: 0.46rem; color: #333; margin-left: auto; }
-.dd-news-sentiment {
-  font-size: 0.46rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 1px 5px; border-radius: 10px; border: 1px solid;
-}
+.dd-news-source { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.06em; }
+.dd-news-age    { font-size: 0.48rem; color: #333; margin-left: auto; }
+.dd-news-sentiment { font-size: 0.46rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 1px 5px; border-radius: 10px; border: 1px solid; }
 .dd-news-sentiment.bullish { border-color: rgba(90,240,196,0.4); color: var(--accent); }
 .dd-news-sentiment.bearish { border-color: rgba(240,90,126,0.4); color: var(--accent2); }
 .dd-news-sentiment.neutral { border-color: var(--border2); color: var(--muted); }
-.dd-news-headline { font-size: 0.66rem; font-weight: 700; color: var(--text); line-height: 1.4; }
+.dd-news-headline { font-size: 0.68rem; font-weight: 700; color: var(--text); line-height: 1.4; }
+.dd-news-summary  { font-size: 0.58rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── Right column panels ── */
+/* AI Overview */
+#dd-overview-panel {
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.dd-section-label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.56rem; font-weight: 700; color: var(--accent);
+  letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 8px;
+}
+#dd-overview-text { font-size: 0.72rem; color: var(--text); line-height: 1.7; opacity: 0.9; }
+
+/* Module row: Mood + Policy */
+#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.dd-module { padding: 16px 20px; border-right: 1px solid var(--border); position: relative; }
+.dd-module:last-child { border-right: none; }
+.dd-module-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.dd-module-age   { font-size: 0.48rem; color: #333; letter-spacing: 0.06em; }
+.gauge-wrap { display: flex; align-items: center; gap: 14px; }
+.gauge-svg-wrap { flex-shrink: 0; }
+.gauge-reading { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; line-height: 1.1; }
+.gauge-desc { font-size: 0.62rem; color: var(--text); line-height: 1.55; opacity: 0.8; margin-top: 5px; }
+.gauge-footer { margin-top: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 0.6rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.policy-word { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.08em; margin-bottom: 7px; }
+
+/* Bottom three: Flow / Bearing / Pulse */
+#dd-bottom-row { display: grid; grid-template-columns: 1fr 1fr 1fr; flex-shrink: 0; }
+.dd-bottom { padding: 14px 18px; border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
+.dd-bottom:last-child { border-right: none; }
+.bearing-sparkline { width: 100%; height: 55px; margin: 5px 0; display: block; }
+.bearing-label { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.06em; margin: 4px 0; }
+.slider-wrap { margin: 5px 0 6px; }
+.slider-track { height: 4px; border-radius: 2px; position: relative; }
+.slider-thumb { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); transition: left 0.4s ease; }
+.slider-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.46rem; color: var(--muted); letter-spacing: 0.06em; }
+.track-flow  { background: linear-gradient(90deg, #3a3a50 0%, var(--accent) 50%, #f0a028 100%); }
+.track-pulse { background: linear-gradient(90deg, var(--border2) 0%, var(--accent) 35%, #f0a028 65%, #f05050 100%); }
+.bullet-list { list-style: none; display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
+.bullet-list li { font-size: 0.58rem; color: var(--muted); line-height: 1.4; display: flex; gap: 5px; }
+.bullet-list li::before { content: '·'; color: var(--border2); }
 
 /* Skeleton */
 .skel { background: linear-gradient(90deg, var(--border) 0%, var(--border2) 50%, var(--border) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; display: block; }
@@ -127,7 +163,6 @@
 <body>
 <div id="app">
 
-  <!-- Side Nav -->
   <nav id="side-nav">
     <div id="side-nav-logo">
       <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
@@ -169,64 +204,136 @@
 
   <div id="main-content">
 
-    <div id="dd-header">
-      <a id="dd-back-btn" href="/macro">
+    <div id="dd-back">
+      <a href="/macro">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Macro Desk
+        Back to AI Macro Desk
       </a>
+    </div>
+
+    <div id="dd-header">
+      <div id="dd-icon">📈</div>
       <div>
         <div id="dd-pair-name">{{ pair_id }}</div>
         <div id="dd-pair-label">Loading…</div>
       </div>
-      <div id="dd-price-block">
-        <span id="dd-price">—</span>
-        <span id="dd-chg" class="flat">—</span>
-        <span id="dd-sentiment" class="Neutral">—</span>
+      <div id="dd-stat-boxes">
+        <div class="dd-stat-box">
+          <div class="dd-stat-box-label">Bias</div>
+          <div class="dd-stat-box-val neutral" id="dd-bias">—</div>
+        </div>
+        <div class="dd-stat-box">
+          <div class="dd-stat-box-label">Technical</div>
+          <div class="dd-stat-box-val neutral" id="dd-technical">—</div>
+        </div>
+        <div class="dd-stat-box">
+          <div class="dd-stat-box-label">AI Confidence</div>
+          <div class="dd-stat-box-val number" id="dd-confidence">—</div>
+        </div>
       </div>
     </div>
 
     <div id="dd-body">
 
-      <!-- Main content -->
-      <div id="dd-main">
-
+      <!-- LEFT: Chart + News -->
+      <div id="dd-left">
         <div id="dd-chart-panel">
-          <div class="period-row">
-            <button class="chart-period-btn active" data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
-            <button class="chart-period-btn"        data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
-            <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
+          <div id="dd-price-row">
+            <div id="dd-price">—</div>
+            <div id="dd-price-chg" class="flat">—</div>
+            <div class="dd-period-row" style="margin-left:auto;margin-bottom:0">
+              <button class="chart-period-btn active" data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
+              <button class="chart-period-btn"        data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
+              <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
+            </div>
           </div>
           <div id="dd-chart-wrap"><canvas id="dd-chart-canvas"></canvas></div>
         </div>
 
-        <div id="dd-ai-section">
-          <div class="section-label">
+        <div id="dd-news-panel">
+          <div id="dd-news-header">News Stories</div>
+          <div id="dd-news-list">
+            <div style="padding:16px 22px;font-size:0.6rem;color:var(--muted);display:flex;gap:8px;align-items:center">
+              <div class="cal-spinner"></div> Loading news…
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: AI modules -->
+      <div id="dd-right">
+
+        <div id="dd-overview-panel">
+          <div class="dd-section-label">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-            AI Analysis
+            AI overview
           </div>
-          <div id="dd-ai-text"><span class="skel" style="width:100%;height:13px;display:block;margin-bottom:5px"></span><span class="skel" style="width:80%;height:13px;display:block;margin-bottom:5px"></span><span class="skel" style="width:60%;height:13px;display:block"></span></div>
+          <div id="dd-overview-text"><span class="skel" style="width:100%;height:13px;margin-bottom:5px"></span><span class="skel" style="width:75%;height:13px"></span></div>
         </div>
 
-        <div id="dd-macro-section">
-          <div class="section-label">Market Context</div>
-          <div id="dd-macro-grid"></div>
+        <div id="dd-module-row">
+          <div class="dd-module">
+            <div class="dd-module-label">
+              Market Mood
+              <span class="dd-module-age" id="mood-age"></span>
+            </div>
+            <div class="gauge-wrap">
+              <div class="gauge-svg-wrap">
+                <svg viewBox="0 0 90 52" width="90" height="52">
+                  <path d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#1e1e28" stroke-width="8" stroke-linecap="round"/>
+                  <path id="mood-arc" d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#4a4a60" stroke-width="8" stroke-linecap="round" stroke-dasharray="113" stroke-dashoffset="113"/>
+                  <line id="mood-needle" x1="45" y1="46" x2="45" y2="14" stroke="#fff" stroke-width="1.5" stroke-linecap="round" style="transform-origin:45px 46px;transform:rotate(-90deg);transition:transform 0.6s ease"/>
+                  <circle cx="45" cy="46" r="3" fill="#fff"/>
+                </svg>
+              </div>
+              <div>
+                <div class="gauge-reading" id="mood-label">—</div>
+                <div class="gauge-desc"    id="mood-desc"><span class="skel" style="width:140px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:100px;height:9px;display:block"></span></div>
+              </div>
+            </div>
+            <div class="gauge-footer" id="mood-footer">—</div>
+          </div>
+          <div class="dd-module">
+            <div class="dd-module-label">
+              Market Policy
+              <span class="dd-module-age" id="policy-age"></span>
+            </div>
+            <div class="policy-word" id="policy-label">—</div>
+            <div class="gauge-desc"  id="policy-desc"><span class="skel" style="width:140px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:100px;height:9px;display:block"></span></div>
+            <div class="gauge-footer" id="policy-footer" style="margin-top:10px">—</div>
+          </div>
+        </div>
+
+        <div id="dd-bottom-row">
+          <div class="dd-bottom">
+            <div class="dd-module-label">Flow</div>
+            <canvas id="flow-sparkline" class="bearing-sparkline"></canvas>
+            <div class="bearing-label" id="flow-label">—</div>
+            <div class="slider-wrap">
+              <div class="slider-track track-flow"><div class="slider-thumb" id="flow-thumb" style="left:50%"></div></div>
+              <div class="slider-labels"><span>Thin</span><span>Healthy</span><span>Crowded</span></div>
+            </div>
+            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="flow-desc"></div>
+          </div>
+          <div class="dd-bottom">
+            <div class="dd-module-label">Bearing</div>
+            <canvas id="bearing-sparkline" class="bearing-sparkline"></canvas>
+            <div class="bearing-label" id="bearing-label">—</div>
+            <ul class="bullet-list" id="bearing-bullets"></ul>
+          </div>
+          <div class="dd-bottom">
+            <div class="dd-module-label">Pulse</div>
+            <canvas id="pulse-sparkline" class="bearing-sparkline"></canvas>
+            <div class="bearing-label" id="pulse-label">—</div>
+            <div class="slider-wrap">
+              <div class="slider-track track-pulse"><div class="slider-thumb" id="pulse-thumb" style="left:20%"></div></div>
+              <div class="slider-labels"><span>Quiet</span><span>Tradeable</span><span>Wild</span></div>
+            </div>
+            <div style="font-size:0.58rem;color:var(--muted);line-height:1.5;margin-top:3px" id="pulse-desc"></div>
+          </div>
         </div>
 
       </div>
-
-      <!-- News sidebar -->
-      <div id="dd-sidebar">
-        <div id="dd-news-title">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          News
-        </div>
-        <div id="dd-news-list">
-          <div style="padding:16px 18px;font-size:0.58rem;color:var(--muted);display:flex;gap:8px;align-items:center">
-            <div class="cal-spinner"></div> Loading news…
-          </div>
-        </div>
-      </div>
-
     </div>
   </div>
 </div>
@@ -234,108 +341,166 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const PAIR_ID  = '{{ pair_id }}';
-let _chartInst = null;
+let _chart     = null;
 let _period    = '1d';
 let _interval  = '5m';
 
+// ── Helpers ──
 function fmtPrice(v, k) {
   if (v == null) return '—';
-  const fx4 = ['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'];
-  const fx3 = ['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'];
-  if (fx4.includes(k)) return v.toFixed(4);
-  if (fx3.includes(k)) return v.toFixed(3);
-  if (['US10Y','VIX'].includes(k)) return v.toFixed(2);
+  if (['EURUSD','GBPUSD','EURGBP','AUDUSD','USDCAD','USDCHF','NZDUSD'].includes(k)) return v.toFixed(4);
+  if (['USDJPY','EURJPY','GBPJPY','AUDJPY','CADJPY'].includes(k)) return v.toFixed(3);
   if (v > 1000) return v.toFixed(2);
   return v.toFixed(2);
 }
+function ageStr(m) {
+  if (!m || m >= 999) return '';
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m/60)}h ago`;
+}
+function drawSparkline(id, trend, color) {
+  const c = document.getElementById(id); if (!c) return;
+  const w = c.offsetWidth||200, h = c.offsetHeight||55;
+  c.width=w; c.height=h;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,w,h);
+  const n=30, data=[]; let v=0.5;
+  for(let i=0;i<n;i++){v+=((Math.random()-.5)*.1+trend*.02);v=Math.max(.05,Math.min(.95,v));data.push(v);}
+  const xs=w/(n-1);
+  const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,color+'33'); g.addColorStop(1,color+'00');
+  ctx.beginPath();
+  data.forEach((d,i)=>{const x=i*xs,y=h-d*h;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.stroke();
+  ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();ctx.fillStyle=g;ctx.fill();
+}
 
+// ── Chart ──
 function setPeriod(btn) {
   document.querySelectorAll('.chart-period-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  _period = btn.dataset.p; _interval = btn.dataset.i;
-  loadChart();
+  btn.classList.add('active'); _period=btn.dataset.p; _interval=btn.dataset.i; loadChart();
 }
-
 async function loadChart() {
   try {
-    const r = await fetch(`/api/macro/chart/${PAIR_ID}?period=${_period}&interval=${_interval}`);
-    const d = await r.json();
-    if (!d.ok || !d.candles?.length) return;
-    renderChart(d.candles);
-  } catch(e) { console.error('chart', e); }
+    const r=await fetch(`/api/macro/chart/${PAIR_ID}?period=${_period}&interval=${_interval}`);
+    const d=await r.json(); if(!d.ok||!d.candles?.length) return;
+    const chgEl=document.getElementById('dd-price-chg');
+    const chgV=parseFloat(chgEl.dataset.chg||0);
+    const color=chgV>=0?'#5af0c4':'#f05a7e';
+    const labels=d.candles.map(c=>{const dt=new Date(c.time*1000);return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});});
+    const prices=d.candles.map(c=>c.close);
+    const ctx=document.getElementById('dd-chart-canvas').getContext('2d');
+    if(_chart){_chart.destroy();_chart=null;}
+    _chart=new Chart(ctx,{
+      type:'line',
+      data:{labels,datasets:[{data:prices,borderColor:color,backgroundColor:color+'14',borderWidth:1.8,pointRadius:0,tension:0.3,fill:true}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},
+        plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(17,17,22,0.95)',borderColor:'#2a2a38',borderWidth:1,titleColor:'#4a4a60',bodyColor:'#c8c8d8',titleFont:{family:'Space Mono',size:9},bodyFont:{family:'Space Mono',size:11},callbacks:{label:c=>` ${c.parsed.y.toFixed(4)}`}}},
+        scales:{x:{grid:{color:'rgba(255,255,255,0.03)',drawTicks:false},border:{display:false},ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:8,maxRotation:0}},y:{position:'right',grid:{color:'rgba(255,255,255,0.03)',drawTicks:false},border:{display:false},ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:6}}}}
+    });
+  } catch(e){console.error('chart',e);}
 }
 
-function renderChart(candles) {
-  const chgEl = document.getElementById('dd-chg');
-  const chgV  = parseFloat(chgEl.dataset.chg || 0);
-  const color = chgV >= 0 ? '#5af0c4' : '#f05a7e';
-  const labels = candles.map(c => { const dt = new Date(c.time*1000); return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}); });
-  const prices = candles.map(c => c.close);
-  const ctx = document.getElementById('dd-chart-canvas').getContext('2d');
-  if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
-  _chartInst = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets: [{ data: prices, borderColor: color, backgroundColor: color+'14', borderWidth: 1.8, pointRadius: 0, tension: 0.3, fill: true }] },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
-      plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(17,17,22,0.95)', borderColor: '#2a2a38', borderWidth: 1, titleColor: '#4a4a60', bodyColor: '#c8c8d8', titleFont: {family:'Space Mono',size:9}, bodyFont: {family:'Space Mono',size:11}, callbacks: { label: c => ` ${c.parsed.y.toFixed(4)}` } } },
-      scales: {
-        x: { grid: {color:'rgba(255,255,255,0.03)',drawTicks:false}, border:{display:false}, ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:8,maxRotation:0} },
-        y: { position:'right', grid:{color:'rgba(255,255,255,0.03)',drawTicks:false}, border:{display:false}, ticks:{color:'#4a4a60',font:{family:'Space Mono',size:8},maxTicksLimit:6} }
-      }
-    }
-  });
-}
-
+// ── Snapshot (price + stat boxes) ──
 async function loadSnapshot() {
   try {
-    const r = await fetch('/api/macro/snapshot'); const d = await r.json();
-    if (!d.ok) return;
-    const snap = d.data[PAIR_ID];
-    if (!snap || snap.last == null) return;
-    document.getElementById('dd-pair-label').textContent = snap.label || '';
-    document.getElementById('dd-price').textContent      = fmtPrice(snap.last, PAIR_ID);
-    const chg = snap.change_p || 0;
-    const chgEl = document.getElementById('dd-chg');
-    chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
-    chgEl.className   = `${chg >= 0 ? 'up' : 'down'}`;
-    chgEl.dataset.chg = chg;
-
-    // Market context stats — show related instruments
-    const grid = document.getElementById('dd-macro-grid');
-    const related = Object.entries(d.data).filter(([k,v]) => k !== 'fetched_at' && k !== PAIR_ID && v.last != null).slice(0,6);
-    grid.innerHTML = related.map(([k,v]) => {
-      const c = v.change_p||0; const cs = c>=0?'up':'down'; const s=c>=0?'+':'';
-      return `<div class="macro-stat">
-        <div class="macro-stat-label">${v.label||k}</div>
-        <div class="macro-stat-val">${fmtPrice(v.last,k)}</div>
-        <div class="macro-stat-chg ${cs}">${s}${c.toFixed(2)}%</div>
-      </div>`;
-    }).join('');
-  } catch(e) {}
+    const r=await fetch('/api/macro/snapshot'); const d=await r.json(); if(!d.ok) return;
+    const s=d.data[PAIR_ID]; if(!s||s.last==null) return;
+    document.getElementById('dd-pair-label').textContent=s.label||'';
+    document.getElementById('dd-price').textContent=fmtPrice(s.last,PAIR_ID);
+    const chg=s.change_p||0;
+    const ce=document.getElementById('dd-price-chg');
+    ce.textContent=`${chg>=0?'▲':'▼'} ${chg>=0?'+':''}${chg.toFixed(2)}%`;
+    ce.className=chg>=0?'up':'down'; ce.dataset.chg=chg;
+  } catch(e){}
 }
 
+// ── Pair analysis (bias, confidence, AI text) ──
 async function loadAnalysis() {
   try {
-    const r = await fetch(`/api/macro/pair/${PAIR_ID}`); const d = await r.json();
-    if (!d.ok) return;
-    const data = d.data;
-    document.getElementById('dd-ai-text').textContent = data.text || 'Analysis unavailable.';
-    const sent = (data.sentiment || 'Neutral');
-    const sentC = sent.charAt(0).toUpperCase() + sent.slice(1).toLowerCase();
-    const sentEl = document.getElementById('dd-sentiment');
-    sentEl.textContent = sentC;
-    sentEl.className   = sentC;
-  } catch(e) {}
+    const r=await fetch(`/api/macro/pair/${PAIR_ID}`); const d=await r.json(); if(!d.ok) return;
+    const data=d.data;
+    const sent=(data.sentiment||'Neutral');
+    const sentC=sent.charAt(0).toUpperCase()+sent.slice(1).toLowerCase();
+    const conf=data.confidence||70;
+
+    // Stat boxes
+    const biasEl=document.getElementById('dd-bias');
+    biasEl.textContent=sentC; biasEl.className=`dd-stat-box-val ${sent.toLowerCase()}`;
+    document.getElementById('dd-technical').textContent=sent==='Bullish'?'Buy':sent==='Bearish'?'Sell':'Neutral';
+    document.getElementById('dd-technical').className=`dd-stat-box-val ${sent==='Bullish'?'buy':sent==='Bearish'?'sell':'neutral'}`;
+    document.getElementById('dd-confidence').textContent=`${conf}%`;
+
+    // AI overview text
+    document.getElementById('dd-overview-text').textContent=data.text||'Analysis unavailable.';
+  } catch(e){}
 }
 
+// ── Macro modules ──
+async function loadModules() {
+  try {
+    const r=await fetch('/api/macro/all'); const d=await r.json(); if(!d.ok) return;
+    const m=d.modules||{};
+    if(m.mood)    renderMood(m.mood);
+    if(m.policy)  renderPolicy(m.policy);
+    if(m.flow)    renderFlow(m.flow);
+    if(m.bearing) renderBearing(m.bearing);
+    if(m.pulse)   renderPulse(m.pulse);
+  } catch(e){}
+}
+
+function renderMood(d) {
+  const label=d.label||'NEUTRAL', score=d.score||0;
+  document.getElementById('mood-needle').style.transform=`rotate(${score*90}deg)`;
+  const arc=document.getElementById('mood-arc');
+  arc.style.strokeDashoffset=113-(((score+1)/2)*113);
+  const mc={'RISK-ON':'#50c840','NEUTRAL':'#4a4a60','RISK-OFF':'#f05050','EXTREME FEAR':'#e74c3c','EUPHORIA':'#50c840'};
+  arc.style.stroke=mc[label]||'#4a4a60';
+  document.getElementById('mood-label').textContent=label;
+  document.getElementById('mood-label').style.color=mc[label]||'var(--muted)';
+  document.getElementById('mood-desc').textContent=d.explanation||'';
+  document.getElementById('mood-age').textContent=ageStr(d.age_min);
+  document.getElementById('mood-footer').innerHTML=`<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> <strong style="color:var(--text)">${label}:</strong> ${d.explanation?.split('.')[0]||''}`;
+}
+function renderPolicy(d) {
+  const label=d.label||'NEUTRAL';
+  const pc={'HAWKISH':'#f05050','SLIGHTLY HAWKISH':'#f0a028','NEUTRAL':'var(--muted)','SLIGHTLY DOVISH':'#6060f0','DOVISH':'var(--blue)'};
+  const el=document.getElementById('policy-label'); el.textContent=label; el.style.color=pc[label]||'var(--muted)';
+  document.getElementById('policy-desc').textContent=d.explanation||'';
+  document.getElementById('policy-age').textContent=ageStr(d.age_min);
+  document.getElementById('policy-footer').innerHTML=`<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> <strong style="color:var(--text)">${label}:</strong> ${d.outlook||''}`;
+}
+function renderFlow(d) {
+  const label=d.label||'HEALTHY', score=d.score||0.5;
+  const fc={'THIN':'#4a4a60','HEALTHY':'#5af0c4','CROWDED':'#f0a028'};
+  const el=document.getElementById('flow-label'); el.textContent=label; el.style.color=fc[label]||'var(--muted)';
+  document.getElementById('flow-thumb').style.left=(score*100)+'%';
+  document.getElementById('flow-desc').textContent=d.explanation||'';
+  drawSparkline('flow-sparkline',score>.5?.3:-.3,fc[label]||'#4a4a60');
+}
+function renderBearing(d) {
+  const label=d.label||'NEUTRAL';
+  const bc={'STRONG UP':'#5af0c4','UP':'#5af0c4','NEUTRAL':'#4a4a60','DOWN':'#f05050','STRONG DOWN':'#f05050'};
+  const el=document.getElementById('bearing-label'); el.textContent=label; el.style.color=bc[label]||'var(--muted)';
+  document.getElementById('bearing-bullets').innerHTML=(d.bullets||[]).map(b=>`<li>${b}</li>`).join('');
+  drawSparkline('bearing-sparkline',label.includes('UP')?1:label.includes('DOWN')?-1:0,bc[label]||'#4a4a60');
+}
+function renderPulse(d) {
+  const label=d.label||'TRADEABLE', score=d.score||0.5;
+  const vc={'QUIET':'#4a4a60','TRADEABLE':'#5af0c4','WILD':'#f05050'};
+  const el=document.getElementById('pulse-label'); el.textContent=label; el.style.color=vc[label]||'var(--muted)';
+  document.getElementById('pulse-thumb').style.left=(score*100)+'%';
+  document.getElementById('pulse-desc').textContent=d.explanation||'';
+  drawSparkline('pulse-sparkline',(score-.5)*.5,vc[label]||'#4a4a60');
+}
+
+// ── News ──
 async function loadNews() {
   try {
-    const r = await fetch(`/api/news/${PAIR_ID}`); const d = await r.json();
-    const list = document.getElementById('dd-news-list');
-    const items = d.articles || [];
-    if (!items.length) { list.innerHTML = '<div style="padding:16px 18px;font-size:0.58rem;color:var(--muted)">No news available</div>'; return; }
-    list.innerHTML = items.map(n => `
+    const r=await fetch(`/api/news/${PAIR_ID}`); const d=await r.json();
+    const list=document.getElementById('dd-news-list');
+    const items=d.articles||[];
+    if(!items.length){list.innerHTML='<div style="padding:16px 22px;font-size:0.58rem;color:var(--muted)">No news available</div>';return;}
+    list.innerHTML=items.map(n=>`
       <div class="dd-news-item" onclick="window.open('${n.link||'#'}','_blank')">
         <div class="dd-news-meta">
           <span class="dd-news-source">${n.source||''}</span>
@@ -343,23 +508,22 @@ async function loadNews() {
           ${n.sentiment?`<span class="dd-news-sentiment ${n.sentiment}">${n.sentiment}</span>`:''}
         </div>
         <div class="dd-news-headline">${n.headline||''}</div>
+        ${n.summary?`<div class="dd-news-summary">${n.summary}</div>`:''}
       </div>`).join('');
-  } catch(e) {
-    document.getElementById('dd-news-list').innerHTML = '<div style="padding:16px 18px;font-size:0.58rem;color:var(--muted)">Could not load news</div>';
-  }
+  } catch(e){document.getElementById('dd-news-list').innerHTML='<div style="padding:16px 22px;font-size:0.58rem;color:var(--muted)">Could not load news</div>';}
 }
 
 // ── Side nav ──
 { const nav=document.getElementById('side-nav'),tip=document.getElementById('nav-tooltip'),btn=document.getElementById('nav-collapse-btn');
   if(localStorage.getItem('nav-collapsed')==='1') nav.classList.add('collapsed');
-  btn.addEventListener('click',()=>{ nav.classList.toggle('collapsed'); localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0'); });
-  document.querySelectorAll('.nav-item').forEach(i=>{ i.addEventListener('mouseenter',e=>{ if(!nav.classList.contains('collapsed')) return; tip.textContent=i.dataset.label||''; tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px'; tip.classList.add('visible'); }); i.addEventListener('mouseleave',()=>tip.classList.remove('visible')); });
-  document.querySelectorAll('.nav-item').forEach(i=>{ const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/'; i.classList.toggle('active',h==='/macro'); }); }
+  btn.addEventListener('click',()=>{nav.classList.toggle('collapsed');localStorage.setItem('nav-collapsed',nav.classList.contains('collapsed')?'1':'0');});
+  document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('mouseenter',e=>{if(!nav.classList.contains('collapsed'))return;tip.textContent=i.dataset.label||'';tip.style.top=(e.currentTarget.getBoundingClientRect().top+6)+'px';tip.classList.add('visible');});i.addEventListener('mouseleave',()=>tip.classList.remove('visible'));});
+  document.querySelectorAll('.nav-item').forEach(i=>{const h=(i.getAttribute('href')||'').replace(/\/$/,'')||'/';i.classList.toggle('active',h==='/macro');});}
 
 // ── Init ──
-(async () => {
+(async()=>{
   await loadSnapshot();
-  await Promise.all([loadChart(), loadAnalysis(), loadNews()]);
+  await Promise.all([loadChart(), loadAnalysis(), loadModules(), loadNews()]);
 })();
 setInterval(loadSnapshot, 5*60*1000);
 </script>
