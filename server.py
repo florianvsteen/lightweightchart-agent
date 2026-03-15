@@ -121,6 +121,13 @@ class PairServer:
                         }
                         print(f"[{pair_id}] Cooldown restored — expires in "
                               f"{int((cooldown_until - time.time()) / 60)}m")
+        
+        # ── Restore S&D active zone starts after restart ──────────────────────
+        for det_name in config.get("detectors", []):
+            if det_name == "supply_demand":
+                saved_starts = self.last_alerted.get(f"{det_name}_active_starts", [])
+                if saved_starts:
+                    self.last_active_zone[det_name + "_starts"] = saved_starts
 
         self._df_cache: dict[str, pd.DataFrame] = {}
         self._cache_lock = threading.Lock()
@@ -409,6 +416,9 @@ class PairServer:
                     ).start()
 
                 self.last_active_zone[name + "_starts"] = list(curr_active)
+                # Persist active starts so we can restore them after a restart
+                self.last_alerted[f"{name}_active_starts"] = list(curr_active)
+                self._save_alerted()
 
     # ------------------------------------------------------------------ #
     # Background detection loop
