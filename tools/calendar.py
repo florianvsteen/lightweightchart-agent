@@ -114,13 +114,15 @@ def _call_claude_analysis(ev: dict) -> str:
                 "content-type":      "application/json",
             },
             json={
-                "model":    "claude-haiku-4-5-20251001",
+                "model":    "claude-haiku-4-5",
                 "max_tokens": 150,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=20,
         )
         print(f"[calendar] Claude API status: {resp.status_code}")
+        if resp.status_code != 200:
+          print(f"[calendar] Claude API error: {resp.text}")
         blocks = resp.json().get("content", [])
         return " ".join(b["text"] for b in blocks if b.get("type") == "text").strip()
     except Exception as e:
