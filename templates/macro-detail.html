@@ -86,8 +86,8 @@
   flex: 1;
   min-height: 0;
 }
-#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-y: auto; }
-#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 0; overflow-y: auto; }
+#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-y: auto; min-width: 0; }
+#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 16px; overflow: hidden; min-width: 0; }
 
 /* ── Price + chart (left top) ── */
 #dd-chart-panel {
@@ -152,12 +152,14 @@
 #dd-overview-text { font-size: 0.72rem; color: var(--text); line-height: 1.7; opacity: 0.9; }
 
 /* Module row: Mood + Policy */
-#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-shrink: 0; overflow: hidden; }
 .dd-module {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 18px;
+  min-width: 0;
+  overflow: hidden;
 }
 /* Rounded card wrapper for mood/policy content */
 .dd-module-card {
@@ -166,6 +168,8 @@
   border-radius: var(--radius);
   padding: 14px 16px;
   margin-top: 8px;
+  overflow: hidden;
+  min-width: 0;
 }
 .dd-module-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
 .dd-module-age   { font-size: 0.48rem; color: #333; letter-spacing: 0.06em; }
@@ -362,7 +366,7 @@
             <div class="gauge-wrap">
               <div class="gauge-svg-wrap">
                 <!-- Segmented arc gauge matching the screenshot -->
-                <svg id="mood-svg" viewBox="0 0 160 90" width="160" height="90">
+                <svg id="mood-svg" viewBox="0 0 160 90" width="120" height="68">
                   <!-- Segmented ticks — drawn by JS -->
                   <g id="gauge-ticks"></g>
                   <!-- Needle -->
