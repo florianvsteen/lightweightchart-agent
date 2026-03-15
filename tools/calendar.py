@@ -58,35 +58,43 @@ def _fetch_raw() -> list:
     return data
 
 
+from datetime import datetime, timezone, timedelta
+ 
 def _parse_ff_date(date_str: str) -> datetime | None:
-    """
-    Parse FF date strings like "03/17/2026 8:30am" or "03/17/2026 All Day"
-    into a UTC-aware datetime. FF times are Eastern (UTC-4 EDT / UTC-5 EST).
-    We use UTC-5 (EST) as a safe approximation.
-    """
     if not date_str:
         return None
-
+ 
     date_str = date_str.strip()
-
-    # All Day events
+ 
+    # All Day — return midnight UTC on that date
     if "all day" in date_str.lower():
         try:
             d = datetime.strptime(date_str.split()[0], "%m/%d/%Y")
-            return d.replace(hour=0, minute=0, tzinfo=timezone.utc)
+            return d.replace(tzinfo=timezone.utc)
         except Exception:
             return None
-
-    # "03/17/2026 8:30am"
-    for fmt in ("%m/%d/%Y %I:%M%p", "%m/%d/%Y %I:%M %p", "%m/%d/%Y %I%p"):
+ 
+    # FF format: "03/17/2026 8:30am"
+    # Try multiple format variants
+    formats = [
+        "%m/%d/%Y %I:%M%p",    # "03/17/2026 8:30am" — no space before am/pm
+        "%m/%d/%Y %I:%M %p",   # "03/17/2026 8:30 AM"
+        "%m/%d/%Y %I%p",       # "03/17/2026 8am"
+    ]
+ 
+    for fmt in formats:
         try:
-            naive = datetime.strptime(date_str, fmt)
-            # Convert EST (UTC-5) → UTC
-            return naive.replace(tzinfo=timezone.utc) + timedelta(hours=5)
+            naive = datetime.strptime(date_str.upper(), fmt.upper())
+            # Determine EDT vs EST based on month
+            # EDT (UTC-4): Mar second Sunday through Nov first Sunday
+            # Simple approximation: months 3-10 inclusive = EDT (UTC-4), else EST (UTC-5)
+            month = naive.month
+            offset_hours = 4 if (3 <= month <= 10) else 5
+            return naive.replace(tzinfo=timezone.utc) + timedelta(hours=offset_hours)
         except ValueError:
             continue
-
-    print(f"[calendar] Could not parse date: {date_str!r}")
+ 
+    print(f"[calendar] Could not parse date string: {date_str!r}")
     return None
 
 
