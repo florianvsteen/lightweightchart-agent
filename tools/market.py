@@ -1,18 +1,19 @@
 """
 tools/market.py
 
-Fetches key macro market data via yfinance.
-Returns structured dicts ready for the Macro Desk frontend.
+Fetches macro market data via yfinance.
+Instruments are built dynamically from config.PAIRS so the Macro Desk
+always tracks exactly the pairs you trade, plus a few macro context extras
+(VIX, DXY, US10Y, OIL) that aren't trading pairs.
 
-Re-used by: macro desk, dashboard widgets, any future alerts.
+Re-used by: macro desk, dashboard widgets, alert pipeline.
 
 Usage:
-    from tools.market import get_market_snapshot, get_chart_data
+    from tools.market import get_market_snapshot, get_chart_data, INSTRUMENTS
 """
 
 import time
 import threading
-from datetime import datetime, timezone
 
 try:
     import yfinance as yf
@@ -24,26 +25,54 @@ except ImportError:
 SNAPSHOT_TTL = 5 * 60      # 5 min cache
 CHART_TTL    = 15 * 60     # 15 min cache
 
-# Core instruments tracked on the Macro Desk
-INSTRUMENTS = {
-    # Equities / Risk
-    "SPX":   {"sym": "^GSPC",    "label": "S&P 500",        "group": "equity",   "unit": "pts"},
-    "NDX":   {"sym": "^NDX",     "label": "Nasdaq 100",     "group": "equity",   "unit": "pts"},
-    "VIX":   {"sym": "^VIX",     "label": "VIX",            "group": "vol",      "unit": ""},
-    # Rates
-    "US10Y": {"sym": "^TNX",     "label": "US 10Y Yield",   "group": "rates",    "unit": "%"},
-    "US2Y":  {"sym": "^IRX",     "label": "US 2Y Yield",    "group": "rates",    "unit": "%"},
-    "MOVE":  {"sym": "^MOVE",    "label": "MOVE Index",     "group": "vol",      "unit": ""},
-    # FX
-    "DXY":   {"sym": "DX-Y.NYB", "label": "DXY",            "group": "fx",       "unit": ""},
-    "EURUSD":{"sym": "EURUSD=X", "label": "EUR/USD",        "group": "fx",       "unit": ""},
-    "USDJPY":{"sym": "JPY=X",    "label": "USD/JPY",        "group": "fx",       "unit": ""},
-    "GBPUSD":{"sym": "GBPUSD=X", "label": "GBP/USD",        "group": "fx",       "unit": ""},
-    # Commodities
-    "GOLD":  {"sym": "GC=F",     "label": "Gold",           "group": "commod",   "unit": "USD"},
-    "OIL":   {"sym": "CL=F",     "label": "WTI Oil",        "group": "commod",   "unit": "USD"},
-    "SILVER":{"sym": "SI=F",     "label": "Silver",         "group": "commod",   "unit": "USD"},
-}
+
+def _group(pair_id: str, yf_ticker: str) -> str:
+    pid = pair_id.upper()
+    if pid in ("US30", "US100", "SPX500"):                    return "equity"
+    if pid in ("BTCUSD", "ETHUSD"):                           return "crypto"
+    if yf_ticker in ("GC=F", "SI=F", "CL=F", "NG=F"):        return "commod"
+    return "fx"
+
+
+def _build_instruments() -> dict:
+    """
+    Build INSTRUMENTS from config.PAIRS (imported at call time to avoid
+    circular imports at module load) plus macro-only extras.
+    """
+    try:
+        from config import PAIRS
+    except ImportError:
+        PAIRS = {}
+
+    instruments = {}
+
+    for pair_id, cfg in PAIRS.items():
+        yf_sym = cfg.get("yf_ticker")
+        if not yf_sym:
+            continue
+        instruments[pair_id] = {
+            "sym":   yf_sym,
+            "label": cfg.get("label", pair_id),
+            "group": _group(pair_id, yf_sym),
+            "unit":  "",
+        }
+
+    # Macro context instruments — added only if not already in PAIRS
+    EXTRAS = {
+        "VIX":   {"sym": "^VIX",     "label": "VIX",          "group": "vol",    "unit": ""},
+        "DXY":   {"sym": "DX-Y.NYB", "label": "DXY",          "group": "fx",     "unit": ""},
+        "US10Y": {"sym": "^TNX",     "label": "US 10Y Yield", "group": "rates",  "unit": "%"},
+        "OIL":   {"sym": "CL=F",     "label": "WTI Oil",      "group": "commod", "unit": "USD"},
+    }
+    for key, meta in EXTRAS.items():
+        if key not in instruments:
+            instruments[key] = meta
+
+    return instruments
+
+
+# Built once at import; call _build_instruments() again if PAIRS changes at runtime
+INSTRUMENTS: dict = _build_instruments()
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 _snapshot_cache: dict = {}
@@ -66,17 +95,16 @@ def _fetch_quote(sym: str) -> dict | None:
         chg   = last - prev
         chg_p = (chg / prev * 100) if prev else 0.0
 
-        # Intraday for smoother "last" value
+        # Intraday for a fresher last price
         intra = ticker.history(period="1d", interval="5m", auto_adjust=True)
         if not intra.empty:
             last = float(intra["Close"].iloc[-1])
 
         return {
-            "last":    round(last, 4),
-            "prev":    round(prev, 4),
-            "change":  round(chg, 4),
+            "last":     round(last, 4),
+            "prev":     round(prev, 4),
+            "change":   round(chg, 4),
             "change_p": round(chg_p, 3),
-            "fetched_at": time.time(),
         }
     except Exception as e:
         print(f"[market] fetch error {sym}: {e}")
@@ -85,12 +113,15 @@ def _fetch_quote(sym: str) -> dict | None:
 
 def get_market_snapshot(force: bool = False) -> dict:
     """
-    Return latest quotes for all INSTRUMENTS.
+    Return latest quotes for all instruments built from config.PAIRS.
 
     Returns:
         {
-          "SPX":   {"last": 5200, "change_p": -0.38, "group": "equity", ...},
-          "VIX":   {...},
+          "US30":   {"label": "US30 (Dow Jones)", "group": "equity",
+                     "last": 39500, "change_p": -0.4, ...},
+          "EURUSD": {...},
+          "VIX":    {...},
+          "DXY":    {...},
           ...
           "fetched_at": float
         }
@@ -107,10 +138,10 @@ def get_market_snapshot(force: bool = False) -> dict:
             "label":    meta["label"],
             "group":    meta["group"],
             "unit":     meta["unit"],
-            "last":     quote["last"]    if quote else None,
-            "change":   quote["change"]  if quote else None,
+            "last":     quote["last"]     if quote else None,
+            "change":   quote["change"]   if quote else None,
             "change_p": quote["change_p"] if quote else None,
-            "prev":     quote["prev"]    if quote else None,
+            "prev":     quote["prev"]     if quote else None,
         }
 
     result["fetched_at"] = time.time()
@@ -124,7 +155,8 @@ def get_market_snapshot(force: bool = False) -> dict:
 
 def get_chart_data(symbol_key: str, period: str = "1d", interval: str = "5m") -> list[dict]:
     """
-    Return OHLCV candle list for a symbol key (e.g. "SPX", "GOLD").
+    Return OHLCV candles for a symbol key matching a key in INSTRUMENTS
+    (e.g. "US30", "EURUSD", "XAUUSD", "VIX").
 
     Returns list of {"time": unix_ts, "open", "high", "low", "close", "volume"}
     """
@@ -147,9 +179,8 @@ def get_chart_data(symbol_key: str, period: str = "1d", interval: str = "5m") ->
 
         candles = []
         for ts, row in hist.iterrows():
-            unix = int(ts.timestamp())
             candles.append({
-                "time":   unix,
+                "time":   int(ts.timestamp()),
                 "open":   round(float(row["Open"]),  4),
                 "high":   round(float(row["High"]),  4),
                 "low":    round(float(row["Low"]),   4),
