@@ -127,6 +127,8 @@ def _call_claude_analysis(ev: dict) -> str:
         return " ".join(b["text"] for b in blocks if b.get("type") == "text").strip()
     except Exception as e:
         print(f"[calendar] Claude analysis error: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
 
 
