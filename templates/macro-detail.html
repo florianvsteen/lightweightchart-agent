@@ -30,9 +30,17 @@
 }
 #dd-icon {
   width: 52px; height: 52px; border-radius: 50%;
-  background: #c8a84b; display: flex; align-items: center;
-  justify-content: center; flex-shrink: 0; font-size: 1.4rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 1.1rem; font-weight: 800;
+  font-family: 'Syne', sans-serif; color: #fff; letter-spacing: 0.01em;
+  background: linear-gradient(135deg, #1a3a5c 0%, #0d1f2d 100%);
+  border: 2px solid rgba(90,158,240,0.3);
 }
+/* color variants per asset type */
+#dd-icon.equity  { background: linear-gradient(135deg, #1a3a5c 0%, #0d1f2d 100%); border-color: rgba(90,158,240,0.3); }
+#dd-icon.fx      { background: linear-gradient(135deg, #1a3a2c 0%, #0d1f15 100%); border-color: rgba(90,240,196,0.3); }
+#dd-icon.commod  { background: linear-gradient(135deg, #3a2a10 0%, #1f1505 100%); border-color: rgba(200,168,75,0.4); }
+#dd-icon.crypto  { background: linear-gradient(135deg, #2a1a3a 0%, #150d1f 100%); border-color: rgba(180,90,240,0.3); }
 #dd-pair-name {
   font-family: 'Syne', sans-serif; font-weight: 800;
   font-size: 2rem; color: #fff; line-height: 1;
@@ -86,14 +94,7 @@
 #dd-price-chg { font-size: 0.85rem; font-weight: 700; }
 #dd-price-chg.up   { color: var(--accent); }
 #dd-price-chg.down { color: var(--accent2); }
-.dd-period-row { display: flex; gap: 4px; margin-bottom: 10px; }
-.chart-period-btn {
-  background: none; border: 1px solid var(--border2); border-radius: var(--radius-sm);
-  color: var(--muted); cursor: pointer; font-family: 'Space Mono', monospace;
-  font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em; padding: 3px 10px; transition: all 0.15s;
-}
-.chart-period-btn:hover { color: #ccc; border-color: #555; }
-.chart-period-btn.active { color: var(--accent); border-color: rgba(90,240,196,0.5); background: rgba(90,240,196,0.06); }
+
 #dd-chart-wrap { height: 200px; position: relative; }
 #dd-chart-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 
@@ -159,9 +160,10 @@
 }
 .dd-module-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
 .dd-module-age   { font-size: 0.48rem; color: #333; letter-spacing: 0.06em; }
-.gauge-wrap { display: flex; align-items: center; gap: 14px; }
+.gauge-wrap { display: flex; align-items: flex-start; gap: 20px; }
 .gauge-svg-wrap { flex-shrink: 0; }
-.gauge-reading { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; line-height: 1.1; }
+.gauge-svg-wrap { flex-shrink: 0; }
+.gauge-reading { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.06em; line-height: 1.1; text-transform: uppercase; margin-bottom: 6px; }
 .gauge-desc { font-size: 0.62rem; color: var(--text); line-height: 1.55; opacity: 0.8; margin-top: 5px; }
 .gauge-footer { margin-top: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 0.6rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .policy-word { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.08em; margin-bottom: 7px; }
@@ -284,7 +286,9 @@
     </div>
 
     <div id="dd-header">
-      <div id="dd-icon">📈</div>
+      <div id="dd-icon-wrap">
+    <div id="dd-icon"></div>
+  </div>
       <div>
         <div id="dd-pair-name">{{ pair_id }}</div>
         <div id="dd-pair-label">Loading…</div>
@@ -313,11 +317,7 @@
           <div id="dd-price-row">
             <div id="dd-price">—</div>
             <div id="dd-price-chg" class="flat">—</div>
-            <div class="dd-period-row" style="margin-left:auto;margin-bottom:0">
-              <button class="chart-period-btn"        data-p="1d"  data-i="5m"  onclick="setPeriod(this)">1D</button>
-              <button class="chart-period-btn active" data-p="5d"  data-i="30m" onclick="setPeriod(this)">5D</button>
-              <button class="chart-period-btn"        data-p="1mo" data-i="1d"  onclick="setPeriod(this)">1M</button>
-            </div>
+
           </div>
           <div id="dd-chart-wrap"><canvas id="dd-chart-canvas"></canvas></div>
         </div>
@@ -352,16 +352,21 @@
             <div class="dd-module-card">
             <div class="gauge-wrap">
               <div class="gauge-svg-wrap">
-                <svg viewBox="0 0 90 52" width="90" height="52">
-                  <path d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#1e1e28" stroke-width="8" stroke-linecap="round"/>
-                  <path id="mood-arc" d="M10 46 A36 36 0 0 1 80 46" fill="none" stroke="#4a4a60" stroke-width="8" stroke-linecap="round" stroke-dasharray="113" stroke-dashoffset="113"/>
-                  <line id="mood-needle" x1="45" y1="46" x2="45" y2="14" stroke="#fff" stroke-width="1.5" stroke-linecap="round" style="transform-origin:45px 46px;transform:rotate(-90deg);transition:transform 0.6s ease"/>
-                  <circle cx="45" cy="46" r="3" fill="#fff"/>
+                <!-- Segmented arc gauge matching the screenshot -->
+                <svg id="mood-svg" viewBox="0 0 160 90" width="160" height="90">
+                  <!-- Segmented ticks — drawn by JS -->
+                  <g id="gauge-ticks"></g>
+                  <!-- Needle -->
+                  <line id="mood-needle" x1="80" y1="78" x2="80" y2="28"
+                    stroke="#fff" stroke-width="2" stroke-linecap="round"
+                    style="transform-origin:80px 78px;transform:rotate(0deg);transition:transform 0.7s cubic-bezier(0.34,1.56,0.64,1)"/>
+                  <circle cx="80" cy="78" r="5" fill="#fff"/>
+                  <circle cx="80" cy="78" r="2.5" fill="#0a0a0c"/>
                 </svg>
               </div>
-              <div>
+              <div style="flex:1">
                 <div class="gauge-reading" id="mood-label">—</div>
-                <div class="gauge-desc"    id="mood-desc"><span class="skel" style="width:140px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:100px;height:9px;display:block"></span></div>
+                <div class="gauge-desc" id="mood-desc"><span class="skel" style="width:180px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:140px;height:9px;display:block;margin-bottom:3px"></span><span class="skel" style="width:100px;height:9px;display:block"></span></div>
               </div>
             </div>
             <div class="gauge-footer" id="mood-footer">—</div>
@@ -464,10 +469,7 @@ function drawSparkline(id, trend, color) {
 }
 
 // ── Chart ──
-function setPeriod(btn) {
-  document.querySelectorAll('.chart-period-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); _period=btn.dataset.p; _interval=btn.dataset.i; loadChart();
-}
+
 async function loadChart() {
   try {
     const r=await fetch(`/api/macro/chart/${PAIR_ID}?period=${_period}&interval=${_interval}`);
@@ -504,6 +506,26 @@ async function loadSnapshot() {
 }
 
 // ── Pair analysis (bias, confidence, AI text) ──
+// ── Pair icon: TradingView-style colored circle with short symbol ──
+function setPairIcon(pairId) {
+  const icon = document.getElementById('dd-icon');
+  if (!icon) return;
+
+  // Determine asset type and short label
+  const equity  = ['US30','US100','SPX500'];
+  const crypto  = ['BTCUSD','ETHUSD','SOLUSD'];
+  const commod  = ['XAUUSD','XAGUSD','OIL','WTIUSD'];
+
+  let type = 'fx', short = pairId.slice(0,2);
+  if (equity.includes(pairId))  { type = 'equity'; short = pairId.replace('US','').replace('100','NDX').replace('30','DJI'); }
+  if (crypto.includes(pairId))  { type = 'crypto'; short = pairId.replace('USD','').slice(0,3); }
+  if (commod.includes(pairId))  { type = 'commod'; short = pairId === 'XAUUSD' ? 'Au' : pairId === 'XAGUSD' ? 'Ag' : 'OIL'; }
+  if (type === 'fx')             { short = pairId.slice(0,3); }
+
+  icon.className = type;
+  icon.textContent = short;
+}
+
 async function loadAnalysis() {
   try {
     const r=await fetch(`/api/macro/pair/${PAIR_ID}`); const d=await r.json(); if(!d.ok) return;
@@ -537,18 +559,99 @@ async function loadModules() {
   } catch(e){}
 }
 
+// ── Segmented gauge (matches screenshot exactly) ──
+function drawSegmentedGauge(score) {
+  // score: -1 (extreme fear/risk-off) to +1 (euphoria/risk-on)
+  const svg   = document.getElementById('gauge-ticks');
+  if (!svg) return;
+  svg.innerHTML = '';
+
+  const cx = 80, cy = 78, r = 58;
+  const startDeg = -180, endDeg = 0; // half circle
+  const numSegs  = 24;
+  const gap       = 3; // degrees gap between segments
+  const segSpan   = (endDeg - startDeg) / numSegs;
+
+  // Color ramp: left=red(risk-off), mid=grey(neutral), right=green(risk-on)
+  const segColors = [
+    '#e74c3c','#e74c3c','#f05050','#f05050',   // strong risk-off (0-3)
+    '#f0a028','#f0a028',                         // risk-off (4-5)
+    '#4a4a60','#4a4a60','#4a4a60','#4a4a60',    // neutral (6-9)
+    '#4a4a60','#4a4a60','#4a4a60','#4a4a60',    // neutral (10-13)
+    '#6ac040','#6ac040',                         // risk-on (14-15)
+    '#50c840','#50c840','#50c840','#50c840',     // risk-on (16-19)
+    '#2ecc71','#2ecc71','#2ecc71','#2ecc71',     // strong risk-on (20-23)
+  ];
+
+  // Which segment is "active" based on score (-1 to +1 → 0 to numSegs-1)
+  const activeIdx = Math.round((score + 1) / 2 * (numSegs - 1));
+
+  for (let i = 0; i < numSegs; i++) {
+    const startAngle = (startDeg + i * segSpan + gap/2) * Math.PI / 180;
+    const endAngle   = (startDeg + (i+1) * segSpan - gap/2) * Math.PI / 180;
+
+    const x1 = cx + (r - 12) * Math.cos(startAngle);
+    const y1 = cy + (r - 12) * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(startAngle);
+    const y2 = cy + r * Math.sin(startAngle);
+    const x3 = cx + r * Math.cos(endAngle);
+    const y3 = cy + r * Math.sin(endAngle);
+    const x4 = cx + (r - 12) * Math.cos(endAngle);
+    const y4 = cy + (r - 12) * Math.sin(endAngle);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d    = `M ${x1} ${y1} L ${x2} ${y2} A ${r} ${r} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${r-12} ${r-12} 0 0 0 ${x1} ${y1} Z`;
+    path.setAttribute('d', d);
+    path.setAttribute('fill', segColors[i] || '#4a4a60');
+    path.setAttribute('opacity', i <= activeIdx ? '1' : '0.18');
+    svg.appendChild(path);
+  }
+}
+
 function renderMood(d) {
-  const label=d.label||'NEUTRAL', score=d.score||0;
-  document.getElementById('mood-needle').style.transform=`rotate(${score*90}deg)`;
-  const arc=document.getElementById('mood-arc');
-  arc.style.strokeDashoffset=113-(((score+1)/2)*113);
-  const mc={'RISK-ON':'#50c840','NEUTRAL':'#4a4a60','RISK-OFF':'#f05050','EXTREME FEAR':'#e74c3c','EUPHORIA':'#50c840'};
-  arc.style.stroke=mc[label]||'#4a4a60';
-  document.getElementById('mood-label').textContent=label;
-  document.getElementById('mood-label').style.color=mc[label]||'var(--muted)';
-  document.getElementById('mood-desc').textContent=d.explanation||'';
-  document.getElementById('mood-age').textContent=ageStr(d.age_min);
-  document.getElementById('mood-footer').innerHTML=`<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> <strong style="color:var(--text)">${label}:</strong> ${d.explanation?.split('.')[0]||''}`;
+  // Score: -1 to +1. Map our labels to scores precisely.
+  const LABEL_SCORES = {
+    'EXTREME FEAR':     -1.0,
+    'STRONG RISK-OFF':  -0.75,
+    'RISK-OFF':         -0.45,
+    'RISK-NEUTRAL':     -0.1,
+    'NEUTRAL':           0.0,
+    'RISK-ON':           0.45,
+    'STRONG RISK-ON':    0.75,
+    'EUPHORIA':          1.0,
+  };
+  const label = d.label || 'NEUTRAL';
+  const score = d.score != null ? d.score : (LABEL_SCORES[label] ?? 0);
+
+  // Needle: -180deg = far left, 0deg = far right, 0 score = -90deg
+  const needleDeg = score * 90; // -90 to +90
+  document.getElementById('mood-needle').style.transform = `rotate(${needleDeg}deg)`;
+
+  // Draw segments
+  drawSegmentedGauge(score);
+
+  // Label color
+  const labelColors = {
+    'EXTREME FEAR':    '#e74c3c',
+    'STRONG RISK-OFF': '#f05050',
+    'RISK-OFF':        '#f0a028',
+    'RISK-NEUTRAL':    '#4a4a60',
+    'NEUTRAL':         '#888898',
+    'RISK-ON':         '#6ac040',
+    'STRONG RISK-ON':  '#2ecc71',
+    'EUPHORIA':        '#2ecc71',
+  };
+  const color = labelColors[label] || '#888898';
+
+  document.getElementById('mood-label').textContent = label;
+  document.getElementById('mood-label').style.color  = color;
+  document.getElementById('mood-desc').textContent   = d.explanation || '';
+  document.getElementById('mood-age').textContent    = ageStr(d.age_min);
+
+  const footerLabel = label.replace(/-/g,' ').replace(/\w/g, c => c.toUpperCase());
+  document.getElementById('mood-footer').innerHTML =
+    `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <strong style="color:var(--text)">${footerLabel}:</strong> ${d.explanation?.split('.')[0] || ''}`;
 }
 function renderPolicy(d) {
   const label=d.label||'NEUTRAL';
@@ -721,6 +824,7 @@ async function loadNews() {
 
 // ── Init ──
 (async()=>{
+  setPairIcon(PAIR_ID);
   await loadSnapshot();
   await Promise.all([loadChart(), loadAnalysis(), loadModules(), loadNews()]);
 })();
