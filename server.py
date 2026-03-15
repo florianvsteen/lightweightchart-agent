@@ -61,6 +61,29 @@ INTERVAL_SECONDS = {
 }
 
 
+def _sd_alert_key(zone: dict) -> str:
+    """
+    Build a stable alert dedup key for a S&D zone based on its price levels.
+
+    MT5 (and yfinance) can return slightly different candle timestamps between
+    restarts because bars are fetched by position count, not absolute time.
+    The same physical zone can therefore arrive with a start_ts that differs
+    by one bar, causing a timestamp-based key like "supply_demand_1234567890"
+    to miss the existing entry in .alerted_PAIR.json and fire again.
+
+    Price levels (high/low of the indecision candle) are always stable for the
+    same zone regardless of how many bars the broker returns, so keying on them
+    prevents duplicate alerts across restarts.
+
+    Format: sd_<type>_<top_rounded>_<bottom_rounded>
+    e.g.    sd_demand_1.08523_1.08491
+    """
+    ztype  = zone.get("type", "zone")
+    top_r  = round(float(zone.get("top",    0)), 5)
+    bot_r  = round(float(zone.get("bottom", 0)), 5)
+    return f"sd_{ztype}_{top_r}_{bot_r}"
+
+
 class PairServer:
 
     def __init__(self, pair_id: str, config: dict):
@@ -98,6 +121,20 @@ class PairServer:
         self.last_alerted: dict[str, int] = self._load_alerted()
         self.last_active_zone: dict[str, dict] = {}
 
+        # ── Migrate old timestamp-based S&D keys to new price-level keys ──────
+        # Old format: "supply_demand_<timestamp>"  (3 underscores, numeric suffix)
+        # New format: "sd_<type>_<top>_<bottom>"   (starts with "sd_")
+        # Remove old keys so they don't accumulate in the file forever.
+        old_keys = [
+            k for k in list(self.last_alerted.keys())
+            if k.startswith("supply_demand_") and k.count("_") == 2
+        ]
+        if old_keys:
+            for k in old_keys:
+                del self.last_alerted[k]
+            self._save_alerted()
+            print(f"[{pair_id}] Migrated {len(old_keys)} old S&D alert key(s) to price-level format")
+
         # ── Restore cooldown state after restart ──────────────────────
         for det_name in config.get("detectors", []):
             if det_name == "accumulation":
@@ -121,13 +158,6 @@ class PairServer:
                         }
                         print(f"[{pair_id}] Cooldown restored — expires in "
                               f"{int((cooldown_until - time.time()) / 60)}m")
-        
-        # ── Restore S&D active zone starts after restart ──────────────────────
-        for det_name in config.get("detectors", []):
-            if det_name == "supply_demand":
-                saved_starts = self.last_alerted.get(f"{det_name}_active_starts", [])
-                if saved_starts:
-                    self.last_active_zone[det_name + "_starts"] = saved_starts
 
         self._df_cache: dict[str, pd.DataFrame] = {}
         self._cache_lock = threading.Lock()
@@ -380,33 +410,43 @@ class PairServer:
             elif name == "supply_demand":
                 if not result or not isinstance(result, dict):
                     continue
+
                 zones = result.get("zones", [])
-                curr_active = {z["start"] for z in zones if z.get("is_active")}
-                prev_starts = set(self.last_active_zone.get(name + "_starts", []))
 
-                invalidated = prev_starts - curr_active
-                changed = False
-                for start_ts in invalidated:
-                    key = f"{name}_{start_ts}"
-                    if key in self.last_alerted:
-                        del self.last_alerted[key]
-                        changed = True
-                        print(f"[{self.pair_id}] Removed invalidated zone {key} from alerted state")
-                if changed:
-                    self._save_alerted()
+                # Build a set of price-level keys for currently active zones.
+                # We use price levels (top/bottom) as the stable identity for a
+                # zone — MT5 bar timestamps can shift by one bar between restarts
+                # because fetch_data_pos fetches by count, not by absolute time.
+                curr_keys = {_sd_alert_key(z) for z in zones if z.get("is_active")}
 
+                # Invalidate alerted keys that no longer correspond to an active
+                # zone so a genuinely new zone at the same price later can alert.
+                prev_keys = set(self.last_active_zone.get(name + "_keys", []))
+                invalidated = prev_keys - curr_keys
+                if invalidated:
+                    changed = False
+                    for key in invalidated:
+                        if key in self.last_alerted:
+                            del self.last_alerted[key]
+                            changed = True
+                            print(f"[{self.pair_id}] Removed invalidated zone {key} from alerted state")
+                    if changed:
+                        self._save_alerted()
+
+                # Fire alerts for any active zone not yet alerted this session.
                 for z in zones:
                     if not z.get("is_active"):
                         continue
-                    start_ts = z["start"]
-                    alert_key = f"{name}_{start_ts}"
+                    alert_key = _sd_alert_key(z)
                     if self.last_alerted.get(alert_key):
                         continue
-                    self.last_alerted[alert_key] = 1
+                    # Mark as alerted BEFORE spawning the thread so a rapid
+                    # second detection cycle can't fire a duplicate.
+                    self.last_alerted[alert_key] = int(time.time())
                     self._save_alerted()
                     alert_zone = {
                         "detector": z.get("type", "supply_demand"),
-                        "start":    start_ts,
+                        "start":    z["start"],
                         "end":      z["end"],
                     }
                     threading.Thread(
@@ -415,10 +455,9 @@ class PairServer:
                         daemon=True,
                     ).start()
 
-                self.last_active_zone[name + "_starts"] = list(curr_active)
-                # Persist active starts so we can restore them after a restart
-                self.last_alerted[f"{name}_active_starts"] = list(curr_active)
-                self._save_alerted()
+                # Persist the current set of active keys so we can invalidate
+                # stale ones on the next cycle.
+                self.last_active_zone[name + "_keys"] = list(curr_keys)
 
     # ------------------------------------------------------------------ #
     # Background detection loop
@@ -894,20 +933,14 @@ class PairServer:
                 full_df = full_df[(full_df.index >= start_dt) & (full_df.index <= end_dt)]
                 print(f"[REPLAY] filtered by timestamps: start={start_ts} end={end_ts} df_len={len(full_df)}")
             else:
-                # Fallback to index-based slicing for backward compatibility
-                # REPLACE the fallback with this:
                 raw_total = request.args.get("total")
                 if raw_total:
-                    # Instead of just iloc, ensure we don't exceed the original browser snapshot
                     full_df = full_df.iloc[:int(raw_total)]
             if full_df is None or len(full_df) < 5:
                 return jsonify({"error": "No data available"}), 200
             params = dict(self.detector_params.get("accumulation", {}))
             params.pop("timeframe", None)
             min_candles = params.get("min_candles", 20)
-            # In replay mode, all candles are historical (no "still forming" candle)
-            # so we don't remove the last candle like we do in live mode.
-            # The timestamp filtering above already ensures correct candle alignment.
             total = len(full_df)
             idx   = raw_idx if raw_idx >= 1 else total
             idx   = max(min_candles + 3, min(idx, total))
@@ -1183,7 +1216,6 @@ class PairServer:
             print(f"[{self.pair_id}] discord-webhook package not installed.")
             return
 
-        # NEW: Extract the timeframe from the zone metadata
         tf = zone.get("timeframe_id", "unknown")
 
         screenshot_path = f"alert_{self.pair_id}_{int(time.time())}.png"
@@ -1194,7 +1226,6 @@ class PairServer:
             detector_name = raw.replace("_", " ").title()
         print(f"[{self.pair_id}] Sending Discord alert for {detector_name}...")
 
-
         tf = zone.get("timeframe_id", self.default_interval)
         try:
             if PLAYWRIGHT_AVAILABLE:
@@ -1204,7 +1235,6 @@ class PairServer:
                     breakout_ts = zone["breakout_candle"].get("time", "")
                 center_ts = breakout_ts or highlight_ts
 
-                # UPDATE: Pass the interval into the URL
                 page_url = (
                     f"http://127.0.0.1:{self.port}"
                     f"?highlight={highlight_ts}&center={center_ts}&interval={tf}"
