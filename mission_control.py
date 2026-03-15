@@ -227,6 +227,10 @@ def proxy_debug_fvg(pair_id):
     return _json_proxy(pair_id, "/debug/fvg")
 
 
+@app.route("/bloomberg")
+def bloomberg_tv():
+    return render_template("bloomberg-tv.html")
+
 @app.route("/api/news/<pair_id>")
 def api_news(pair_id):
     pair_id = pair_id.upper()
