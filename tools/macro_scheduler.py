@@ -53,64 +53,11 @@ def _warm_pair_modules(pair_id: str) -> None:
 
 
 def _warm_pair_analysis(pair_id: str) -> None:
-    """
-    Pre-warm the pair AI analysis (text + sentiment + confidence).
-    Maps to /api/macro/pair/<id>
-    Uses the same _cache in tools.macro via cache_key = f"analysis_{pair_id}"
-    """
+    """Pre-warm pair card analysis — uses get_pair_card_analysis so cache key matches the route."""
     try:
-        from tools.ai     import ask
-        from tools.market import get_market_snapshot, INSTRUMENTS
-        from tools.news   import get_news
-        from tools.macro  import _cached, _set_cache, _pair_context
-        import json, re
-
-        cache_key = f"pair_analysis_{pair_id}"
-        # Already fresh — skip
-        if _cached(cache_key):
-            return
-
-        meta  = INSTRUMENTS.get(pair_id, {})
-        snap  = get_market_snapshot()
-        d     = snap.get(pair_id, {})
-        price = d.get("last")
-        chg_p = d.get("change_p")
-
-        price_ctx = ""
-        if price is not None:
-            sign = "+" if (chg_p or 0) >= 0 else ""
-            price_ctx = f"{pair_id} ({meta.get('label', pair_id)}) is at {price} ({sign}{chg_p:.2f}% today)."
-
-        news_items = get_news(pair_id, yf_ticker=meta.get("sym"))
-        news_ctx = ""
-        if news_items:
-            headlines = "\n".join(f"- {n['headline']}" for n in news_items[:5])
-            news_ctx  = f"\n\nRecent headlines:\n{headlines}"
-
-        prompt = (
-            f"You are a macro FX/trading analyst. Analyze {pair_id} specifically:\n\n"
-            f"{price_ctx}{news_ctx}\n\n"
-            "Respond ONLY with valid JSON (no markdown):\n"
-            '{\n'
-            '  "text": "<2-3 sentence analysis citing price action, key driver, what to watch>",\n'
-            '  "sentiment": "<Bullish | Bearish | Neutral>",\n'
-            '  "confidence": <integer 50-95>\n'
-            '}'
-        )
-
-        raw  = ask(prompt, max_tokens=300, temperature=0.3)
-        cleaned = re.sub(r"^```[a-z]*\n?", "", raw.strip())
-        cleaned = re.sub(r"\n?```$", "", cleaned)
-        data = json.loads(cleaned)
-
-        result = {
-            "text":       data.get("text", ""),
-            "sentiment":  data.get("sentiment", "Neutral"),
-            "confidence": int(data.get("confidence", 70)),
-            "news":       news_items[:5],
-        }
-        _set_cache(cache_key, result)
-        log.info(f"[scheduler] {pair_id} analysis done: {result['sentiment']}, {result['confidence']}%")
+        from tools.macro import get_pair_card_analysis
+        result = get_pair_card_analysis(pair_id, force=True)
+        log.info(f"[scheduler] {pair_id} analysis: {result.get('sentiment')} {result.get('confidence')}%")
     except Exception as e:
         log.error(f"[scheduler] analysis error {pair_id}: {e}", exc_info=True)
 
