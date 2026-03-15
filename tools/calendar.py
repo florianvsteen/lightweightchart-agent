@@ -56,47 +56,17 @@ def _fetch_raw() -> list:
         print(f"[calendar] Sample event fields: {list(data[0].keys())}")
         print(f"[calendar] Sample event: {data[0]}")
     return data
-
-
-from datetime import datetime, timezone, timedelta
  
 def _parse_ff_date(date_str: str) -> datetime | None:
+    """FF date is already ISO 8601 with offset e.g. '2026-03-17T13:30:00-04:00'"""
     if not date_str:
         return None
- 
-    date_str = date_str.strip()
- 
-    # All Day — return midnight UTC on that date
-    if "all day" in date_str.lower():
-        try:
-            d = datetime.strptime(date_str.split()[0], "%m/%d/%Y")
-            return d.replace(tzinfo=timezone.utc)
-        except Exception:
-            return None
- 
-    # FF format: "03/17/2026 8:30am"
-    # Try multiple format variants
-    formats = [
-        "%m/%d/%Y %I:%M%p",    # "03/17/2026 8:30am" — no space before am/pm
-        "%m/%d/%Y %I:%M %p",   # "03/17/2026 8:30 AM"
-        "%m/%d/%Y %I%p",       # "03/17/2026 8am"
-    ]
- 
-    for fmt in formats:
-        try:
-            naive = datetime.strptime(date_str.upper(), fmt.upper())
-            # Determine EDT vs EST based on month
-            # EDT (UTC-4): Mar second Sunday through Nov first Sunday
-            # Simple approximation: months 3-10 inclusive = EDT (UTC-4), else EST (UTC-5)
-            month = naive.month
-            offset_hours = 4 if (3 <= month <= 10) else 5
-            return naive.replace(tzinfo=timezone.utc) + timedelta(hours=offset_hours)
-        except ValueError:
-            continue
- 
-    print(f"[calendar] Could not parse date string: {date_str!r}")
-    return None
-
+    try:
+        # Python 3.7+ handles ISO 8601 with timezone offset natively
+        return datetime.fromisoformat(date_str)
+    except Exception as e:
+        print(f"[calendar] Could not parse date: {date_str!r} — {e}")
+        return None
 
 def _event_key(ev: dict) -> str:
     return f"{ev.get('date','')}|{ev.get('country','')}|{ev.get('title','')}"
