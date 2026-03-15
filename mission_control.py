@@ -436,6 +436,9 @@ def macro_page():
     instruments_js = json.dumps(list(INSTRUMENTS.keys()))
     return render_template("macro.html", instruments_js=instruments_js)
  
+ 
+ 
+ 
 @app.route("/macro/<pair_id>")
 def macro_detail_page(pair_id):
     """Detail page for a specific pair — no pair selector bar."""
@@ -453,6 +456,7 @@ def api_macro_snapshot():
         data  = get_market_snapshot(force=force)
         return jsonify({"ok": True, "data": data})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
  
  
@@ -465,6 +469,7 @@ def api_macro_chart(symbol):
         candles  = get_chart_data(symbol.upper(), period=period, interval=interval)
         return jsonify({"ok": True, "symbol": symbol, "candles": candles})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
  
  
@@ -494,6 +499,7 @@ def api_macro_module(n):
         data  = fn(force=force)
         return jsonify({"ok": True, "module": n, "data": data})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
  
  
@@ -505,6 +511,7 @@ def api_macro_all():
         data  = get_all(force=force)
         return jsonify({"ok": True, **data})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
  
  
@@ -520,6 +527,7 @@ def api_macro_news():
             item["age_str"] = fmt(item.get("age_min", 0))
         return jsonify({"ok": True, "items": items, "count": len(items)})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
  
  
@@ -633,7 +641,11 @@ def api_macro_pair_modules(pair_id):
         data = get_pair_all_modules(pair_id, force=force)
         return jsonify({"ok": True, "pair": pair_id, "modules": data})
     except Exception as e:
+        log.error(f"[macro] {request.path} - {e}", exc_info=True)
         return jsonify({"ok": False, "error": str(e)}), 500
+ 
+ 
+log.info("[macro_routes] routes registered ok")
  
 
 # ── Run ─────────────────────────────────────────────────────────────────
