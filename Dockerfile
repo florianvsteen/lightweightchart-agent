@@ -32,4 +32,4 @@ RUN mkdir -p /app/data
 EXPOSE 6767
 
 # Start via PM2 using install.sh logic
-CMD ["pm2-runtime", "start", "app.py", "--name", "lightweightchart-agent", "--interpreter", "python3", "--no-daemon"]
+CMD ["pm2-runtime", "start", "app.py", "--name", "lightweightchart-agent", "--interpreter", "python3"]
