@@ -6,7 +6,7 @@
 <title>{{ pair_id }} — Macro Desk</title>
 <link rel="stylesheet" href="/static/dashboard.css">
 <style>
-#main-content { overflow-y: auto; }
+#main-content { overflow-y: auto; overflow-x: hidden; }
 
 /* ── Back link ── */
 #dd-back {
@@ -86,8 +86,8 @@
   flex: 1;
   min-height: 0;
 }
-#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-y: auto; min-width: 0; }
-#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 16px; overflow: hidden; min-width: 0; }
+#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 16px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
 
 /* ── Price + chart (left top) ── */
 #dd-chart-panel {
