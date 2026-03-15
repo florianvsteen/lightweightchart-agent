@@ -86,8 +86,8 @@
   flex: 1;
   min-height: 0;
 }
-#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 16px 20px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
-#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 16px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+#dd-left  { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+#dd-right { background: var(--bg); display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
 
 /* ── Price + chart (left top) ── */
 #dd-chart-panel {
@@ -96,7 +96,6 @@
   border-radius: var(--radius);
   padding: 20px 22px 16px;
   flex-shrink: 0;
-  margin: 16px 0 0;
 }
 #dd-price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 #dd-price { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2rem; color: #fff; line-height: 1; }
@@ -152,7 +151,7 @@
 #dd-overview-text { font-size: 0.72rem; color: var(--text); line-height: 1.7; opacity: 0.9; }
 
 /* Module row: Mood + Policy */
-#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-shrink: 0; overflow: hidden; }
+#dd-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-shrink: 0; min-width: 0; }
 .dd-module {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -184,8 +183,8 @@
 /* Bottom three: Flow / Bearing / Pulse — rounded cards like screenshot */
 #dd-bottom-row {
   display: grid; grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px; padding: 16px 24px 20px;
-  border-top: 1px solid var(--border); flex-shrink: 0;
+  gap: 12px;
+  flex-shrink: 0;
 }
 .dd-bottom {
   background: var(--surface);
