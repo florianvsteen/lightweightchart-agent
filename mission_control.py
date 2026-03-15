@@ -27,6 +27,9 @@ from flask import Flask, render_template, jsonify, redirect, request, Response
 from tools.news import get_news as _get_news
 from tools.sessions import get_sessions_for_js, FOREX
 from tools.calendar import get_calendar
+from tools.macro  import get_all, get_ai_overview, get_market_mood, get_market_policy, get_flow_analysis, get_bearing, get_pulse
+from tools.market import get_market_snapshot, get_chart_data
+from tools.macro_news   import get_headlines, format_age
 
 # ── Config ─────────────────────────────────────────────────────────────
 from config import PAIRS
