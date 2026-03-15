@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar — The Inner Flows</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+<style>
+/* ══════════════════════════════════════════════════════════════
+   CALENDAR PAGE — overrides + page-specific styles
+   ══════════════════════════════════════════════════════════════ */
+
+/* Page header */
+#cal-page-header {
+  padding: 32px 36px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+#cal-page-title {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 2.8rem;
+  color: var(--accent);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+#cal-page-sub {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+
+#cal-tz-badge {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border: 1px solid rgba(90,240,196,0.35);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(90,240,196,0.04);
+  white-space: nowrap;
+}
+
+/* ── Filter bar ── */
+#cal-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 36px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-group-label {
+  font-size: 0.58rem;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.filter-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+
+/* Date buttons */
+.date-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 5px 14px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.date-btn:hover { border-color: #888; color: #ccc; }
+.date-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(90,240,196,0.08);
+}
+
+/* Custom date input */
+#custom-date-input {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.62rem;
+  padding: 5px 10px;
+  display: none;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#custom-date-input:focus { border-color: var(--accent); }
+#custom-date-input.visible { display: block; }
+
+/* Currency / Impact pills */
+.pill-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pill-btn:hover { border-color: #666; color: #bbb; }
+.pill-btn.active-cur { border-color: var(--accent); color: var(--accent); background: rgba(90,240,196,0.07); }
+.pill-btn.active-imp-high   { border-color: rgba(240,80,80,0.6);  color: #f05050; background: rgba(240,80,80,0.07); }
+.pill-btn.active-imp-medium { border-color: rgba(240,160,40,0.6); color: #f0a028; background: rgba(240,160,40,0.07); }
+.pill-btn.active-imp-low    { border-color: rgba(140,140,140,0.5);color: #aaa;    background: rgba(140,140,140,0.05); }
+
+/* ── Timeline ruler ── */
+#timeline-ruler {
+  padding: 12px 36px 0;
+  position: relative;
+  height: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#timeline-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transform: translateX(-50%);
+}
+
+.timeline-tick-line {
+  width: 1px;
+  height: 8px;
+  background: var(--border2);
+}
+
+.timeline-tick-label {
+  font-size: 0.58rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* Now indicator */
+#now-line {
+  position: absolute;
+  top: 0;
+  bottom: -9999px;
+  width: 1px;
+  background: rgba(90,240,196,0.5);
+  pointer-events: none;
+  z-index: 10;
+}
+
+#now-label {
+  position: absolute;
+  top: 0;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* ── Events area ── */
+#cal-events-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 36px 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+  position: relative;
+}
+#cal-events-area::-webkit-scrollbar { width: 4px; }
+#cal-events-area::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Timeline columns layout */
+#timeline-columns {
+  position: relative;
+  width: 100%;
+}
+
+/* Date section */
+.cal-section {
+  margin-bottom: 32px;
+}
+
+.cal-section-header {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cal-section-date {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #fff;
+  letter-spacing: 0.1em;
+}
+
+.cal-section-count {
+  font-size: 0.55rem;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  padding: 1px 7px;
+  border-radius: 20px;
+}
+
+/* Events grid — columns by time */
+.cal-events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
+}
+
+/* ── Event card ── */
+.cal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s, transform 0.1s;
+  position: relative;
+  overflow: hidden;
+}
+.cal-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+
+/* Left accent line by impact */
+.cal-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.cal-card.impact-High::before   { background: #f05050; }
+.cal-card.impact-Medium::before { background: #f0a028; }
+.cal-card.impact-Low::before    { background: #3a3a50; }
+
+/* Card top row */
+.cal-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cal-card-time {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.cal-card-time svg { opacity: 0.5; }
+
+.cal-card-cur {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.cal-card-cur.EUR { background: rgba(90,200,80,0.12);  color: #50c840; border: 1px solid rgba(90,200,80,0.3); }
+.cal-card-cur.GBP { background: rgba(240,50,80,0.12);  color: #f03050; border: 1px solid rgba(240,50,80,0.3); }
+.cal-card-cur.USD { background: rgba(90,90,240,0.12);  color: #6060f0; border: 1px solid rgba(90,90,240,0.3); }
+.cal-card-cur.JPY { background: rgba(240,180,40,0.12); color: #f0b428; border: 1px solid rgba(240,180,40,0.3); }
+.cal-card-cur.AUD { background: rgba(240,90,40,0.12);  color: #f05a28; border: 1px solid rgba(240,90,40,0.3); }
+.cal-card-cur.CAD { background: rgba(220,40,40,0.12);  color: #dc3030; border: 1px solid rgba(220,40,40,0.3); }
+.cal-card-cur.CHF { background: rgba(200,40,240,0.10); color: #c828f0; border: 1px solid rgba(200,40,240,0.25); }
+.cal-card-cur.CNY { background: rgba(240,200,40,0.10); color: #f0c828; border: 1px solid rgba(240,200,40,0.25); }
+.cal-card-cur.NZD { background: rgba(40,180,240,0.10); color: #28b4f0; border: 1px solid rgba(40,180,240,0.25); }
+
+.cal-card-impact {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.cal-card-impact.High   { border-color: rgba(240,80,80,0.5);  color: #f05050; background: rgba(240,80,80,0.07); }
+.cal-card-impact.Medium { border-color: rgba(240,160,40,0.5); color: #f0a028; background: rgba(240,160,40,0.07); }
+.cal-card-impact.Low    { border-color: rgba(100,100,120,0.4);color: #666680; background: none; }
+
+/* Sparkline icon */
+.cal-card-spark {
+  margin-left: auto;
+  opacity: 0.3;
+  flex-shrink: 0;
+}
+
+/* Countdown badge */
+.cal-card-countdown {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  border: 1px solid rgba(90,240,196,0.3);
+  color: var(--accent);
+  background: rgba(90,240,196,0.05);
+  flex-shrink: 0;
+}
+.cal-card-countdown.past { border-color: var(--border2); color: var(--muted); background: none; }
+.cal-card-countdown.soon { border-color: rgba(240,160,40,0.5); color: #f0a028; background: rgba(240,160,40,0.06); animation: pulse 1.2s ease-in-out infinite; }
+
+/* Event name */
+.cal-card-name {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+/* AI analysis box */
+.cal-card-ai {
+  background: rgba(90,240,196,0.03);
+  border: 1px solid rgba(90,240,196,0.1);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.cal-card-ai-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.cal-card-ai-text {
+  font-size: 0.68rem;
+  color: var(--text);
+  line-height: 1.65;
+  opacity: 0.85;
+}
+
+/* Data row: Previous / Forecast / Actual */
+.cal-card-data {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.cal-card-data-item { display: flex; flex-direction: column; gap: 2px; }
+.cal-card-data-label { font-size: 0.5rem; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; }
+.cal-card-data-val   { font-size: 0.8rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.cal-card-data-val.actual { color: var(--accent); }
+
+/* Loading / empty states */
+#cal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 80px 0;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+}
+.cal-load-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+#cal-empty {
+  display: none;
+  text-align: center;
+  padding: 80px 0;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.cal-card { animation: fadeIn 0.25s ease both; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Side Nav (same as dashboard) -->
+  <nav id="side-nav">
+    <div id="side-nav-logo">
+      <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+        <rect x="1" y="1" width="26" height="26" rx="6" stroke="var(--accent)" stroke-width="1.5"/>
+        <rect x="6"  y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.9"/>
+        <rect x="15" y="6"  width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="6"  y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.4"/>
+        <rect x="15" y="15" width="7" height="7" rx="1.5" fill="var(--accent)" opacity="0.15"/>
+      </svg>
+      <span id="side-nav-logo-text">Inner Flows</span>
+    </div>
+    <div class="nav-divider"></div>
+    <ul id="side-nav-links">
+      <li>
+        <a href="/" class="nav-item" data-label="Dashboard">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+          </span>
+          <span class="nav-label">Dashboard</span>
+        </a>
+      </li>
+      <li>
+        <a href="/macro" class="nav-item" data-label="Macro Desk">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+              <polyline points="17 6 23 6 23 12"/>
+            </svg>
+          </span>
+          <span class="nav-label">Macro Desk</span>
+        </a>
+      </li>
+      <li>
+        <a href="/calendar-page" class="nav-item" data-label="Calendar">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8"  y1="2" x2="8"  y2="6"/>
+              <line x1="3"  y1="10" x2="21" y2="10"/>
+            </svg>
+          </span>
+          <span class="nav-label">Calendar</span>
+        </a>
+      </li>
+    </ul>
+    <div id="side-nav-bottom">
+      <div class="nav-divider"></div>
+      <a href="/bloomberg" target="_blank" class="nav-item nav-item--bottom" data-label="Bloomberg TV">
+        <span class="nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </span>
+        <span class="nav-label">Bloomberg TV</span>
+      </a>
+    </div>
+    <button id="nav-collapse-btn" aria-label="Toggle nav">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+  </nav>
+
+  <div id="nav-tooltip"></div>
+
+  <!-- Main content -->
+  <div id="main-content">
+
+    <!-- Page header -->
+    <div id="cal-page-header">
+      <div>
+        <div id="cal-page-title">Calendar</div>
+        <div id="cal-page-sub">Market-moving events and AI analysis</div>
+      </div>
+      <div id="cal-tz-badge">🕐 Timezone (<span id="tz-name">UTC</span>)</div>
+    </div>
+
+    <!-- Filter bar -->
+    <div id="cal-filter-row">
+      <!-- Date -->
+      <div class="filter-group">
+        <button class="date-btn" id="btn-today" onclick="setDate('today')">Today</button>
+        <button class="date-btn active" id="btn-tomorrow" onclick="setDate('tomorrow')">Tomorrow</button>
+        <button class="date-btn" id="btn-week" onclick="setDate('week')">This Week</button>
+        <button class="date-btn" id="btn-custom" onclick="toggleCustomDate()">Custom Date</button>
+        <input type="date" id="custom-date-input" onchange="setCustomDate(this.value)">
+      </div>
+
+      <div class="filter-sep"></div>
+
+      <!-- Currency -->
+      <div class="filter-group">
+        <span class="filter-group-label">Currency</span>
+        <button class="pill-btn active-cur" data-cur="EUR" onclick="toggleCur(this)">EUR</button>
+        <button class="pill-btn active-cur" data-cur="USD" onclick="toggleCur(this)">USD</button>
+        <button class="pill-btn active-cur" data-cur="GBP" onclick="toggleCur(this)">GBP</button>
+        <button class="pill-btn active-cur" data-cur="JPY" onclick="toggleCur(this)">JPY</button>
+        <button class="pill-btn" data-cur="AUD" onclick="toggleCur(this)">AUD</button>
+        <button class="pill-btn" data-cur="CAD" onclick="toggleCur(this)">CAD</button>
+        <button class="pill-btn" data-cur="CHF" onclick="toggleCur(this)">CHF</button>
+        <button class="pill-btn" data-cur="CNY" onclick="toggleCur(this)">CNY</button>
+      </div>
+
+      <div class="filter-sep"></div>
+
+      <!-- Impact -->
+      <div class="filter-group">
+        <span class="filter-group-label">Impact</span>
+        <button class="pill-btn active-imp-high"   data-imp="High"   onclick="toggleImp(this)">High</button>
+        <button class="pill-btn active-imp-medium" data-imp="Medium" onclick="toggleImp(this)">Medium</button>
+        <button class="pill-btn" data-imp="Low" onclick="toggleImp(this)">Low</button>
+      </div>
+    </div>
+
+    <!-- Timeline ruler -->
+    <div id="timeline-ruler">
+      <div id="timeline-track"></div>
+    </div>
+
+    <!-- Events -->
+    <div id="cal-events-area">
+      <div id="cal-loading">
+        <div class="cal-load-spinner"></div>
+        <span>Loading calendar events…</span>
+      </div>
+      <div id="cal-empty">No events match the selected filters.</div>
+      <div id="cal-sections"></div>
+    </div>
+
+  </div><!-- /#main-content -->
+</div><!-- /#app -->
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let _allEvents  = [];
+let _dateMode   = 'tomorrow';   // today | tomorrow | week | custom
+let _customDate = '';
+let _activeCurs = new Set(['EUR','USD','GBP','JPY']);
+let _activeImps = new Set(['High','Medium']);
+
+// ── Timezone ──────────────────────────────────────────────────────────────────
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+document.getElementById('tz-name').textContent = TZ;
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+function todayUTC()    { return new Date().toISOString().slice(0,10); }
+function tomorrowUTC() { return new Date(Date.now()+86400000).toISOString().slice(0,10); }
+
+function getTargetDates() {
+  const t = todayUTC(), tom = tomorrowUTC();
+  if (_dateMode === 'today')    return [t];
+  if (_dateMode === 'tomorrow') return [tom];
+  if (_dateMode === 'custom')   return [_customDate].filter(Boolean);
+  // week: today + next 6 days
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    dates.push(new Date(Date.now() + i*86400000).toISOString().slice(0,10));
+  }
+  return dates;
+}
+
+// ── Filter buttons ────────────────────────────────────────────────────────────
+function setDate(mode) {
+  _dateMode = mode;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  const map = { today:'btn-today', tomorrow:'btn-tomorrow', week:'btn-week', custom:'btn-custom' };
+  document.getElementById(map[mode])?.classList.add('active');
+  document.getElementById('custom-date-input').classList.toggle('visible', mode === 'custom');
+  renderEvents();
+  buildTimeline();
+}
+
+function toggleCustomDate() {
+  setDate('custom');
+}
+
+function setCustomDate(val) {
+  _customDate = val;
+  renderEvents();
+  buildTimeline();
+}
+
+function toggleCur(btn) {
+  const cur = btn.dataset.cur;
+  if (_activeCurs.has(cur)) { _activeCurs.delete(cur); btn.classList.remove('active-cur'); }
+  else                       { _activeCurs.add(cur);    btn.classList.add('active-cur'); }
+  renderEvents();
+}
+
+function toggleImp(btn) {
+  const imp = btn.dataset.imp;
+  const cls = { High:'active-imp-high', Medium:'active-imp-medium', Low:'active-imp-low' }[imp];
+  if (_activeImps.has(imp)) { _activeImps.delete(imp); btn.classList.remove(cls); }
+  else                       { _activeImps.add(imp);    btn.classList.add(cls); }
+  renderEvents();
+}
+
+// ── Countdown ─────────────────────────────────────────────────────────────────
+function calCountdown(isoUtc) {
+  if (!isoUtc) return { label: '—', cls: '' };
+  const ms = new Date(isoUtc).getTime();
+  if (isNaN(ms)) return { label: '—', cls: '' };
+  const diff = ms - Date.now();
+  const totalMin = Math.floor(Math.abs(diff) / 60000);
+  if (diff < 0) {
+    if (totalMin < 60) return { label: `${totalMin}m ago`, cls: 'past' };
+    const h = Math.floor(totalMin/60);
+    if (h < 24) return { label: `${h}h ago`, cls: 'past' };
+    return { label: `${Math.floor(h/24)}d ago`, cls: 'past' };
+  }
+  if (totalMin < 30) return { label: `in ${totalMin}m`, cls: 'soon' };
+  if (totalMin < 60) return { label: `in ${totalMin}m`, cls: '' };
+  const h = Math.floor(totalMin/60), m = totalMin%60;
+  return { label: `in ${h}h${m>0?' '+m+'m':''}`, cls: '' };
+}
+
+// ── Format local time ─────────────────────────────────────────────────────────
+function fmtLocalTime(isoUtc) {
+  if (!isoUtc) return '';
+  const d = new Date(isoUtc);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-GB', {
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+
+// ── Event date (UTC) ──────────────────────────────────────────────────────────
+function evDateUTC(ev) { return (ev.event_time || '').slice(0,10); }
+
+// ── Build event cards HTML ────────────────────────────────────────────────────
+function buildCard(ev, delay) {
+  const cd = calCountdown(ev.event_time);
+  const timeLabel = fmtLocalTime(ev.event_time);
+
+  const hasActual   = ev.actual   && ev.actual   !== '';
+  const hasForecast = ev.forecast && ev.forecast !== '';
+  const hasPrev     = ev.previous && ev.previous !== '';
+
+  const dataRow = (hasActual || hasForecast || hasPrev) ? `
+    <div class="cal-card-data">
+      ${hasPrev     ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Previous</span><span class="cal-card-data-val">${ev.previous}</span></div>` : ''}
+      ${hasForecast ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Forecast</span><span class="cal-card-data-val">${ev.forecast}</span></div>` : ''}
+      ${hasActual   ? `<div class="cal-card-data-item"><span class="cal-card-data-label">Actual</span><span class="cal-card-data-val actual">${ev.actual}</span></div>` : ''}
+    </div>` : '';
+
+  const aiBox = ev.analysis ? `
+    <div class="cal-card-ai">
+      <div class="cal-card-ai-label">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+        AI Analysis
+      </div>
+      <div class="cal-card-ai-text">${ev.analysis}</div>
+    </div>` : '';
+
+  return `
+    <div class="cal-card impact-${ev.impact}" style="animation-delay:${delay}ms">
+      <div class="cal-card-top">
+        <span class="cal-card-time">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ${timeLabel}
+        </span>
+        <span class="cal-card-cur ${ev.currency}">${ev.currency}</span>
+        <span class="cal-card-impact ${ev.impact}">${ev.impact}</span>
+        <svg class="cal-card-spark" width="20" height="14" viewBox="0 0 20 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="0,10 4,6 8,9 12,3 16,7 20,2"/></svg>
+        <span class="cal-card-countdown ${cd.cls}">${cd.label}</span>
+      </div>
+      <div class="cal-card-name">${ev.title || ev.event || ''}</div>
+      ${aiBox}
+      ${dataRow}
+    </div>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderEvents() {
+  const loading = document.getElementById('cal-loading');
+  const empty   = document.getElementById('cal-empty');
+  const sections = document.getElementById('cal-sections');
+
+  const targetDates = new Set(getTargetDates());
+
+  const filtered = _allEvents.filter(ev => {
+    const d = evDateUTC(ev);
+    if (!targetDates.has(d)) return false;
+    if (!_activeCurs.has(ev.currency)) return false;
+    if (!_activeImps.has(ev.impact))   return false;
+    return true;
+  });
+
+  loading.style.display = 'none';
+
+  if (!filtered.length) {
+    empty.style.display = 'block';
+    sections.innerHTML  = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Group by date
+  const byDate = {};
+  filtered.forEach(ev => {
+    const d = evDateUTC(ev);
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(ev);
+  });
+
+  const todayStr    = todayUTC();
+  const tomorrowStr = tomorrowUTC();
+  const dateLabel = d => {
+    if (d === todayStr)    return 'Today';
+    if (d === tomorrowStr) return 'Tomorrow';
+    return new Date(d+'T12:00:00Z').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+  };
+
+  let html = '';
+  let cardIdx = 0;
+  for (const [date, evs] of Object.entries(byDate).sort()) {
+    const fullDate = new Date(date+'T12:00:00Z').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    html += `
+      <div class="cal-section">
+        <div class="cal-section-header">
+          <span class="cal-section-date">${dateLabel(date)}</span>
+          <span style="color:var(--border2)">·</span>
+          <span style="font-size:0.6rem;color:#3a3a50">${fullDate}</span>
+          <span class="cal-section-count">${evs.length} event${evs.length!==1?'s':''}</span>
+        </div>
+        <div class="cal-events-grid">
+          ${evs.map(ev => buildCard(ev, (cardIdx++ % 8) * 40)).join('')}
+        </div>
+      </div>`;
+  }
+  sections.innerHTML = html;
+}
+
+// ── Timeline ruler ────────────────────────────────────────────────────────────
+function buildTimeline() {
+  const track = document.getElementById('timeline-track');
+  track.innerHTML = '';
+  const hours = [0,3,6,9,11,13,15,17,19,21,23];
+  hours.forEach(h => {
+    const pct = (h / 23) * 100;
+    const tick = document.createElement('div');
+    tick.className = 'timeline-tick';
+    tick.style.left = pct + '%';
+    tick.innerHTML = `<div class="timeline-tick-line"></div><div class="timeline-tick-label">${String(h).padStart(2,'0')}:00</div>`;
+    track.appendChild(tick);
+  });
+  // Now line
+  const now = new Date();
+  const nowPct = ((now.getHours() + now.getMinutes()/60) / 24) * 100;
+  const nowLine = document.createElement('div');
+  nowLine.id = 'now-line';
+  nowLine.style.left = nowPct + '%';
+  const nowLbl = document.createElement('div');
+  nowLbl.id = 'now-label';
+  nowLbl.style.left = nowPct + '%';
+  nowLbl.textContent = 'NOW';
+  track.appendChild(nowLine);
+  track.appendChild(nowLbl);
+}
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function loadCalendar() {
+  try {
+    const res = await fetch('/api/calendar');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    _allEvents = data.events || [];
+    renderEvents();
+  } catch (e) {
+    console.error('Calendar error:', e);
+    document.getElementById('cal-loading').innerHTML =
+      `<span style="color:var(--muted)">Could not load calendar — ${e.message}</span>`;
+  }
+}
+
+// Auto-refresh countdowns every 30s
+setInterval(() => {
+  if (_allEvents.length) renderEvents();
+}, 30000);
+
+// ── Side nav ──────────────────────────────────────────────────────────────────
+{
+  const nav     = document.getElementById('side-nav');
+  const tooltip = document.getElementById('nav-tooltip');
+  const btn     = document.getElementById('nav-collapse-btn');
+
+  if (localStorage.getItem('nav-collapsed') === '1') nav.classList.add('collapsed');
+
+  btn.addEventListener('click', () => {
+    nav.classList.toggle('collapsed');
+    localStorage.setItem('nav-collapsed', nav.classList.contains('collapsed') ? '1' : '0');
+  });
+
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('mouseenter', e => {
+      if (!nav.classList.contains('collapsed')) return;
+      tooltip.textContent = item.dataset.label || '';
+      tooltip.style.top = (e.currentTarget.getBoundingClientRect().top + 6) + 'px';
+      tooltip.classList.add('visible');
+    });
+    item.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+  });
+
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('.nav-item').forEach(item => {
+    const href = (item.getAttribute('href') || '').replace(/\/$/, '') || '/';
+    item.classList.toggle('active', href === path);
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildTimeline();
+loadCalendar();
+</script>
+</body>
+</html>
