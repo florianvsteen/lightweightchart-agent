@@ -27,6 +27,8 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
 
       # ── Timezone ───────────────────────────────────────────────────
       - TZ=${TZ:-Europe/Brussels}
